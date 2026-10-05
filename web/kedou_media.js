@@ -47,6 +47,45 @@ const CSS = [
   // 框选：拖拽时画的临时选框
   ".kd-marquee{position:fixed;z-index:100002;border:1px solid var(--p-primary-color,#4a7dff);",
   "background:rgba(74,125,255,.12);pointer-events:none;}",
+  // 媒体库分类按钮组（全部/已导入/已生成）
+  ".kd-seg{display:flex;gap:2px;}",
+  ".kd-segbtn{border:1px solid transparent;background:transparent;color:var(--descrip-text,#9a9aa6);font:inherit;font-size:11px;padding:2px 8px;border-radius:999px;cursor:pointer;}",
+  ".kd-segbtn.on{background:var(--p-primary-color,#4a7dff);color:#fff;}",
+  // 拖拽排序的目标高亮
+  ".kd-cell.drag-over{outline:2px dashed var(--p-primary-color,#4a7dff);outline-offset:-2px;}",
+  // 提示词输入框面板（KedouPromptBox）：历史/预设区块
+  ".kd-pbox-sechead{font-size:10px;color:var(--descrip-text,#9a9aa6);margin:4px 0 4px;}",
+  ".kd-pbox-row{display:flex;align-items:center;gap:6px;padding:4px 6px;",
+  "border:1px solid var(--border-color,#3a3a44);border-radius:8px;margin-bottom:4px;}",
+  ".kd-pbox-rowname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;}",
+  ".kd-pbox-rowmeta{font-size:10px;color:var(--descrip-text,#9a9aa6);flex-shrink:0;}",
+  ".kd-pbox-empty{font-size:10px;color:var(--descrip-text,#9a9aa6);padding:2px 0 6px;}",
+  ".kd-pbox .kd-x{position:static;}",
+  // 提示词输入框（TextEncode 节点上的自有控件）
+  ".kd-pbox{display:flex;flex-direction:column;gap:6px;padding:6px 8px;}",
+  ".kd-pbox-top{display:flex;align-items:center;justify-content:space-between;}",
+  ".kd-pbox-top b{font-size:12px;font-weight:600;}",
+  ".kd-pbox-ta{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;font:inherit;font-size:12px;",
+  "line-height:1.5;padding:6px 8px;border-radius:8px;border:1px solid var(--border-color,#3a3a44);",
+  "background:var(--comfy-input-bg,rgba(0,0,0,.28));color:var(--fg,#e0e0e0);}",
+  ".kd-pbox-ta:focus{outline:1px solid var(--p-primary-color,#4a7dff);}",
+  ".kd-pbox-nlab{font-size:10px;color:var(--descrip-text,#9a9aa6);}",
+  ".kd-pbox-ta-n{min-height:40px;}",
+  // 提示词库弹窗（ComfyUI 版）
+  ".kd-plib-body{padding:8px 10px;}",
+  ".kd-pli{border:1px solid var(--border-color,#3a3a44);border-radius:10px;padding:8px 10px;",
+  "margin-bottom:8px;cursor:pointer;}",
+  ".kd-pli:hover{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kd-pli-head{display:flex;align-items:center;gap:8px;}",
+  ".kd-pli-title{font-size:12px;font-weight:550;flex:1;min-width:0;overflow:hidden;",
+  "text-overflow:ellipsis;white-space:nowrap;}",
+  ".kd-pli-stars{color:var(--p-primary-color,#4a7dff);font-size:11px;letter-spacing:1px;flex-shrink:0;}",
+  ".kd-pli-type{font-size:10px;padding:1px 6px;border-radius:999px;",
+  "background:var(--comfy-input-bg,rgba(0,0,0,.28));color:var(--descrip-text,#9a9aa6);flex-shrink:0;}",
+  ".kd-pli-type.hot{color:var(--p-primary-color,#4a7dff);}",
+  ".kd-pli-preview{font-size:11px;color:var(--descrip-text,#9a9aa6);margin-top:4px;line-height:1.5;}",
+  ".kd-pli-ops{display:flex;gap:6px;margin-top:6px;}",
+  ".kd-pli-ops .kd-btn{padding:2px 10px;font-size:11px;}",
   ".kd-cell.kd-skip .kd-no{opacity:.35;}",
   ".kd-btns{margin-left:auto;display:flex;gap:6px;}",
   ".kd-btn{border:1px solid var(--border-color,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);",
@@ -187,18 +226,22 @@ function attachZoom(cell, urlOrFn) {
   cell.addEventListener("mouseleave", kdZoomHide);
 }
 
-// 框选：在容器空白处按下拖动画框，松手后把与框相交的格子索引回调出去（按网格顺序）。
-// 格子上按下不启动（那是点击选中/预览），从格间空隙和网格外的空白拖。
-function kdMarquee(container, getCells, onDone, enabled) {
+// 统一手势：格子或空白按下 → 移动超阈值 = 框选（相交回调）；未拖动 = 点击（格子回调 / 空白回调）。
+// 替代原先「格子上 click + 空白框选」两套逻辑——现在图片上也能直接起框。
+function kdGesture(container, getCells, handlers) {
   container.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest(".kd-cell, button, input")) return;
-    if (enabled && !enabled()) return;
-    e.preventDefault();
+    if (e.button !== 0 || e.target.closest("button, input")) return;
+    if (handlers.enabled && !handlers.enabled()) return;
+    e.preventDefault();                       // 抑制原生图片拖拽与文字选择
     const sx = e.clientX, sy = e.clientY;
-    const box = document.createElement("div");
-    box.className = "kd-marquee";
-    document.body.appendChild(box);
+    const startCell = e.target.closest(".kd-cell");
+    const startIdx = startCell ? getCells().indexOf(startCell) : -1;
+    const shift = e.shiftKey;
+    let dragging = false, box = null;
     const move = (ev) => {
+      if (!dragging && Math.abs(ev.clientX - sx) < 5 && Math.abs(ev.clientY - sy) < 5) return;
+      dragging = true;
+      if (!box) { box = document.createElement("div"); box.className = "kd-marquee"; document.body.appendChild(box); }
       box.style.left = Math.min(sx, ev.clientX) + "px";
       box.style.top = Math.min(sy, ev.clientY) + "px";
       box.style.width = Math.abs(ev.clientX - sx) + "px";
@@ -207,15 +250,21 @@ function kdMarquee(container, getCells, onDone, enabled) {
     const up = (ev) => {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
-      box.remove();
-      const r = { l: Math.min(sx, ev.clientX), t: Math.min(sy, ev.clientY),
-                  r: Math.max(sx, ev.clientX), b: Math.max(sy, ev.clientY) };
-      const hit = [];
-      getCells().forEach((cell, i) => {
-        const cr = cell.getBoundingClientRect();
-        if (cr.left < r.r && cr.right > r.l && cr.top < r.b && cr.bottom > r.t) hit.push(i);
-      });
-      if (hit.length) onDone(hit);
+      if (box) box.remove();
+      const cells = getCells();
+      if (dragging) {
+        const r = { l: Math.min(sx, ev.clientX), t: Math.min(sy, ev.clientY),
+                    r: Math.max(sx, ev.clientX), b: Math.max(sy, ev.clientY) };
+        const hit = [];
+        cells.forEach((cell, i) => {
+          const cr = cell.getBoundingClientRect();
+          if (cr.left < r.r && cr.right > r.l && cr.top < r.b && cr.bottom > r.t) hit.push(i);
+        });
+        if (hit.length && handlers.onMarquee) handlers.onMarquee(hit);
+        return;
+      }
+      if (startIdx >= 0 && handlers.onCellTap) handlers.onCellTap(startIdx, shift);
+      else if (startIdx < 0 && handlers.onBlankTap) handlers.onBlankTap();
     };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
@@ -447,8 +496,8 @@ function openBig(name, sub) {
 }
 
 // ---------------------------------------------------------------- 媒体库弹窗（走桥接 /ps/media）
-async function fetchLibrary(kind, q) {
-  const qs = new URLSearchParams({ type: kind, tab: "all", q: q || "" }).toString();
+async function fetchLibrary(kind, q, tab) {
+  const qs = new URLSearchParams({ type: kind, tab: tab || "all", q: q || "" }).toString();
   for (const p of ["/ps/media?", "/api/ps/media?"]) {
     try {
       const r = await fetch(p + qs);
@@ -471,7 +520,24 @@ function openLibrary(onPick) {
   win.className = "kd-libwin";
   const top = document.createElement("div");
   top.className = "kd-libtop";
-  top.innerHTML = '<b>从媒体库选图片</b>';
+  top.innerHTML = '<b>媒体库</b>';
+  // 分类：全部 / 已导入（input 目录）/ 已生成（output 目录）
+  let curTab = "all";
+  const tabBar = document.createElement("div");
+  tabBar.className = "kd-seg";
+  [["all", "全部"], ["input", "已导入"], ["output", "已生成"]].forEach(([v, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "kd-segbtn" + (v === curTab ? " on" : "");
+    b.textContent = label;
+    b.onclick = () => {
+      curTab = v;
+      tabBar.querySelectorAll(".kd-segbtn").forEach((x) => x.classList.toggle("on", x === b));
+      render();
+    };
+    tabBar.appendChild(b);
+  });
+  top.appendChild(tabBar);
   const search = document.createElement("input");
   search.placeholder = "搜索文件名…";
   top.appendChild(search);
@@ -526,16 +592,216 @@ function openLibrary(onPick) {
     });
   }
 
-  // 框选：网格空白处按下拖动画框，松手把框内图片加入选择（不清除已有，叠加式）
-  kdMarquee(body, () => gridEl ? Array.from(gridEl.querySelectorAll(".kd-cell")) : [], (idxs) => {
-    for (const i of idxs) {
-      const it = curItems[i];
-      if (!it) continue;
-      const kk = (it.subfolder ? it.subfolder + "/" : "") + it.name;
-      if (!picked.has(kk)) picked.set(kk, { filename: kk });
+// ── 提示词库弹窗（ComfyUI 页面版）：点条目 = 填入调用方的提示词输入框 ──
+async function plLibFetch(params) {
+  const qs = new URLSearchParams(params || {}).toString();
+  const r = await fetch("/ps/prompts" + (qs ? "?" + qs : ""));
+  const j = await r.json();
+  if (!j || !j.ok) throw new Error((j && j.error) || "HTTP " + r.status);
+  return j.items || [];
+}
+async function plLibSave(entry) {
+  const r = await fetch("/ps/prompts/save", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  const j = await r.json();
+  if (!j || !j.ok) throw new Error(j && j.error || "保存失败");
+  return j.item;
+}
+async function plLibDelete(id) {
+  const r = await fetch("/ps/prompts/delete", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  const j = await r.json();
+  if (!j || !j.ok) throw new Error(j && j.error || "删除失败");
+}
+function plLibEsc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function openPromptLib(target) {
+  ensureCss();
+  if (document.querySelector(".kd-lib.kd-plib")) return;   // 防重复打开
+  const state = { items: [], tab: "全部", q: "" };
+  const ov = document.createElement("div");
+  ov.className = "kd-lib kd-plib";
+  const win = document.createElement("div");
+  win.className = "kd-libwin";
+  const top = document.createElement("div");
+  top.className = "kd-libtop";
+  top.innerHTML = "<b>提示词库</b>";
+  const tabBar = document.createElement("div");
+  tabBar.className = "kd-seg";
+  [["全部", "全部"], ["历史", "历史"], ["精选", "精选"]].forEach(([v, label]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "kd-segbtn" + (v === state.tab ? " on" : "");
+    b.textContent = label;
+    b.onclick = () => {
+      state.tab = v;
+      tabBar.querySelectorAll(".kd-segbtn").forEach((x) => x.classList.toggle("on", x === b));
+      renderList();
+    };
+    tabBar.appendChild(b);
+  });
+  top.appendChild(tabBar);
+  const search = document.createElement("input");
+  search.placeholder = "搜索标题 / 内容 / 标签…";
+  search.oninput = () => { state.q = search.value; renderList(); };
+  top.appendChild(search);
+  const body = document.createElement("div");
+  body.className = "kd-libbody kd-plib-body";
+  const foot = document.createElement("div");
+  foot.className = "kd-libfoot";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "kd-btn";
+  cancelBtn.textContent = "关闭";
+  cancelBtn.style.marginLeft = "auto";
+  const tip = document.createElement("i");
+  const okBtn = document.createElement("button");
+  okBtn.className = "kd-btn kd-p";
+  foot.append(cancelBtn, tip, okBtn);
+  win.append(top, body, foot);
+  ov.appendChild(win);
+  ov.onclick = (e) => { if (e.target === ov) close(); };
+  document.body.appendChild(ov);
+
+  function close() { ov.remove(); }
+  cancelBtn.onclick = close;
+
+  function renderList() {
+    const qq = (state.q || "").toLowerCase();
+    const list = state.items.filter((it) => {
+      if (state.tab !== "全部" && it.type !== state.tab) return false;
+      if (qq && it.title.toLowerCase().indexOf(qq) < 0 && (it.prompt || "").toLowerCase().indexOf(qq) < 0
+          && !(it.tags || []).some((x) => x.toLowerCase().indexOf(qq) >= 0)) return false;
+      return true;
+    });
+    if (!list.length) {
+      body.innerHTML = '<div style="text-align:center;color:var(--descrip-text,#9a9aa6);font-size:12px;padding:24px 0;">'
+        + (state.items.length ? "没有匹配的条目。" : "库里还没有条目 —— 在 Obsidian 的「提示词库」里新建 .md 即可")
+        + "</div>";
+      return;
     }
-    updateOutlines();
-    syncFoot();
+    body.innerHTML = list.map((it) => {
+      const stars = "★".repeat(Math.max(0, Math.min(5, it.rating || 0)))
+        + "☆".repeat(5 - Math.max(0, Math.min(5, it.rating || 0)));
+      const hot = it.type === "精选" ? " hot" : "";
+      const tags = (it.tags || []).map((x) => `<span style="opacity:.7">${plLibEsc(x)}</span>`).join("、");
+      const raw = it.prompt || "";
+      const prev = plLibEsc(raw.slice(0, 140)) + (raw.length > 140 ? "…" : "");
+      return `<div class="kd-pli" data-id="${plLibEsc(it.id)}">
+        <div class="kd-pli-head">
+          <span class="kd-pli-stars">${stars}</span>
+          <span class="kd-pli-title">${plLibEsc(it.title)}</span>
+          <span class="kd-pli-type${hot}">${plLibEsc(it.type)}</span>
+        </div>
+        <div class="kd-pli-preview">${prev || "（空）"}</div>
+        <div style="margin-top:4px;font-size:10px;color:var(--descrip-text,#9a9aa6);">${tags}</div>
+        <div class="kd-pli-ops">
+          <button type="button" class="kd-btn" data-op="pick" data-id="${plLibEsc(it.id)}">填入</button>
+          <button type="button" class="kd-btn" data-op="star" data-id="${plLibEsc(it.id)}">${it.type === "精选" ? "取消精选" : "升精选"}</button>
+          <button type="button" class="kd-btn" data-op="del" data-id="${plLibEsc(it.id)}">删除</button>
+          <span style="flex:1"></span>
+          <span style="font-size:10px;color:var(--descrip-text,#9a9aa6);">用过 ${it.uses || 0} 次</span>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  body.addEventListener("click", async (e) => {
+    const op = e.target.closest("[data-op]");
+    const pli = e.target.closest(".kd-pli");
+    if (op) {
+      e.stopPropagation();
+      const id = op.getAttribute("data-id");
+      const act = op.getAttribute("data-op");
+      const it = state.items.find((x) => x.id === id);
+      if (!it) return;
+      try {
+        if (act === "pick") {
+          if (target && typeof target.onPickText === "function") target.onPickText(it.prompt || "");
+          close();
+          return;
+        }
+        if (act === "star") {
+          it.type = it.type === "精选" ? "历史" : "精选";
+          await plLibSave(it);
+          renderList();
+          return;
+        }
+        if (act === "del") {
+          await plLibDelete(id);
+          renderList();
+          return;
+        }
+      } catch (err) { kpToast("操作失败：" + (err.message || err), true); }
+      return;
+    }
+    if (pli) {
+      const id = pli.getAttribute("data-id");
+      const it = state.items.find((x) => x.id === id);
+      if (it && target && typeof target.onPickText === "function") {
+        target.onPickText(it.prompt || "");
+        close();
+      }
+    }
+  });
+
+  (async () => {
+    body.textContent = "读取中…";
+    try {
+      state.items = await plLibFetch(state.tab === "全部" ? {} : { type: state.tab });
+      renderList();
+    } catch (e) {
+      body.textContent = "读取失败：" + (e.message || e);
+    }
+  })();
+}
+
+
+  // 统一手势：图片上按下直接可拖框；未拖动的点击 = 单格切换；Shift+点击 = 范围；
+  // 点击空白 = 清空全部选择（替代「一张张点掉」）
+  kdGesture(body, () => gridEl ? Array.from(gridEl.querySelectorAll(".kd-cell")) : [], {
+    onCellTap(idx, shift) {
+      if (shift && anchorIdx >= 0) {
+        const lo = Math.min(anchorIdx, idx), hi = Math.max(anchorIdx, idx);
+        for (let k = lo; k <= hi; k++) {
+          const it2 = curItems[k];
+          if (!it2) continue;
+          const kk = (it2.subfolder ? it2.subfolder + "/" : "") + it2.name;
+          if (!picked.has(kk)) picked.set(kk, { filename: kk });
+        }
+      } else {
+        const it2 = curItems[idx];
+        if (!it2) return;
+        const kk = (it2.subfolder ? it2.subfolder + "/" : "") + it2.name;
+        if (picked.has(kk)) picked.delete(kk);
+        else picked.set(kk, { filename: kk });
+      }
+      anchorIdx = idx;
+      updateOutlines();
+      syncFoot();
+    },
+    onBlankTap() {
+      if (!picked.size) return;
+      picked.clear();
+      updateOutlines();
+      syncFoot();
+    },
+    onMarquee(idxs) {
+      for (const i of idxs) {
+        const it = curItems[i];
+        if (!it) continue;
+        const kk = (it.subfolder ? it.subfolder + "/" : "") + it.name;
+        if (!picked.has(kk)) picked.set(kk, { filename: kk });
+      }
+      anchorIdx = -1;
+      updateOutlines();
+      syncFoot();
+    },
   });
 
   function mkCell(it, idx) {
@@ -547,6 +813,7 @@ function openLibrary(onPick) {
     const src = (it.url || viewUrl(it.name, it.subfolder)) + "&preview=jpeg;50;0.0";
     const img = document.createElement("img");
     img.loading = "lazy";
+    img.draggable = false;                  // 禁原生图片拖拽（拖出去没意义还干扰框选）
     img.src = src;
     img.onerror = () => { img.style.visibility = "hidden"; };
     cell.appendChild(img);
@@ -555,25 +822,7 @@ function openLibrary(onPick) {
     no.textContent = it.name;
     cell.appendChild(no);
     attachZoom(cell, src);
-    cell.onclick = (e) => {
-      if (e.shiftKey && anchorIdx >= 0) {
-        // Shift 范围多选：从上次点击的格子到本次，整段加入选择
-        const lo = Math.min(anchorIdx, idx), hi = Math.max(anchorIdx, idx);
-        for (let k = lo; k <= hi; k++) {
-          const it2 = curItems[k];
-          if (!it2) continue;
-          const kk = (it2.subfolder ? it2.subfolder + "/" : "") + it2.name;
-          if (!picked.has(kk)) picked.set(kk, { filename: kk });
-        }
-      } else if (picked.has(key)) {
-        picked.delete(key);
-      } else {
-        picked.set(key, { filename: key });
-      }
-      anchorIdx = idx;
-      updateOutlines();
-      syncFoot();
-    };
+    // 点击逻辑统一由 kdGesture 手势接管（tap 切换/Shift 范围），这里不再挂 onclick
     return cell;
   }
 
@@ -589,7 +838,7 @@ function openLibrary(onPick) {
     syncFoot();
     body.style.color = "";
     body.textContent = "读取中…";
-    fetchLibrary("image", search.value).then((items) => {
+    fetchLibrary("image", search.value, curTab).then((items) => {
       body.innerHTML = "";
       if (items === null) {
         body.textContent = "桥接插件未加载：重启一次 ComfyUI 即可（/ps/media 拿不到）。";
@@ -683,6 +932,7 @@ function renderPanel(node) {
     cell.title = it.filename;
     const img = document.createElement("img");
     img.loading = "lazy";
+    img.draggable = false;                  // 禁原生拖拽：拖图片出去会在画布创建官方 LoadImage 节点，没用还干扰
     // 先按 input 找，找不到再退到 output；悬浮预览要跟着用最终那个地址
     let zoomSrc = thumbUrl(baseName(it.filename), subOf(it.filename));
     let tried = false;
@@ -833,7 +1083,36 @@ function build(node) {
   btns.className = "kd-btns";
   const libBtn = document.createElement("button");
   libBtn.className = "kd-btn";
-  libBtn.textContent = "从库里选";
+  libBtn.textContent = "媒体库";
+  // 一键清除全部已加载图片：二次确认态（2.5 秒内再点才执行），防止误触
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "kd-btn";
+  clearBtn.textContent = "清除";
+  let clearArmed = 0;
+  clearBtn.onclick = () => {
+    const st = readState(node);
+    if (!(st.images || []).length) return;
+    if (Date.now() - clearArmed < 2500 && clearBtn.textContent.indexOf("确认") !== -1) {
+      st.images = [];
+      st.picked = [];
+      st.cursor = 0;
+      writeState(node, st);
+      clearArmed = 0;
+      clearBtn.textContent = "清除";
+      clearBtn.style.color = "";
+      renderPanel(node);
+    } else {
+      clearArmed = Date.now();
+      clearBtn.textContent = "确认清空？";
+      clearBtn.style.color = "var(--error-text,#ff6b6b)";
+      setTimeout(() => {
+        if (Date.now() - clearArmed >= 2500) {
+          clearBtn.textContent = "清除";
+          clearBtn.style.color = "";
+        }
+      }, 2600);
+    }
+  };
   const upBtn = document.createElement("button");
   upBtn.className = "kd-btn kd-p";
   upBtn.textContent = "上传图片";
@@ -847,7 +1126,7 @@ function build(node) {
   runBtn.className = "kd-btn kd-p";
   runBtn.style.display = "none";
   runBtn.onclick = () => runBatch(node);
-  btns.append(libBtn, upBtn, runBtn, fileEl);
+  btns.append(libBtn, clearBtn, upBtn, runBtn, fileEl);
   // 批次 / 选择两个开关（toggle 样式）
   const mkSwitch = (label, title) => {
     const lab = document.createElement("label");
@@ -879,18 +1158,99 @@ function build(node) {
   card.append(top, body);
 
   node._kdUI = { card, body, count, libBtn, upBtn, fileEl, runBtn, swBatchCb: swBatch.cb, swSelCb: swSel.cb };
-  // 框选：网格空白处拖动画框，框内图片批量加入选择（仅选择模式生效；格子上按下不启动）
-  kdMarquee(body, () => Array.from(body.querySelectorAll(".kd-cell")), (idxs) => {
-    const st = readState(node);
-    if (!st.select) return;
-    st.picked = st.picked || [];
-    for (const i of idxs) {
-      const fn = (st.images[i] || {}).filename;
-      if (fn && st.picked.indexOf(fn) < 0) st.picked.push(fn);
+  // 选择/框选手势（仅选择模式生效）：点击切换、Shift 范围、点击空白清空、拖框多选
+  kdGesture(body, () => Array.from(body.querySelectorAll(".kd-cell")), {
+    enabled: () => !!readState(node).select,
+    onCellTap(idx, shift) {
+      const st = readState(node);
+      st.picked = st.picked || [];
+      if (shift && typeof node.__kdAnchor === "number" && node.__kdAnchor >= 0 && node.__kdAnchor < st.images.length) {
+        const lo = Math.min(node.__kdAnchor, idx), hi = Math.max(node.__kdAnchor, idx);
+        for (let k = lo; k <= hi; k++) {
+          const fn = (st.images[k] || {}).filename;
+          if (fn && st.picked.indexOf(fn) < 0) st.picked.push(fn);
+        }
+      } else {
+        const fn = (st.images[idx] || {}).filename;
+        if (fn) {
+          const at = st.picked.indexOf(fn);
+          if (at >= 0) st.picked.splice(at, 1); else st.picked.push(fn);
+        }
+      }
+      node.__kdAnchor = idx;
+      writeState(node, st);
+      renderPanel(node);
+    },
+    onBlankTap() {
+      const st = readState(node);
+      if (!st.select || !(st.picked || []).length) return;
+      st.picked = [];
+      writeState(node, st);
+      renderPanel(node);
+    },
+    onMarquee(idxs) {
+      const st = readState(node);
+      if (!st.select) return;
+      st.picked = st.picked || [];
+      for (const i of idxs) {
+        const fn = (st.images[i] || {}).filename;
+        if (fn && st.picked.indexOf(fn) < 0) st.picked.push(fn);
+      }
+      writeState(node, st);
+      renderPanel(node);
+    },
+  });
+  // 拖拽排序（普通模式）：拖格子换位置，顺序 = 输出槽顺序；选择模式禁拖（顺序由点击决定）
+  let kdSort = null;
+  body.addEventListener("mousedown", (e) => {
+    const slot = e.target.closest(".kd-cell");
+    if (!slot || e.target.closest(".kd-x")) return;
+    slot.draggable = !readState(node).select;
+  });
+  body.addEventListener("dragstart", (e) => {
+    const slot = e.target.closest(".kd-cell");
+    if (!slot) return;
+    if (readState(node).select) { slot.draggable = false; e.preventDefault(); return; }
+    const cells = Array.from(body.querySelectorAll(".kd-cell"));
+    kdSort = { el: slot, idx: cells.indexOf(slot) };
+    slot.style.opacity = "0.45";
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", "kd-cell"); } catch (err) { /* 忽略 */ }
     }
-    writeState(node, st);
+  });
+  body.addEventListener("dragover", (e) => {
+    if (!kdSort) return;
+    const slot = e.target.closest(".kd-cell");
+    if (!slot || slot === kdSort.el || !body.contains(slot)) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    body.querySelectorAll(".kd-cell").forEach((c) => c.classList.remove("drag-over"));
+    slot.classList.add("drag-over");
+  });
+  body.addEventListener("drop", (e) => {
+    if (!kdSort) return;
+    e.preventDefault();
+    const slot = e.target.closest(".kd-cell");
+    const cells = Array.from(body.querySelectorAll(".kd-cell"));
+    const from = kdSort.idx;
+    const to = slot ? cells.indexOf(slot) : -1;
+    const st = readState(node);
+    if (to >= 0 && from !== to && from < st.images.length && to < st.images.length) {
+      const moved = st.images.splice(from, 1)[0];
+      st.images.splice(to, 0, moved);
+      writeState(node, st);
+    }
+    body.querySelectorAll(".kd-cell").forEach((c) => c.classList.remove("drag-over"));
+    kdSort = null;
     renderPanel(node);
-  }, () => !!readState(node).select);
+  });
+  body.addEventListener("dragend", () => {
+    if (kdSort) {
+      kdSort = null;
+      body.querySelectorAll(".kd-cell").forEach((c) => c.classList.remove("drag-over"));
+    }
+  });
   node.addDOMWidget("kedou_media", "div", card, {
     getMinHeight: () => 200,
     hideOnZoom: false,
@@ -938,10 +1298,183 @@ function build(node) {
   renderPanel(node);
 }
 
+// ── 提示词输入框面板（KedouPromptBox 节点）：单输入框 + 词库 + 历史/预设区块 ──
+// 值协议：prompt_state = {"text": "..."}（textarea input 实时同步，后端 run 取 text 作为 STRING 输出）
+function buildPromptBox(node) {
+  const pw = wOf(node, "prompt_state");
+  if (!pw) return;
+  hideWidget(pw, true);
+  let text = "";
+  try {
+    const o = JSON.parse(pw.value || "{}");
+    if (o && typeof o.text === "string") text = o.text;
+  } catch (e) { /* ignore */ }
+
+  const card = document.createElement("div");
+  card.className = "kd-pbox";
+
+  // 顶栏：标题 + 词库 / 存为预设 / 清除
+  const top = document.createElement("div");
+  top.className = "kd-pbox-top";
+  const lab = document.createElement("b");
+  lab.textContent = "提示词";
+  const btns = document.createElement("div");
+  btns.style.cssText = "display:flex;gap:6px;";
+  const libBtn = document.createElement("button");
+  libBtn.type = "button";
+  libBtn.className = "kd-btn";
+  libBtn.textContent = "词库";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "kd-btn";
+  saveBtn.textContent = "存为预设";
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.className = "kd-btn";
+  clearBtn.textContent = "清除";
+  let clearArmed = 0;
+  clearBtn.onclick = () => {
+    if (!ta.value) return;
+    if (Date.now() - clearArmed < 2500 && clearBtn.textContent.indexOf("确认") !== -1) {
+      ta.value = "";
+      sync();
+      clearArmed = 0;
+      clearBtn.textContent = "清除";
+      clearBtn.style.color = "";
+    } else {
+      clearArmed = Date.now();
+      clearBtn.textContent = "确认清空？";
+      clearBtn.style.color = "var(--error-text,#ff6b6b)";
+      setTimeout(() => {
+        if (Date.now() - clearArmed >= 2500) {
+          clearBtn.textContent = "清除";
+          clearBtn.style.color = "";
+        }
+      }, 2600);
+    }
+  };
+  btns.append(libBtn, saveBtn, clearBtn);
+  top.append(lab, btns);
+
+  const ta = document.createElement("textarea");
+  ta.className = "kd-pbox-ta";
+  ta.placeholder = "输入提示词…（点「词库」从库里调，点「存为预设」把当前内容存起来）";
+  ta.value = text;
+  function sync() {
+    pw.value = JSON.stringify({ text: ta.value });
+    if (node.setDirtyCanvas) node.setDirtyCanvas(true, true);
+  }
+  ta.addEventListener("input", sync);
+  card.append(top, ta);
+
+  // 历史 / 预设 区块（数据来自 vault，按 type 过滤）
+  const secH = document.createElement("div");
+  const secP = document.createElement("div");
+  card.append(secH, secP);
+
+  function fillFromEntry(it) {
+    ta.value = it.prompt || "";
+    sync();
+  }
+
+  libBtn.onclick = () => openPromptLib({
+    onPickText: (t) => { ta.value = t || ""; sync(); },
+  });
+  saveBtn.onclick = async () => {
+    if (!ta.value.trim()) { kpToast("输入框是空的", true); return; }
+    try {
+      await plLibSave({ title: ta.value.trim().slice(0, 20) || "未命名", type: "精选", prompt: ta.value });
+      kpToast("已存为预设");
+      paintSection(secP, "预设", "精选");
+    } catch (e) { kpToast("保存失败：" + (e.message || e), true); }
+  };
+
+  function paintSection(sec, label, type, cap) {
+    sec.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "kd-pbox-sechead";
+    head.textContent = label;
+    sec.appendChild(head);
+    fetch("/ps/prompts?type=" + encodeURIComponent(type) + "&sort=updated")
+      .then((r) => r.json())
+      .then((j) => {
+        const items = ((j && j.items) || []).slice(0, cap);
+        if (!items.length) {
+          const d = document.createElement("div");
+          d.className = "kd-pbox-empty";
+          d.textContent = type === "历史"
+            ? "暂无历史（运行成功后自动记录）"
+            : "暂无预设 —— 输入框写好后点「存为预设」";
+          sec.appendChild(d);
+          return;
+        }
+        items.forEach((it) => {
+          const row = document.createElement("div");
+          row.className = "kd-pbox-row";
+          row.title = it.prompt || "";
+          const nm = document.createElement("span");
+          nm.className = "kd-pbox-rowname";
+          nm.textContent = it.title;
+          const meta = document.createElement("span");
+          meta.className = "kd-pbox-rowmeta";
+          meta.textContent = (it.uses || 0) + " 次";
+          const use = document.createElement("button");
+          use.type = "button";
+          use.className = "kd-btn";
+          use.textContent = "填入";
+          use.onclick = (e) => { e.stopPropagation(); fillFromEntry(it); };
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "kd-x";
+          del.textContent = "×";
+          del.title = "删除";
+          del.onclick = (e) => {
+            e.stopPropagation();
+            plLibDelete(it.id).then(() => paintSection(sec, label, type, cap)).catch(() => {});
+          };
+          row.append(nm, meta, use, del);
+          sec.appendChild(row);
+        });
+      })
+      .catch(() => {
+        const d = document.createElement("div");
+        d.className = "kd-pbox-empty";
+        d.textContent = "列表读取失败";
+        sec.appendChild(d);
+      });
+  }
+  function paintSections() {
+    paintSection(secH, "历史提示词", "历史", 5);
+    paintSection(secP, "预设", "精选", 8);
+  }
+  paintSections();
+
+  node.addDOMWidget("kd_promptbox", "div", card, {
+    getMinHeight: () => 220, serialize: false, hideOnZoom: false,
+  });
+  const prevCfg = node.onConfigure;
+  node.onConfigure = function () {
+    const r = typeof prevCfg === "function" ? prevCfg.apply(this, arguments) : undefined;
+    setTimeout(() => {
+      try {
+        const o = JSON.parse(pw.value || "{}");
+        ta.value = (o && typeof o.text === "string") ? o.text : "";
+      } catch (e) { /* ignore */ }
+      paintSections();
+    }, 0);
+    return r;
+  };
+  node.__kdPromptBox = { card, ta, pw };
+}
+
 app.registerExtension({
   name: "kedou.imageLoader",
   async nodeCreated(node) {
     const cls = (node.constructor && node.constructor.comfyClass) || node.comfyClass || "";
+    if (cls === "KedouPromptBox") {
+      try { buildPromptBox(node); } catch (e) { console.error("[kedou] 提示词输入框构建失败", e); }
+      return;
+    }
     if (cls !== NODE_CLASS) return;
     try {
       build(node);
