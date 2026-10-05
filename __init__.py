@@ -45,6 +45,7 @@ import copy
 import json
 import os
 import re
+from datetime import datetime as _kdt
 
 # ---- 只有在 ComfyUI 里才有这两个依赖；单独跑脚本做测试时允许缺失 ----
 try:
@@ -97,6 +98,38 @@ if not os.path.isdir(os.path.join(COMFY_ROOT, "custom_nodes")):
 #   注意：单文件插件形态下 module_dir 为 custom_nodes/ 本身，"./web" 会指向
 #   所有单文件插件共享的 custom_nodes/web，该形态需另起目录。
 WEB_DIRECTORY = "./web"
+
+
+# ---------------------------------------------------------------- 路径解析垫片（kedou_path_fix）
+# 目的：工作流按文件名引用模型，文件挪进子目录后原生解析找不到 → 按文件名全库
+#       递归搜子目录兜底。只包 folder_paths.get_full_path / get_filename_list
+#       原函数，工作流零改动；任何异常静默回落原生行为（详见 kedou_path_fix.py）。
+def _load_path_fix():
+    """加载同目录的 kedou_path_fix.py（import 即对 folder_paths 打补丁，幂等）。"""
+    try:
+        import kedou_path_fix as m                 # noqa: PLC0415
+        return m
+    except Exception:                              # noqa: BLE001
+        pass
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kedou_path_fix.py")
+    if not os.path.exists(p):
+        return None
+    try:
+        import importlib.util                      # noqa: PLC0415
+        spec = importlib.util.spec_from_file_location("kedou_path_fix", p)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    except Exception:                              # noqa: BLE001
+        return None
+
+
+try:
+    if _load_path_fix() is not None:
+        print("[KeDou] kedou_path_fix 已启用：根目录找不到的模型按文件名搜索子目录")
+except Exception:                                  # noqa: BLE001
+    pass
+
 
 # 这些节点类型代表"要一张图进来"
 IMAGE_LOADERS = {
@@ -1419,12 +1452,42 @@ class KedouImageLoader:
         return tuple(out)
 
 
+
+
+class KedouPromptBox:
+    """蝌蚪提示词输入框：单提示词输入 + 词库/历史/预设，STRING 输出。"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt_state": ("STRING", {"default": "{}"}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "run"
+    CATEGORY = "kedou"
+
+    def run(self, prompt_state=""):
+        # 值就是提示词字符串本身（前端词库/历史/预设都围绕这个字符串工作）
+        return ((prompt_state or "",),)
+
+KedouPromptBox.DESCRIPTION = (
+    "蝌蚪提示词输入框：面板上直接输入提示词，下方快速调用历史与预设；"
+    "prompt 输出连到编码类节点的正向提示词输入。"
+)
+
+
 # ComfyUI 要求 custom_nodes 至少导出节点映射（可以为空）
 NODE_CLASS_MAPPINGS = {
     "KedouImageLoader": KedouImageLoader,
+    "KedouPromptBox": KedouPromptBox,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "KedouImageLoader": "蝌蚪图片加载器",
+    "KedouPromptBox": "蝌蚪提示词输入框",
 }
 
 
@@ -1530,3 +1593,193 @@ if _HAS_COMFY:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
         result = save_kapp(body.get("name"), body.get("desc"), body.get("kapp"))
         return web.json_response(result, status=200 if result.get("ok") else 400)
+
+    # ── 提示词库（Obsidian vault：一条一 .md，frontmatter 存元数据，正文=正向+负向+备注）──
+
+    PROMPT_VAULT = r"D://知识库//提示词库"
+
+    def _prompt_vault():
+        os.makedirs(PROMPT_VAULT, exist_ok=True)
+        return PROMPT_VAULT
+
+    def _prompt_split_fm(text):
+        """→ (meta dict, body)；frontmatter 手写解析（key: value 单行）"""
+        if text.startswith("\ufeff"):
+            text = text.lstrip("\ufeff")
+        if text.startswith("---"):
+            end = text.find("\n---", 3)
+            if end >= 0:
+                meta = {}
+                for line in text[3:end].splitlines():
+                    if ":" not in line:
+                        continue
+                    k, _, v = line.partition(":")
+                    meta[k.strip()] = v.strip()
+                return meta, text[end + 4:].lstrip("\r\n")
+        return {}, text
+
+    def _prompt_fm_list(v):
+        v = (v or "").strip().strip('"').strip("'")
+        if v.startswith("[") and v.endswith("]"):
+            return [x.strip().strip('"').strip("'") for x in v[1:-1].split(",") if x.strip()]
+        return [v] if v else []
+
+    def _prompt_sections(body):
+        """正文按 ## 负向 / ## 备注 分节 → (正向, 负向, 备注)"""
+        prompt, negative, note = body.strip(), "", ""
+        parts = re.split(r"^##\s*(负向|备注)\s*$", body, flags=re.M)
+        if len(parts) >= 3:
+            prompt = parts[0].strip()
+            i = 1
+            while i < len(parts):
+                tag = parts[i].strip()
+                content = parts[i + 1].strip() if i + 1 < len(parts) else ""
+                if tag == "负向":
+                    negative = content
+                elif tag == "备注":
+                    note = content
+                i += 2
+        return prompt, negative, note
+
+    def _prompt_read(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            return None
+        meta, body = _prompt_split_fm(text)
+        prompt, negative, note = _prompt_sections(body)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        try:
+            mtime = int(os.stat(path).st_mtime)
+        except OSError:
+            mtime = 0
+        return {
+            "id": stem, "title": stem,
+            "type": meta.get("type", "历史") or "历史",
+            "model": meta.get("model", ""),
+            "tags": _prompt_fm_list(meta.get("tags", "")),
+            "rating": int(meta.get("rating") or 0),
+            "uses": int(meta.get("uses") or 0),
+            "source": meta.get("source", ""),
+            "parent": meta.get("parent", "").strip('"'),
+            "outputs": _prompt_fm_list(meta.get("outputs", "")),
+            "created": meta.get("created", ""),
+            "updated": meta.get("updated", ""),
+            "prompt": prompt, "negative": negative, "note": note,
+            "mtime": mtime,
+        }
+
+    def _prompt_title_clean(raw):
+        return re.sub(r'[\\/:*?"<>|\r\n]+', "_", str(raw or "未命名")).strip("_")[:40] or "未命名"
+
+    def _prompt_serialize(entry):
+        entry["updated"] = _kdt.now().strftime("%Y-%m-%dT%H:%M")
+        if not entry.get("created"):
+            entry["created"] = entry["updated"]
+        fm = ["type: %s" % entry.get("type", "历史"),
+              "model: %s" % entry.get("model", ""),
+              "tags: [%s]" % ", ".join(entry.get("tags") or []),
+              "rating: %s" % int(entry.get("rating") or 0),
+              "uses: %s" % int(entry.get("uses") or 0),
+              "source: %s" % entry.get("source", ""),
+              'parent: "%s"' % (entry.get("parent") or ""),
+              "outputs: [%s]" % ", ".join(entry.get("outputs") or []),
+              "created: %s" % entry.get("created"),
+              "updated: %s" % entry.get("updated")]
+        body = (entry.get("prompt") or "").strip()
+        neg = (entry.get("negative") or "").strip()
+        note = (entry.get("note") or "").strip()
+        if neg:
+            body += "\n\n## 负向\n\n" + neg
+        if note:
+            body += "\n\n## 备注\n\n" + note
+        return "---\n" + "\n".join(fm) + "\n---\n\n" + body.strip() + "\n"
+
+    def _prompt_path_of(pid):
+        if not re.fullmatch(r"[0-9A-Za-z_\-\u4e00-\u9fff]+", pid or ""):
+            return None
+        return os.path.join(_prompt_vault(), pid + ".md")
+
+    @PromptServer.instance.routes.get("/ps/prompts")
+    async def ps_prompts_list(request):
+        """GET /ps/prompts?type=&model=&tag=&q=&sort=updated|rating|uses|created"""
+        q = request.query
+        entries = []
+        vault = _prompt_vault()
+        for fn in os.listdir(vault):
+            if not fn.lower().endswith(".md"):
+                continue
+            e = _prompt_read(os.path.join(vault, fn))
+            if e:
+                entries.append(e)
+        t = q.get("type", "")
+        model = q.get("model", "")
+        tag = q.get("tag", "")
+        qq = (q.get("q", "") or "").lower()
+        if t and t != "全部":
+            entries = [e for e in entries if e["type"] == t]
+        if model:
+            entries = [e for e in entries if model.lower() in e["model"].lower()]
+        if tag:
+            entries = [e for e in entries if tag in e["tags"]]
+        if qq:
+            entries = [e for e in entries
+                       if qq in e["title"].lower() or qq in e["prompt"].lower()
+                       or any(qq in x.lower() for x in e["tags"])]
+        keymap = {"updated": lambda e: e["updated"], "rating": lambda e: (e["rating"], e["uses"]),
+                  "uses": lambda e: e["uses"], "created": lambda e: e["created"]}
+        entries.sort(key=keymap.get(q.get("sort", "updated"), keymap["updated"]), reverse=True)
+        return web.json_response({"ok": True, "items": entries})
+
+    @PromptServer.instance.routes.post("/ps/prompts/save")
+    async def ps_prompts_save(request):
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        pid = str(body.get("id") or "").strip()
+        entry = {"title": body.get("title") or "",
+                 "type": body.get("type") or "历史",
+                 "model": body.get("model") or "",
+                 "tags": body.get("tags") or [],
+                 "rating": body.get("rating") or 0,
+                 "uses": body.get("uses") or 0,
+                 "source": body.get("source") or "",
+                 "parent": body.get("parent") or "",
+                 "outputs": body.get("outputs") or [],
+                 "prompt": body.get("prompt") or "",
+                 "negative": body.get("negative") or "",
+                 "note": body.get("note") or ""}
+        vault = _prompt_vault()
+        if pid:
+            path = _prompt_path_of(pid)
+            if path is None or not os.path.exists(path):
+                return web.json_response({"ok": False, "error": "条目不存在"}, status=404)
+            old = _prompt_read(path) or {}
+            entry["created"] = old.get("created") or ""
+        else:
+            stem = "%s_%s" % (_kdt.now().strftime("%Y-%m-%d"), _prompt_title_clean(entry["title"]))
+            path = os.path.join(vault, stem + ".md")
+            n = 2
+            while os.path.exists(path):
+                path = os.path.join(vault, "%s_%d.md" % (stem, n))
+                n += 1
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_prompt_serialize(entry))
+        return web.json_response({"ok": True, "item": _prompt_read(path) or {}})
+
+    @PromptServer.instance.routes.post("/ps/prompts/delete")
+    async def ps_prompts_delete(request):
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        pid = str((body or {}).get("id") or "").strip()
+        path = _prompt_path_of(pid) if pid else None
+        if path is None or not os.path.exists(path):
+            return web.json_response({"ok": False, "error": "条目不存在"}, status=404)
+        os.remove(path)
+        return web.json_response({"ok": True})
