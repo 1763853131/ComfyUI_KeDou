@@ -33,7 +33,8 @@ const CSS = `
 .kd-pbox-btn.kd-main:hover{opacity:.88;color:#fff;}
 .kd-pbox-ta{flex:1;min-height:110px;resize:none;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
   border-radius:10px;color:var(--fg-color,#ddd);padding:9px 11px;font:inherit;font-size:13px;line-height:1.55;outline:none;
-  width:100%;box-sizing:border-box;}
+  width:100%;box-sizing:border-box;scrollbar-width:none;-ms-overflow-style:none;}
+.kd-pbox-ta::-webkit-scrollbar{display:none;}
 .kd-pbox-ta:focus{border-color:var(--p-primary-color,#4a7dff);}
 .kd-pbox-chips{display:flex;flex-wrap:wrap;gap:5px;max-height:96px;overflow-y:auto;
   scrollbar-width:none;-ms-overflow-style:none;}
@@ -85,7 +86,8 @@ const CSS = `
 .kd-menu button:hover{background:var(--content-bg,#16161c);color:var(--p-primary-color,#6a9bff);}
 .kd-menu button.kd-armed{color:var(--error-text,#ffb3b3);background:var(--content-bg,#16161c);}
 .kd-edit{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
-.kd-edit input,.kd-edit textarea{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;color:var(--fg-color,#ddd);padding:6px 9px;font:inherit;font-size:12px;outline:none;}
+.kd-edit input,.kd-edit textarea{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;color:var(--fg-color,#ddd);padding:6px 9px;font:inherit;font-size:12px;outline:none;scrollbar-width:none;-ms-overflow-style:none;}
+.kd-edit textarea::-webkit-scrollbar,.kd-edit input::-webkit-scrollbar{display:none;}
 .kd-edit textarea{min-height:70px;resize:vertical;}
 .kd-edit input:focus,.kd-edit textarea:focus{border-color:var(--p-primary-color,#4a7dff);}
 .kd-use-row{display:flex;flex-wrap:wrap;gap:8px;}
