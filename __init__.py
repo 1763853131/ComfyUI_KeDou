@@ -1453,12 +1453,41 @@ class KedouImageLoader:
 
 
 
+class KedouPromptBox:
+    """蝌蚪提示词输入框：面板上直接写提示词 + 词库/历史/预设集成，STRING 输出。"""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt_state": ("STRING", {"default": ""}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt",)
+    FUNCTION = "run"
+    CATEGORY = "kedou"
+
+    def run(self, prompt_state=""):
+        # 值就是提示词字符串本身（前端输入框/词库都围绕这个字符串工作）
+        return ((prompt_state or "",),)
+
+
+KedouPromptBox.DESCRIPTION = (
+    "蝌蚪提示词输入框：节点上直接输入提示词，集成词库抽屉（填入/追加）、"
+    "置顶/最近快捷 chips、存为预设；prompt 输出连到编码类节点的正向提示词输入。"
+)
+
+
 # ComfyUI 要求 custom_nodes 至少导出节点映射（可以为空）
 NODE_CLASS_MAPPINGS = {
     "KedouImageLoader": KedouImageLoader,
+    "KedouPromptBox": KedouPromptBox,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "KedouImageLoader": "蝌蚪图片加载器",
+    "KedouPromptBox": "蝌蚪提示词输入框",
 }
 
 
