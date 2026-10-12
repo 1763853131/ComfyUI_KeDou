@@ -281,6 +281,14 @@ function openLib(node) {
   libPanel.querySelector(".kd-lib-x").onclick = () => closeLib();
 
   let all = [];
+  async function refresh() {           // 重新拉全量再重绘（libInvalidate 只清缓存，必须重新 fetch 才有新数据）
+    try {
+      const d = await lib(true);
+      all = d.items || [];
+    } catch (_) { /* 保留旧数据重绘 */ }
+    paint(qEl.value.trim());
+    pb.paintChips();
+  }
   function paint(q) {
     const ql = (q || "").toLowerCase();
     const rows = all.filter((e) =>
@@ -308,9 +316,9 @@ function openLib(node) {
       row.oncontextmenu = (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        openRowMenu(ev.clientX, ev.clientY, e, () => { libInvalidate(); paint(qEl.value.trim()); pb.paintChips(); });
+        openRowMenu(ev.clientX, ev.clientY, e, refresh);
       };
-      if (libState.editId === e.id) renderRowEdit(row, e, () => { libState.editId = null; libInvalidate(); paint(qEl.value.trim()); pb.paintChips(); });
+      if (libState.editId === e.id) renderRowEdit(row, e, refresh);
       const rm = reducedMotion();
       setTimeout(() => row.classList.add("kd-show"), rm ? 0 : 40 + Math.min(i, 10) * 30);
     });
