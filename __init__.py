@@ -1454,13 +1454,16 @@ class KedouImageLoader:
 
 
 class KedouPromptBox:
-    """蝌蚪提示词输入框：面板上直接写提示词 + 词库/历史/预设集成，STRING 输出。"""
+    """蝌蚪提示词输入框：节点上直接写提示词 + 词库集成，STRING 输出。"""
+
+    USAGES = ("文生图", "图像编辑", "文生视频", "图生视频", "参考生视频")
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "prompt_state": ("STRING", {"default": ""}),
+                "usage": (list(cls.USAGES), {"default": "文生图"}),
             },
         }
 
@@ -1469,8 +1472,8 @@ class KedouPromptBox:
     FUNCTION = "run"
     CATEGORY = "kedou"
 
-    def run(self, prompt_state=""):
-        # 值就是提示词字符串本身（前端输入框/词库都围绕这个字符串工作）
+    def run(self, prompt_state="", usage="文生图"):
+        # 值就是提示词字符串本身；usage 只用于前端词库过滤，不参与输出
         return ((prompt_state or "",),)
 
 

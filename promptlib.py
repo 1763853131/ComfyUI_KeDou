@@ -122,6 +122,7 @@ def _parse_entry(path, rel):
             "negative": secs.get("negative", ""),
             "description": secs.get("description", ""),
             "note": secs.get("use", ""),
+            "use_for": _strlist(meta.get("usage")) or ["文生图"],
             "avoid": secs.get("avoid", ""),
             "related": secs.get("related", ""),
             "file": rel,
@@ -146,6 +147,8 @@ def _serialize(entry):
     fm.append("pinned: %s" % ("true" if entry.get("pinned") else "false"))
     fm.append("enabled: %s" % ("true" if entry.get("enabled", True) else "false"))
     fm.append("uses: %d" % int(entry.get("uses") or 0))
+    fm.append("usage:")
+    fm.extend("  - %s" % x for x in (entry.get("use_for") or ["文生图"]))
     if entry.get("created"):
         fm.append("created: %s" % entry["created"])
     fm.append("updated: %s" % (entry.get("updated") or time.strftime("%Y-%m-%d")))
@@ -221,9 +224,11 @@ def _backup_daily():
 
 # ─────────────────────────── 对外操作 ───────────────────────────
 
-def list_prompts(q_type="", q_dir="", tag="", model="", q=""):
+def list_prompts(q_type="", q_dir="", tag="", model="", q="", use=""):
     _backup_daily()
     items = _walk()
+    if use:
+        items = [e for e in items if use in e["use_for"]]
     if q_type:
         items = [e for e in items if e["type"] == q_type]
     if q_dir:
@@ -279,6 +284,8 @@ def save_prompt(body):
         for k in ("tags", "models"):
             if k in body:
                 entry[k] = [str(x) for x in (body[k] or [])]
+        if "usage" in body:
+            entry["use_for"] = [str(x) for x in (body["usage"] or [])] or ["文生图"]
         if "priority" in body:
             entry["priority"] = int(body.get("priority") or 0)
         if "pinned" in body:
@@ -325,13 +332,14 @@ def save_prompt(body):
         "enabled": True, "uses": 0, "created": now, "updated": now,
         "positive": positive, "negative": str(body.get("negative") or ""),
         "description": str(body.get("description") or ""),
+        "use_for": [str(x) for x in (body.get("usage") or [])] or ["文生图"],
     }
     _atomic_write(path, _serialize(entry))
     rel = os.path.relpath(path, VAULT).replace("\\", "/")
     return {"ok": True, "item": _parse_entry(path, rel)}
 
 
-def save_history(positive):
+def save_history(positive, usage=None):
     """自动历史：hash 去重（撞了 uses+1），50 条封顶（超出删最旧）。"""
     positive = (positive or "").strip()
     if len(positive) < 4:
@@ -344,11 +352,17 @@ def save_history(positive):
             if old:
                 old["uses"] += 1
                 old["updated"] = time.strftime("%Y-%m-%d")
+                if usage:
+                    merged = list(dict.fromkeys((old.get("use_for") or []) + [str(usage)]))
+                    old["use_for"] = merged
                 _atomic_write(path, _serialize(old))
                 _cache.pop(path, None)
             return {"ok": True, "item": e, "deduped": True}
     name = positive[:20] + ("…" if len(positive) > 20 else "")
-    r = save_prompt({"name": name, "type": "历史", "positive": positive})
+    body = {"name": name, "type": "历史", "positive": positive}
+    if usage:
+        body["usage"] = [str(usage)]
+    r = save_prompt(body)
     if r.get("ok") and not r.get("deduped"):
         hist = [e for e in _walk() if e["type"] == "历史"]
         if len(hist) > HISTORY_CAP:
@@ -396,7 +410,7 @@ def register_routes(routes):
         q = request.query
         return web.json_response(list_prompts(
             q.get("type", ""), q.get("dir", ""), q.get("tag", ""),
-            q.get("model", ""), q.get("q", "")))
+            q.get("model", ""), q.get("q", ""), q.get("use", "")))
 
     @routes.post("/ps/prompts/save")
     async def _save(request):
@@ -414,7 +428,7 @@ def register_routes(routes):
             body = await request.json()
         except Exception:                           # noqa: BLE001
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(save_history(str((body or {}).get("positive") or "")))
+        return web.json_response(save_history(str((body or {}).get("positive") or ""), (body or {}).get("usage")))
 
     @routes.post("/ps/prompts/delete")
     async def _del(request):
