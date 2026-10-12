@@ -71,8 +71,24 @@ const CSS = `
 .kd-lib-empty{padding:22px 0;text-align:center;color:var(--fg-color,#777);font-size:12.5px;}
 .kd-lib-foot{display:flex;gap:6px;align-items:center;padding:9px 12px;border-top:1px solid var(--interface-stroke,#3a3a44);font-size:11px;color:var(--fg-color,#888);}
 .kd-lib-foot .kd-pbox-btn{margin-left:0;}
+/* ── 右键菜单 + 就地编辑 ── */
+.kd-menu{position:fixed;z-index:99995;display:flex;flex-direction:column;gap:2px;min-width:120px;padding:5px;
+  background:var(--interface-panel-surface,#232329);border:1px solid var(--interface-stroke,#3a3a44);border-radius:10px;
+  box-shadow:0 8px 28px rgba(0,0,0,.35);opacity:0;transform:translateY(6px);
+  transition:opacity .14s ease-out,transform .18s cubic-bezier(.34,1.3,.64,1);}
+.kd-menu.kd-in{opacity:1;transform:translateY(0);}
+.kd-menu button{border:none;background:none;text-align:left;color:var(--fg-color,#ccc);font:inherit;font-size:12px;padding:6px 10px;border-radius:7px;cursor:pointer;}
+.kd-menu button:hover{background:var(--content-bg,#16161c);color:var(--p-primary-color,#6a9bff);}
+.kd-menu button.kd-armed{color:var(--error-text,#ffb3b3);background:var(--content-bg,#16161c);}
+.kd-edit{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.kd-edit input,.kd-edit textarea{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;color:var(--fg-color,#ddd);padding:6px 9px;font:inherit;font-size:12px;outline:none;}
+.kd-edit textarea{min-height:70px;resize:vertical;}
+.kd-edit input:focus,.kd-edit textarea:focus{border-color:var(--p-primary-color,#4a7dff);}
+.kd-use-row{display:flex;flex-wrap:wrap;gap:8px;}
+.kd-use-c{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fg-color,#aaa);cursor:pointer;}
+.kd-edit-acts{display:flex;align-items:center;gap:6px;}
 @media (prefers-reduced-motion: reduce){
-  .kd-lib,.kd-row,.kd-pbox-btn,.kd-pbox-chip{transition:opacity .15s ease-out !important;transform:none !important;}
+  .kd-lib,.kd-row,.kd-menu,.kd-pbox-btn,.kd-pbox-chip{transition:opacity .15s ease-out !important;transform:none !important;}
   .kd-lib{opacity:1;}
   .kd-row{opacity:1;}
 }
@@ -129,6 +145,97 @@ function libInvalidate() { libCache = null; }
 // ───────── 词库下拉列表（顶满浏览器上下） ─────────
 let libPanel = null;
 let libOwner = null;   // 哪个节点打开的
+const libState = { editId: null };
+
+// 右键菜单（编辑 / 置顶 / 删除两步确认）
+let menuEl = null;
+function closeMenu() {
+  if (!menuEl) return;
+  const m = menuEl; menuEl = null;
+  m.remove();
+}
+function openRowMenu(x, y, entry, onChanged) {
+  closeMenu();
+  menuEl = document.createElement("div");
+  menuEl.className = "kd-menu";
+  menuEl.innerHTML = `
+    <button data-a="edit">✎ 编辑</button>
+    <button data-a="pin">${entry.pinned ? "取消置顶" : "★ 置顶"}</button>
+    <button data-a="del">🗑 删除</button>`;
+  menuEl.style.left = Math.min(x, window.innerWidth - 140) + "px";
+  menuEl.style.top = Math.min(y, window.innerHeight - 130) + "px";
+  document.body.appendChild(menuEl);
+  requestAnimationFrame(() => menuEl.classList.add("kd-in"));
+
+  menuEl.querySelector("[data-a=edit]").onclick = () => {
+    closeMenu();
+    libState.editId = entry.id;
+    if (libRepaint) libRepaint();
+  };
+  menuEl.querySelector("[data-a=pin]").onclick = async () => {
+    closeMenu();
+    await api("/save", { id: entry.id, pinned: !entry.pinned });
+    toast(entry.pinned ? "已取消置顶" : "已置顶");
+    onChanged();
+  };
+  const delBtn = menuEl.querySelector("[data-a=del]");
+  delBtn.onclick = async () => {
+    if (!delBtn.classList.contains("kd-armed")) {
+      delBtn.classList.add("kd-armed");
+      delBtn.textContent = "确认删除?";
+      return;
+    }
+    closeMenu();
+    const r = await api("/delete", { id: entry.id });
+    toast(r.ok ? "已删除（进 .trash 可捞回）" : "删除失败", !r.ok);
+    onChanged();
+  };
+}
+document.addEventListener("pointerdown", (e) => {
+  if (menuEl && !menuEl.contains(e.target)) closeMenu();
+}, true);
+document.addEventListener("contextmenu", (e) => {
+  if (menuEl && libPanel && !libPanel.contains(e.target)) closeMenu();
+}, true);
+
+// 就地编辑（行内展开：短名 / 正文 / 负面 / 用途勾选 / 保存）
+function renderRowEdit(row, entry, onSaved) {
+  const box = document.createElement("div");
+  box.className = "kd-edit";
+  box.innerHTML = `
+    <input data-f="name" value="${esc(entry.name)}" placeholder="短名">
+    <textarea data-f="positive" placeholder="提示词正文">${esc(entry.positive)}</textarea>
+    <textarea data-f="negative" placeholder="负面词（可选）" style="min-height:44px">${esc(entry.negative)}</textarea>
+    <div class="kd-use-row">${USAGES.map((u) => `<label class="kd-use-c"><input type="checkbox" data-u="${esc(u)}" ${(entry.use_for || []).indexOf(u) !== -1 ? "checked" : ""}>${esc(u)}</label>`).join("")}</div>
+    <div class="kd-edit-acts">
+      <button class="kd-pbox-btn kd-main" data-a="save">保存</button>
+      <button class="kd-pbox-btn" data-a="cancel">取消</button>
+    </div>`;
+  box.addEventListener("pointerdown", (e) => e.stopPropagation());
+  box.addEventListener("click", (e) => e.stopPropagation());
+  box.querySelector("[data-a=cancel]").onclick = () => { libState.editId = null; onSaved(); };
+  box.querySelector("[data-a=save]").onclick = async () => {
+    const g = (f) => box.querySelector(`[data-f=${f}]`);
+    const usage = USAGES.filter((u) => box.querySelector(`[data-u="${u}"]`).checked);
+    if (!usage.length) { toast("至少勾一个用途", true); return; }
+    const body = {
+      id: entry.id,
+      name: g("name").value.trim(),
+      positive: g("positive").value,
+      negative: g("negative").value,
+      usage,
+    };
+    if (!body.name) { toast("短名不能为空", true); return; }
+    if (!body.positive.trim() && !body.negative.trim()) { toast("正文和负面词不能都空", true); return; }
+    const r = await api("/save", body);
+    toast(r.ok ? "已保存" : "保存失败：" + (r.error || ""), !r.ok);
+    if (r.ok) onSaved();
+  };
+  row.appendChild(box);
+  box.querySelector("[data-f=name]").focus();
+}
+
+let libRepaint = null;   // paint() 的引用，供菜单触发重绘
 
 function openLib(node) {
   closeLib(true);
@@ -164,7 +271,7 @@ function openLib(node) {
     </div>
     <input class="kd-lib-q" placeholder="搜索本用途下的词…">
     <div class="kd-lib-list"></div>
-    <div class="kd-lib-foot"><span>悬停看更多 · 点击追加</span></div>`;
+    <div class="kd-lib-foot"><span>点击追加 · 悬停看更多 · 右键编辑/删除</span></div>`;
 
   document.body.appendChild(libPanel);
   requestAnimationFrame(() => libPanel.classList.add("kd-in"));
@@ -188,6 +295,7 @@ function openLib(node) {
       const e = rows[i];
       row.title = (e.positive || e.negative || "").slice(0, 400);
       row.onclick = () => {
+        if (libState.editId === e.id) return;   // 编辑态不触发追加
         const add = e.positive || e.negative || "";
         if (!add) return;
         const cur = pb.ta.value.trim();
@@ -197,6 +305,12 @@ function openLib(node) {
         e.uses += 1;
         toast("已追加「" + e.name + "」");
       };
+      row.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openRowMenu(ev.clientX, ev.clientY, e, () => { libInvalidate(); paint(qEl.value.trim()); pb.paintChips(); });
+      };
+      if (libState.editId === e.id) renderRowEdit(row, e, () => { libState.editId = null; libInvalidate(); paint(qEl.value.trim()); pb.paintChips(); });
       const rm = reducedMotion();
       setTimeout(() => row.classList.add("kd-show"), rm ? 0 : 40 + Math.min(i, 10) * 30);
     });
@@ -205,6 +319,7 @@ function openLib(node) {
   lib().then((d) => { all = d.items || []; paint(""); }).catch((e) => {
     listEl.innerHTML = `<div class="kd-lib-empty">词库加载失败：${esc(e.message)}</div>`;
   });
+  libRepaint = () => paint(qEl.value.trim());
 
   let qt = null;
   qEl.oninput = () => { clearTimeout(qt); qt = setTimeout(() => paint(qEl.value.trim()), 200); };
@@ -215,6 +330,8 @@ function closeLib(instant) {
   if (!libPanel) return;
   const root = libPanel;
   libPanel = null; libOwner = null;
+  libState.editId = null; libRepaint = null;
+  closeMenu();
   if (instant || reducedMotion()) { root.remove(); return; }
   root.classList.remove("kd-in");
   root.classList.add("kd-out");
