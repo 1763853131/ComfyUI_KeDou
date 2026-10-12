@@ -1564,3 +1564,19 @@ if _HAS_COMFY:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
         result = save_kapp(body.get("name"), body.get("desc"), body.get("kapp"))
         return web.json_response(result, status=200 if result.get("ok") else 400)
+
+
+if _HAS_COMFY:
+    # 蝌蚪提示词库（轻量版）：直接读写 vault 磁盘，路由 /ps/prompts*
+    # 注意：ComfyUI 导入 custom_nodes 时 sys.path 不含插件目录，裸 import 会失败
+    # （kedou_path_fix 同款坑），故按文件路径加载。
+    try:
+        import importlib.util                      # noqa: PLC0415
+        _pl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "promptlib.py")
+        _pl_spec = importlib.util.spec_from_file_location("kedou_promptlib", _pl_path)
+        _kedou_promptlib = importlib.util.module_from_spec(_pl_spec)
+        _pl_spec.loader.exec_module(_kedou_promptlib)
+        _kedou_promptlib.register_routes(PromptServer.instance.routes)
+        print("[KeDou] 提示词库路由已注册：/ps/prompts*")
+    except Exception as _pe:                          # noqa: BLE001
+        print("[KeDou] 提示词库路由注册失败:", _pe)
