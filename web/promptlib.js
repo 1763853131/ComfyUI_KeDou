@@ -387,7 +387,8 @@ function buildPromptBox(node) {
   saveBtn.type = "button"; saveBtn.className = "kd-pbox-btn"; saveBtn.textContent = "存为预设";
   const clearBtn = document.createElement("button");
   clearBtn.type = "button"; clearBtn.className = "kd-pbox-btn"; clearBtn.textContent = "清除";
-  top.append(lab, useSel, libBtn, saveBtn, clearBtn);
+  clearBtn.style.marginLeft = "auto";   // 组整体靠右：清除 → 存为预设 → 词库(最右)
+  top.append(lab, useSel, clearBtn, saveBtn, libBtn);
 
   const ta = document.createElement("textarea");
   ta.className = "kd-pbox-ta";
@@ -430,7 +431,7 @@ function buildPromptBox(node) {
         c.type = "button";
         c.className = "kd-pbox-chip" + (e.pinned ? " kd-pin" : "");
         c.title = (e.positive || e.negative || "").slice(0, 300);
-        c.innerHTML = esc(e.pinned ? "★ " : "") + esc(e.name) + `<span class="kd-uses">${e.uses}</span>`;
+        c.innerHTML = esc(e.name) + `<span class="kd-uses">${e.uses}</span>`;
         c.onclick = (ev) => {
           ev.stopPropagation();
           const add = e.positive || e.negative || "";
