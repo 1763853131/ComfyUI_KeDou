@@ -25,11 +25,11 @@ const CSS = `
   color:var(--fg-color,#ddd);font:inherit;font-size:11.5px;padding:4px 8px;outline:none;cursor:pointer;}
 .kd-pbox-use:focus{border-color:var(--p-primary-color,#4a7dff);}
 .kd-pbox-btn{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#bbb);
-  font:inherit;font-size:11px;padding:4px 10px;border-radius:7px;cursor:pointer;margin-left:auto;
+  font:inherit;font-size:11px;padding:4px 10px;border-radius:7px;cursor:pointer;
   transition:border-color .15s,color .15s,transform .12s;}
 .kd-pbox-btn:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}
 .kd-pbox-btn:active{transform:scale(.96);}
-.kd-pbox-btn.kd-main{background:var(--p-primary-color,#4a7dff);border-color:var(--p-primary-color,#4a7dff);color:#fff;margin-left:0;}
+.kd-pbox-btn.kd-main{background:var(--p-primary-color,#4a7dff);border-color:var(--p-primary-color,#4a7dff);color:#fff;}
 .kd-pbox-btn.kd-main:hover{opacity:.88;color:#fff;}
 .kd-pbox-ta{flex:1;min-height:110px;resize:none;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
   border-radius:10px;color:var(--fg-color,#ddd);padding:9px 11px;font:inherit;font-size:13px;line-height:1.55;outline:none;
