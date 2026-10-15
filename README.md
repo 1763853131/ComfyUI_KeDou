@@ -35,15 +35,39 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/apps/{app_id}/values` | POST | 把面板上的编辑写回工作流文件（持久化） |
 | `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图 |
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
+| `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256`，webp 落盘缓存（ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡） |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
 | `/ps/pack` | POST | 按已有工作流文件生成 `<stem>.kapp.json` 应用包 |
 | `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘 |
+| `/ps/prompts` | GET | 词库清单，连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
+| `/ps/prompts/save` \| `history` \| `delete` \| `use` | POST | 存条目 / 自动历史（hash 去重）/ 删除（进 `.trash`）/ 计次 |
+| `/ps/prompts/vault` | POST | 改词库目录（写 `user/default/kedou_prompt_vault.txt`）；传空串回默认 |
 
 ### 二、自定义节点
 
 | 节点 | 显示名 | 说明 |
 |---|---|---|
 | `KedouImageLoader` | 蝌蚪图片加载器 | 直接在节点上选图（缩略图网格，由 `web/kedou_media.js` 渲染），输出一批图像。 |
+| `KedouPromptBox` | 蝌蚪提示词输入框 | 提示词输入 + 按用途过滤的词库（`web/promptlib.js`），直通输出 prompt。 |
+
+---
+
+## 提示词库
+
+数据就是一条条 `.md`，没有数据库，Obsidian 装不装都不影响读写。
+
+词库**逻辑**在 `prompt_vault/` 包里 —— 那是插件自带的一份 vendored 副本（上游是独立仓库，
+改完用它的 `sync.py` 推过来），所以 clone 本插件即可用，不需要额外装什么。
+
+词库**数据**的位置按这个顺序解析，谁装都先长在一个能用的地方，不写死任何人的盘符：
+
+1. 环境变量 `KEDOU_PROMPT_VAULT`
+2. `user/default/kedou_prompt_vault.txt` 首行 ← 词库面板底部「改路径」写的就是它
+3. ComfyUI 设置项 `Kedou.PromptVault`（手改 `user/default/comfy.settings.json`）
+4. 默认 `user/default/kedou_prompts`（第一次建库会投放 3 条示例讲格式）
+
+面板底部常驻显示当前实际在读的目录和来源，指错了能立刻看出来。
+排查或改逻辑时看 `prompt_vault/`，接口是上面那五个 `/ps/prompts*`。
 
 ---
 

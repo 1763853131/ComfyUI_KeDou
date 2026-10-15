@@ -22,6 +22,8 @@ ComfyUI_KeDou —— 修图工坊 · ComfyUI 桥接（v2：直接对接原生「
       GET  /ps/media                   -> {ok,items:[{name,subfolder,kind,tab,size,mtime,url}]}
       GET  /ps/pack/candidates         -> {ok,source,candidates:[{node,input,label,node_type,widget,default}]}
       POST /ps/pack                    -> {ok,file,param_count,node_count,outputs}（生成 .kapp.json）
+      GET  /ps/prompts · POST /ps/prompts/{save,history,delete,use,vault}
+                                       -> 词库（实现在 vendored 的 prompt_vault/ 包里）
       POST /ps/pack/save               -> {ok,file,param_count,node_count}（kapp 打包面板专用：前端已构好 API 图，只校验+落盘）
 
 自定义节点（NODE_CLASS_MAPPINGS）：
@@ -1761,16 +1763,27 @@ if _HAS_COMFY:
 
 
 if _HAS_COMFY:
-    # 蝌蚪提示词库（轻量版）：直接读写 vault 磁盘，路由 /ps/prompts*
+    # 蝌蚪提示词库：逻辑 vendored 在插件目录的 prompt_vault/ 包里。
+    # 上游是独立仓库（数据格式、库位置解析、增删改查都在那边改），这里只带一份副本随插件分发
+    # ——别人 clone 本插件就能用，不需要本机存在某个开发目录（开发用的 README/sync.py/selftest.py 在上游仓库，不随插件分发）。
     # 注意：ComfyUI 导入 custom_nodes 时 sys.path 不含插件目录，裸 import 会失败
     # （kedou_path_fix 同款坑），故按文件路径加载。
     try:
         import importlib.util                      # noqa: PLC0415
-        _pl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "promptlib.py")
-        _pl_spec = importlib.util.spec_from_file_location("kedou_promptlib", _pl_path)
-        _kedou_promptlib = importlib.util.module_from_spec(_pl_spec)
-        _pl_spec.loader.exec_module(_kedou_promptlib)
-        _kedou_promptlib.register_routes(PromptServer.instance.routes)
-        print("[KeDou] 提示词库路由已注册：/ps/prompts*")
+        import sys                                 # noqa: PLC0415
+        _pv_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_vault")
+        _pv_init = os.path.join(_pv_dir, "__init__.py")
+        if not os.path.isfile(_pv_init):
+            raise FileNotFoundError("找不到 vendored 的 prompt_vault 包：%s" % _pv_init)
+        _pv_spec = importlib.util.spec_from_file_location(
+            "kedou_prompt_vault", _pv_init, submodule_search_locations=[_pv_dir])
+        _kedou_prompt_vault = importlib.util.module_from_spec(_pv_spec)
+        sys.modules[_pv_spec.name] = _kedou_prompt_vault
+        _pv_spec.loader.exec_module(_kedou_prompt_vault)
+        _kedou_prompt_vault.register_routes(PromptServer.instance.routes)
+        _pv = _kedou_prompt_vault.vault_info()
+        print("[KeDou] 词库已就绪：%s（%s，%s）" % (
+            _pv.get("vault"), _pv.get("vault_source"),
+            "可读" if _pv.get("exists") else "目录还不存在，首次写入时建"))
     except Exception as _pe:                          # noqa: BLE001
-        print("[KeDou] 提示词库路由注册失败:", _pe)
+        print("[KeDou] 词库加载失败:", _pe)
