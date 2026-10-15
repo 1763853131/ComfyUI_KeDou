@@ -1,0 +1,33 @@
+{
+  "KedouImageLoader": {
+    "display_name": "蝌蚪图片加载器",
+    "description": "在面板上挑图片（可多选、可上传），一张图一路 IMAGE 输出。未启用的槽输出 None，下游多图节点会忽略该路；开「选择」按点击顺序只输出选中的照片；开「批次」可让这些图依次自动跑完工作流。",
+    "inputs": {
+      "media_state": {
+        "name": "媒体状态",
+        "tooltip": "记录面板上当前的图片，JSON 格式。节点界面已把它隐藏，请勿手动连线或改写。"
+      }
+    },
+    "outputs": {
+      "0": { "name": "图片1" },
+      "1": { "name": "图片2" }
+    }
+  },
+  "KedouPromptBox": {
+    "display_name": "蝌蚪提示词输入框",
+    "description": "节点上直接输入提示词，集成词库下拉（填入/追加）、置顶/最近快捷 chips、存为预设；prompt 输出连到编码类节点的正向提示词输入。",
+    "inputs": {
+      "prompt_state": {
+        "name": "提示词",
+        "tooltip": "提示词正文，直通输出到 prompt。"
+      },
+      "usage": {
+        "name": "用途",
+        "tooltip": "只用于筛选词库，不影响输出。"
+      }
+    },
+    "outputs": {
+      "0": { "name": "提示词" }
+    }
+  }
+}

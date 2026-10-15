@@ -13,6 +13,7 @@
 //    否则节点上的其它控件值会整体错位。
 
 import { app } from "../../scripts/app.js";
+import { t, initI18n, onLocaleChange, serverError } from "./i18n.js";
 
 const NODE_CLASS = "KedouImageLoader";
 // 输出槽上限。ComfyUI 的 RETURN_TYPES 必须静态声明，所以「不限制数量」只能体现为
@@ -141,17 +142,14 @@ function viewUrl(name, sub) {
   return "/view?" + new URLSearchParams({ filename: name, subfolder: sub || "", type: "input" }).toString();
 }
 
-// 缩略图 URL：走 ComfyUI 原生的 /view?...&preview= 参数（2026-09-28 实测，本机 output 图取样）。
-// 不加 preview 就是原图——output 图片中位 2.7MB，媒体库一次渲染 400 张 ≈ 1GB，打开必卡。
-// 参数格式 "<格式>;<质量>;<resize>"，实测结论：
-//   jpeg;50;0.0 -> 184KB / 0.031s  ← 用它
-//   webp;90;0.0 -> 154KB / 0.23s   （webp 编码比 jpeg 慢 7 倍，体积只小 17%，不划算）
-//   webp 的 quality 位实测无效（90/75/50 输出字节数完全一样）
-//   resize 位给 512/256 反而变大（628KB），所以用 0.0（不缩放，只转格式+降质）
-// 注意 preview 结果 ComfyUI 不缓存，每次请求都重新编码（0.03s，可接受）。
-// 分号不要 encodeURIComponent —— 实测未编码才能被后端正确解析。
-function thumbUrl(name, sub) {
-  return viewUrl(name, sub) + "&preview=jpeg;50;0.0";
+// 缩略图 URL：走我们自己的 /ps/thumb（真缩尺寸 + 落盘 webp 缓存）。
+// 2026-10-15 实测：官方 /view?preview= 只重编码、不缩尺寸（server.py 的 preview 分支里
+// 根本没有 resize），5120x8192 的图照样回 8.7MB，且全图解码同步跑在 async 处理函数里，
+// 一屏几十格能把事件循环堵死；参数末尾的 ";0.0" 也不会被当成质量（后端只认最后一段
+// 且要求纯数字），实际按 quality=90 出图。以前那套 "jpeg;50;0.0" 的写法两头都落空。
+function thumbUrl(name, sub, w, tab) {
+  return "/ps/thumb?" + new URLSearchParams(
+    { filename: name, subfolder: sub || "", type: tab || "input", w: String(w || 256) }).toString();
 }
 
 // ---- 悬浮放大预览（媒体库网格 + 图片加载器面板共用） ----
@@ -420,7 +418,7 @@ function syncOutputs(node) {
     changed = true;
   }
   node.outputs.forEach((o, i) => {
-    const label = "图片" + (i + 1);
+    const label = t("Image {i}", { i: i + 1 });
     if (o.name !== "image_" + (i + 1)) o.name = "image_" + (i + 1);
     o.type = "IMAGE";
     o.display_name = label;
@@ -438,7 +436,7 @@ function openBig(name, sub) {
   let tried = false;
   img.onerror = () => {
     if (tried) {
-      img.alt = "读不到这张图";
+      img.alt = t("Could not load this image");
       return;
     }
     tried = true;
@@ -487,12 +485,12 @@ function openLibrary(onPick) {
   win.className = "kd-libwin";
   const top = document.createElement("div");
   top.className = "kd-libtop";
-  top.innerHTML = '<b>媒体库</b>';
+  top.innerHTML = '<b>' + t("Media library") + '</b>';
   // 分类：全部 / 已导入（input 目录）/ 已生成（output 目录）
   let curTab = "all";
   const tabBar = document.createElement("div");
   tabBar.className = "kd-seg";
-  [["all", "全部"], ["input", "已导入"], ["output", "已生成"]].forEach(([v, label]) => {
+  [["all", t("All")], ["input", t("Imported")], ["output", t("Generated")]].forEach(([v, label]) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "kd-segbtn" + (v === curTab ? " on" : "");
@@ -506,7 +504,7 @@ function openLibrary(onPick) {
   });
   top.appendChild(tabBar);
   const search = document.createElement("input");
-  search.placeholder = "搜索文件名…";
+  search.placeholder = t("Search file name…");
   top.appendChild(search);
   const body = document.createElement("div");
   body.className = "kd-libbody";
@@ -514,7 +512,7 @@ function openLibrary(onPick) {
   foot.className = "kd-libfoot";
   const cancelBtn = document.createElement("button");
   cancelBtn.className = "kd-btn";
-  cancelBtn.textContent = "取消";
+  cancelBtn.textContent = t("Cancel");
   cancelBtn.style.marginLeft = "auto";
   const tip = document.createElement("i");
   const okBtn = document.createElement("button");
@@ -540,8 +538,8 @@ function openLibrary(onPick) {
   };
 
   function syncFoot() {
-    tip.textContent = picked.size ? "已选 " + picked.size + " 个" : "";
-    okBtn.textContent = picked.size ? "加入 " + picked.size + " 个" : "加入";
+    tip.textContent = picked.size ? t("Selected {n} items", { n: picked.size }) : "";
+    okBtn.textContent = picked.size ? t("Add {n}", { n: picked.size }) : t("Add");
     okBtn.disabled = !picked.size;
   }
 
@@ -608,7 +606,7 @@ function openLibrary(onPick) {
     cell.className = "kd-cell";
     cell.dataset.kdKey = key;
     cell.style.outline = picked.has(key) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
-    const src = (it.url || viewUrl(it.name, it.subfolder)) + "&preview=jpeg;50;0.0";
+    const src = thumbUrl(it.name, it.subfolder, 256, it.tab);
     const img = document.createElement("img");
     img.loading = "lazy";
     img.draggable = false;                  // 禁原生图片拖拽（拖出去没意义还干扰框选）
@@ -619,7 +617,8 @@ function openLibrary(onPick) {
     no.className = "kd-no";
     no.textContent = it.name;
     cell.appendChild(no);
-    attachZoom(cell, src);
+    // 悬浮层是 344px 见方，格子只有 ~100px：两者不能共用一张图，否则悬浮必糊
+    attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab));
     // 点击逻辑统一由 kdGesture 手势接管（tap 切换/Shift 范围），这里不再挂 onclick
     return cell;
   }
@@ -635,16 +634,16 @@ function openLibrary(onPick) {
   function render() {
     syncFoot();
     body.style.color = "";
-    body.textContent = "读取中…";
+    body.textContent = t("Loading…");
     fetchLibrary("image", search.value, curTab).then((items) => {
       body.innerHTML = "";
       if (items === null) {
-        body.textContent = "桥接插件未加载：重启一次 ComfyUI 即可（/ps/media 拿不到）。";
+        body.textContent = t("Bridge plugin not loaded: restart ComfyUI once (/ps/media unavailable).");
         body.style.color = "var(--descrip-text,#9a9aa6)";
         return;
       }
       if (!items.length) {
-        body.textContent = "没有匹配的图片。";
+        body.textContent = t("No matching images.");
         body.style.color = "var(--descrip-text,#9a9aa6)";
         return;
       }
@@ -700,7 +699,7 @@ function renderPanel(node) {
   const effN = effectiveImages(state).length;
   if (ui.runBtn) {
     ui.runBtn.style.display = state.batch ? "" : "none";
-    ui.runBtn.textContent = "▶ 跑 " + effN + " 张";
+    ui.runBtn.textContent = t("▶ Run {n}", { n: effN });
     ui.runBtn.disabled = !effN;
   }
   ui.body.innerHTML = "";
@@ -711,7 +710,7 @@ function renderPanel(node) {
   if (!state.images.length) {
     const d = document.createElement("div");
     d.className = "kd-empty";
-    d.textContent = "还没有图片 —— 用「上传图片」或「从库里选」加。";
+    d.textContent = t("No images yet — use \"Upload image\" or \"From library\" to add.");
     sec.appendChild(d);
     ui.body.appendChild(sec);
     return;
@@ -732,20 +731,20 @@ function renderPanel(node) {
     img.loading = "lazy";
     img.draggable = false;                  // 禁原生拖拽：拖图片出去会在画布创建官方 LoadImage 节点，没用还干扰
     // 先按 input 找，找不到再退到 output；悬浮预览要跟着用最终那个地址
-    let zoomSrc = thumbUrl(baseName(it.filename), subOf(it.filename));
-    let tried = false;
+    const fn = baseName(it.filename), sd = subOf(it.filename);
+    let tab = "input";
+    const cellSrc = () => thumbUrl(fn, sd, 256, tab);
     img.onerror = () => {
-      if (tried) {
+      if (tab === "output") {
         img.style.visibility = "hidden";
         return;
       }
-      tried = true;
-      zoomSrc = thumbUrl(baseName(it.filename), subOf(it.filename)).replace("type=input", "type=output");
-      img.src = zoomSrc;
+      tab = "output";
+      img.src = cellSrc();
     };
-    img.src = zoomSrc;
+    img.src = cellSrc();
     cell.appendChild(img);
-    if (!selMode) attachZoom(cell, () => zoomSrc);
+    if (!selMode) attachZoom(cell, () => thumbUrl(fn, sd, 512, tab));
     // 序号：普通模式 = 面板顺序；选择模式下选中的显示选择顺序号（主色徽标），未选中的变暗
     const pk = selMode ? (pickOrder[it.filename] || 0) : 0;
     const no = document.createElement("span");
@@ -830,7 +829,7 @@ function uiSetBusy(node, busy) {
   if (!ui) return;
   if (ui.upBtn) {
     ui.upBtn.disabled = busy;
-    ui.upBtn.textContent = busy ? "上传中…" : "上传图片";
+    ui.upBtn.textContent = busy ? t("Uploading…") : t("Upload image");
   }
   if (ui.libBtn) ui.libBtn.disabled = busy;
   if (ui.runBtn) {
@@ -845,7 +844,7 @@ function uiSetBusy(node, busy) {
 async function runBatch(node) {
   const state = readState(node);
   const n = effectiveImages(state).length;
-  if (!n) { kpToast("没有图片可跑", true); return; }
+  if (!n) { kpToast(t("No images to run"), true); return; }
   uiSetBusy(node, true);
   try {
     for (let i = 0; i < n; i++) {
@@ -856,11 +855,11 @@ async function runBatch(node) {
       console.log("[kedou] 批次提交 " + (i + 1) + "/" + n + " cursor=" + i
         + " widget=" + (wOf(node, "media_state") || {}).value);
       await app.queuePrompt(0);        // 内部会 graphToPrompt，cursor=i 随图一起进队列
-      kpToast("批次 " + (i + 1) + "/" + n + " 已入队");
+      kpToast(t("Batch {i}/{n} queued", { i: i + 1, n }));
     }
-    kpToast("批次提交完成：已排入 " + n + " 张，ComfyUI 会按队列依次跑完");
+    kpToast(t("Batch submitted: {n} images queued, ComfyUI will run them in order", { n }));
   } catch (e) {
-    kpToast("批次提交失败：" + (e && e.message ? e.message : String(e)), true);
+    kpToast(t("Batch submit failed: {msg}", { msg: e && e.message ? e.message : String(e) }), true);
   } finally {
     uiSetBusy(node, false);
   }
@@ -875,37 +874,37 @@ function build(node) {
   const top = document.createElement("div");
   top.className = "kd-top";
   const title = document.createElement("b");
-  title.textContent = "图片";
+  title.textContent = t("Images");
   const count = document.createElement("em");
   const btns = document.createElement("div");
   btns.className = "kd-btns";
   const libBtn = document.createElement("button");
   libBtn.className = "kd-btn";
-  libBtn.textContent = "媒体库";
+  libBtn.textContent = t("Media library");
   // 一键清除全部已加载图片：二次确认态（2.5 秒内再点才执行），防止误触
   const clearBtn = document.createElement("button");
   clearBtn.className = "kd-btn";
-  clearBtn.textContent = "清除";
+  clearBtn.textContent = t("Clear");
   let clearArmed = 0;
   clearBtn.onclick = () => {
     const st = readState(node);
     if (!(st.images || []).length) return;
-    if (Date.now() - clearArmed < 2500 && clearBtn.textContent.indexOf("确认") !== -1) {
+    if (Date.now() - clearArmed < 2500 && clearBtn.textContent.indexOf(t("Confirm clear?")) !== -1) {
       st.images = [];
       st.picked = [];
       st.cursor = 0;
       writeState(node, st);
       clearArmed = 0;
-      clearBtn.textContent = "清除";
+      clearBtn.textContent = t("Clear");
       clearBtn.style.color = "";
       renderPanel(node);
     } else {
       clearArmed = Date.now();
-      clearBtn.textContent = "确认清空？";
+      clearBtn.textContent = t("Confirm clear?");
       clearBtn.style.color = "var(--error-text,#ff6b6b)";
       setTimeout(() => {
         if (Date.now() - clearArmed >= 2500) {
-          clearBtn.textContent = "清除";
+          clearBtn.textContent = t("Clear");
           clearBtn.style.color = "";
         }
       }, 2600);
@@ -913,7 +912,7 @@ function build(node) {
   };
   const upBtn = document.createElement("button");
   upBtn.className = "kd-btn kd-p";
-  upBtn.textContent = "上传图片";
+  upBtn.textContent = t("Upload image");
   const fileEl = document.createElement("input");
   fileEl.type = "file";
   fileEl.multiple = true;
@@ -935,8 +934,8 @@ function build(node) {
     lab.append(cb, document.createElement("i"), document.createTextNode(label));
     return { lab, cb };
   };
-  const swBatch = mkSwitch("批次", "批次模式：打开后点「跑 N 张」，按当前生效的图片自动排队，每张独立跑一遍工作流，从图片1 依次输出");
-  const swSel = mkSwitch("选择", "选择模式：打开后点击面板图片即选中（按点击顺序编号），再点取消；此时只输出被选中的照片，且点击不再放大预览");
+  const swBatch = mkSwitch(t("Batch"), t("Batch mode: when on, click \"Run N\" to queue each effective image one by one, running the workflow once per image and outputting from image 1 in turn"));
+  const swSel = mkSwitch(t("Select"), t("Select mode: when on, clicking a panel image selects it (numbered in click order), click again to deselect; only selected images are output and clicking no longer opens the zoom preview"));
   swBatch.cb.onchange = function () {
     const st = readState(node);
     st.batch = swBatch.cb.checked;
@@ -1101,6 +1100,7 @@ app.registerExtension({
   async nodeCreated(node) {
     const cls = (node.constructor && node.constructor.comfyClass) || node.comfyClass || "";
     if (cls !== NODE_CLASS) return;
+    await initI18n(app);   // 语言包就绪后再构建界面（重复调用只生效一次）
     try {
       build(node);
     } catch (e) {
@@ -1215,29 +1215,31 @@ function ensurePackCss() {
 }
 
 let kpOverlay = null;
+let kpUnsubRepaint = null;   // 浮层面板的语言切换订阅，关闭时注销
 function kpOnKey(e) { if (e.key === "Escape") closePackPanel(); }
 
 function closePackPanel() {
   if (kpOverlay) { kpOverlay.remove(); kpOverlay = null; }
+  if (kpUnsubRepaint) { kpUnsubRepaint(); kpUnsubRepaint = null; }
   document.removeEventListener("keydown", kpOnKey, true);
 }
 
 function kpToast(msg, isErr) {
-  const t = document.createElement("div");
-  t.className = "kp-toast" + (isErr ? " kp-err" : "");
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => { t.classList.add("kp-show"); }, 10);
-  setTimeout(() => { t.classList.remove("kp-show"); setTimeout(() => t.remove(), 300); }, 2800);
+  const el = document.createElement("div");
+  el.className = "kp-toast" + (isErr ? " kp-err" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.classList.add("kp-show"); }, 10);
+  setTimeout(() => { el.classList.remove("kp-show"); setTimeout(() => el.remove(), 300); }, 2800);
 }
 
 function kpPreview(v, widget) {
   if (widget === "image" || widget === "kedou_media") {
     const s = String(v == null ? "" : v);
-    return (s.split("/").pop() || "（未选）").slice(0, 40);
+    return (s.split("/").pop() || t("(not selected)")).slice(0, 40);
   }
   if (v === true || v === false) return String(v);
-  if (v == null) return "（空）";
+  if (v == null) return t("(empty)");
   let s = typeof v === "object" ? JSON.stringify(v) : String(v);
   return s.length > 40 ? s.slice(0, 40) + "…" : s;
 }
@@ -1334,7 +1336,7 @@ function openPackPanel(hostEl) {
   const hd = document.createElement("div");
   hd.className = "kp-hd";
   const titleEl = document.createElement("b");
-  titleEl.textContent = "打包应用";
+  titleEl.textContent = t("Pack app");
   const x = document.createElement("button");
   x.className = "kp-x";
   x.textContent = "×";
@@ -1347,7 +1349,7 @@ function openPackPanel(hostEl) {
   const nameField = document.createElement("div");
   nameField.className = "kp-field";
   const nameLab = document.createElement("label");
-  nameLab.textContent = "应用名";
+  nameLab.textContent = t("App name");
   const nameInput = document.createElement("input");
   nameInput.value = defaultAppName();
   nameField.append(nameLab, nameInput);
@@ -1355,28 +1357,28 @@ function openPackPanel(hostEl) {
   const descField = document.createElement("div");
   descField.className = "kp-field";
   const descLab = document.createElement("label");
-  descLab.textContent = "描述（可选）";
+  descLab.textContent = t("Description (optional)");
   const descInput = document.createElement("input");
-  descInput.placeholder = "一句话说明这个应用干嘛的";
+  descInput.placeholder = t("One sentence describing what this app does");
   descField.append(descLab, descInput);
 
   const toolbar = document.createElement("div");
   toolbar.className = "kp-toolbar";
   const allBtn = document.createElement("button");
   allBtn.className = "kp-tbtn kp-tall";
-  allBtn.textContent = "全选";
-  allBtn.title = "全部勾选 / 全部取消";
+  allBtn.textContent = t("Select all");
+  allBtn.title = t("Check all / uncheck all");
   const cnt = document.createElement("span");
   cnt.className = "kp-count";
-  cnt.textContent = "已选 0";
+  cnt.textContent = t("Selected {n}", { n: 0 });
   const syncBtn = document.createElement("button");
   syncBtn.className = "kp-tbtn kp-syncbtn";
-  syncBtn.textContent = "点画布选";
-  syncBtn.title = "进入后，在画布上点哪个节点，这里就自动展开那个节点的参数";
+  syncBtn.textContent = t("Pick on canvas");
+  syncBtn.title = t("When active, clicking a node on the canvas expands its parameters here");
   const selOnlyBtn = document.createElement("button");
   selOnlyBtn.className = "kp-tbtn";
-  selOnlyBtn.textContent = "只看已选";
-  selOnlyBtn.title = "只显示已勾选的参数";
+  selOnlyBtn.textContent = t("Selected only");
+  selOnlyBtn.title = t("Show only checked parameters");
   toolbar.append(allBtn, syncBtn, selOnlyBtn, cnt);
 
   const rowsWrap = document.createElement("div");
@@ -1391,7 +1393,7 @@ function openPackPanel(hostEl) {
   ft.className = "kp-ft";
   const gen = document.createElement("button");
   gen.className = "kp-gen";
-  gen.textContent = "生成应用包";
+  gen.textContent = t("Generate app package");
   ft.appendChild(gen);
 
   body.append(nameField, descField, toolbar, rowsWrap, err);
@@ -1424,17 +1426,17 @@ function openPackPanel(hostEl) {
   // 「全选 / 取消全选」是同一个按钮的两态：全勾满了显示「取消全选」，否则显示「全选」。
   // 任何勾选变化（单条、组全选、顶部全选）都会走 updateCount -> 这里，保持一致。
   const syncToggleLabels = () => {
-    allBtn.textContent = (rows.length && rows.every((r) => r.cb.checked)) ? "取消全选" : "全选";
+    allBtn.textContent = (rows.length && rows.every((r) => r.cb.checked)) ? t("Unselect all") : t("Select all");
     for (const g of groups) {
       if (!g.selAllEl) continue;
-      g.selAllEl.textContent = (g.rows.length && g.rows.every((r) => r.cb.checked)) ? "取消全选" : "全选";
+      g.selAllEl.textContent = (g.rows.length && g.rows.every((r) => r.cb.checked)) ? t("Unselect all") : t("Select all");
     }
   };
   const updateCount = () => {
-    cnt.textContent = "已选 " + rows.filter((r) => r.cb.checked).length;
+    cnt.textContent = t("Selected {n}", { n: rows.filter((r) => r.cb.checked).length });
     for (const g of groups) {
       const sel = g.rows.filter((r) => r.cb.checked).length;
-      g.cntEl.textContent = sel ? sel + "/" + g.rows.length : g.rows.length + " 项";
+      g.cntEl.textContent = sel ? sel + "/" + g.rows.length : t("{n} items", { n: g.rows.length });
     }
     syncToggleLabels();
   };
@@ -1453,13 +1455,15 @@ function openPackPanel(hostEl) {
     }
   };
 
+  let emptyEl = null;
   if (!candidates.length) {
     const empty = document.createElement("div");
     empty.style.color = "var(--fg-color,#9a9aa6)";
     empty.style.opacity = ".62";
     empty.style.fontSize = "11.5px";
-    empty.textContent = "当前工作流没有可暴露的控件（节点都是连线型？）。";
+    empty.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
     rowsWrap.appendChild(empty);
+    emptyEl = empty;
   }
 
   // 按节点分组（保持画布顺序）；默认全部收起 —— 用「点画布选」或点组标题展开
@@ -1468,6 +1472,7 @@ function openPackPanel(hostEl) {
     if (!byNode.has(c.node)) byNode.set(c.node, []);
     byNode.get(c.node).push(c);
   }
+  const groupNames = {};   // 记住分组标题原文（非译文），语言切换时可重设
 
   const openGroup = (g, scroll) => {
     g.open = true;
@@ -1499,12 +1504,14 @@ function openPackPanel(hostEl) {
     caret.textContent = "▶";
     const ttl = document.createElement("span");
     ttl.className = "kp-gtitle";
-    ttl.textContent = list[0].node_title || list[0].node_type || ("节点 " + nodeId);
+    const gName = list[0].node_title || list[0].node_type || t("Node {id}", { id: nodeId });
+    groupNames[nodeId] = gName;
+    ttl.textContent = gName;
     ttl.title = ttl.textContent;
     const selAll = document.createElement("button");
     selAll.className = "kp-gsel";
-    selAll.textContent = "全选";
-    selAll.title = "本节点参数全选 / 全不选";
+    selAll.textContent = t("Select all");
+    selAll.title = t("Select all / none for this node");
     selAll.onclick = (e) => {
       e.stopPropagation();
       const all = g.rows.length > 0 && g.rows.every((r) => r.cb.checked);
@@ -1520,7 +1527,7 @@ function openPackPanel(hostEl) {
     bodyEl.style.display = "none";
     grp.append(head, bodyEl);
     rowsWrap.appendChild(grp);
-    Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp });
+    Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp, ttlEl: ttl });
 
     for (const c of list) {
       const row = document.createElement("div");
@@ -1537,7 +1544,7 @@ function openPackPanel(hostEl) {
       sub.textContent = "#" + c.node + " · " + c.input;
       const val = document.createElement("div");
       val.className = "kp-val";
-      val.textContent = "当前值：" + c.valuePreview;
+      val.textContent = t("Current value: {v}", { v: c.valuePreview });
       box.append(lab, sub, val);
       const sel = document.createElement("select");
       sel.className = "kp-sel";
@@ -1550,7 +1557,7 @@ function openPackPanel(hostEl) {
       }
       row.append(cb, box, sel);
       bodyEl.appendChild(row);
-      const entry = { cb, lab, sel, c, el: row };
+      const entry = { cb, lab, sel, c, el: row, valEl: val };
       rows.push(entry);
       g.rows.push(entry);
       cb.onchange = () => { updateCount(); if (onlySel) applyFilter(); };
@@ -1564,7 +1571,7 @@ function openPackPanel(hostEl) {
   syncBtn.onclick = () => {
     syncOn = !syncOn;
     syncBtn.classList.toggle("kp-on", syncOn);
-    syncBtn.textContent = syncOn ? "联动中…" : "点画布选";
+    syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
     if (syncOn) {
       lastSel = null;
       syncTimer = setInterval(() => {
@@ -1601,6 +1608,33 @@ function openPackPanel(hostEl) {
     rows.forEach((r) => { r.cb.checked = !all; });
     updateCount(); applyFilter();
   };
+
+  // ---- 语言切换重绘：面板内的固定文案整体再 paint 一次（浮层关闭时注销订阅） ----
+  const repaint = () => {
+    titleEl.textContent = t("Pack app");
+    nameLab.textContent = t("App name");
+    descLab.textContent = t("Description (optional)");
+    descInput.placeholder = t("One sentence describing what this app does");
+    allBtn.title = t("Check all / uncheck all");
+    syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
+    syncBtn.title = t("When active, clicking a node on the canvas expands its parameters here");
+    selOnlyBtn.textContent = t("Selected only");
+    selOnlyBtn.title = t("Show only checked parameters");
+    if (!gen.disabled) gen.textContent = t("Generate app package");
+    for (const g of groups) {
+      g.ttlEl.textContent = groupNames[g.node];
+      g.ttlEl.title = g.ttlEl.textContent;
+      g.selAllEl.title = t("Select all / none for this node");
+    }
+    for (const r of rows) {
+      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, r.c.widget) });
+    }
+    if (emptyEl) emptyEl.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
+    updateCount();   // 计数与「全选/取消全选」两态文案随之刷新
+  };
+  const unsub = onLocaleChange(repaint);
+  if (!sidebar) kpUnsubRepaint = unsub;   // 侧栏模式面板常驻，订阅保留
+
   gen.onclick = () => doGenerate({ nameInput, descInput, rows, err, gen });
 
   // ---- 标题栏拖拽 + 视口夹持（仅浮层模式；侧栏模式由 ComfyUI 管布局） ----
@@ -1638,20 +1672,20 @@ function openPackPanel(hostEl) {
 async function doGenerate(ctx) {
   const checked = ctx.rows.filter((r) => r.cb.checked);
   if (!checked.length) {
-    ctx.err.textContent = "请至少勾选一个参数";
+    ctx.err.textContent = t("Select at least one parameter");
     return;
   }
   ctx.gen.disabled = true;
-  ctx.gen.textContent = "生成中…";
+  ctx.gen.textContent = t("Generating…");
   ctx.err.textContent = "";
   let output;
   try {
     const pr = await app.graphToPrompt();
     output = (pr && pr.output) || {};
   } catch (e) {
-    ctx.err.textContent = "获取工作流失败：" + (e && e.message ? e.message : e);
+    ctx.err.textContent = t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
     ctx.gen.disabled = false;
-    ctx.gen.textContent = "生成应用包";
+    ctx.gen.textContent = t("Generate app package");
     return;
   }
   const params = checked.map((r) => {
@@ -1695,34 +1729,44 @@ async function doGenerate(ctx) {
     let j = null;
     try { j = await resp.json(); } catch (_) { /* ignore */ }
     if (!resp.ok || !j || !j.ok) {
-      const msg = (j && j.error) ? j.error : ("HTTP " + resp.status);
-      ctx.err.textContent = "生成失败：" + msg;
-      kpToast("生成失败：" + msg, true);
+      const msg = serverError((j && j.error) ? j.error : ("HTTP " + resp.status));
+      ctx.err.textContent = t("Generation failed: {msg}", { msg });
+      kpToast(t("Generation failed: {msg}", { msg }), true);
     } else {
       const warns = (j.warnings && j.warnings.length) ? j.warnings : [];
       if (warns.length) {
         // 有提醒（如缺输入但不影响打包）时留着面板，用户看完错误行再手动关
         ctx.err.style.color = "";
-        ctx.err.textContent = "已生成 " + (j.file || "") + "，" + warns.length
-          + " 条提醒：" + warns.slice(0, 4).join("；") + (warns.length > 4 ? "…" : "");
-        kpToast("已生成，但有 " + warns.length + " 条提醒，面板里有明细", true);
+        const list = warns.slice(0, 4).join(t("; ")) + (warns.length > 4 ? "…" : "");
+        ctx.err.textContent = t("Generated {file}, {w} warnings: {list}", { file: j.file || "", w: warns.length, list });
+        kpToast(t("Generated with {w} warnings — see details in the panel", { w: warns.length }), true);
       } else {
-        kpToast("已生成 " + (j.file || kapp.name) + "，启动器刷新即可看到");
+        kpToast(t("Generated {file}; refresh the launcher to see it", { file: j.file || kapp.name }));
         closePackPanel();
       }
     }
   } catch (e) {
-    const msg = e && e.message ? e.message : String(e);
-    ctx.err.textContent = "请求失败：" + msg;
-    kpToast("请求失败：" + msg, true);
+    const msg = serverError(e && e.message ? e.message : String(e));
+    ctx.err.textContent = t("Request failed: {msg}", { msg });
+    kpToast(t("Request failed: {msg}", { msg }), true);
   } finally {
     ctx.gen.disabled = false;
-    ctx.gen.textContent = "生成应用包";
+    ctx.gen.textContent = t("Generate app package");
   }
 }
 
+const kpBtnEls = [];      // 入口按钮/悬浮球，语言切换时统一重刷文案
+let kpBtnSubDone = false;
+function kpEntryLabel(btn) {
+  btn.textContent = t("Pack app");
+  btn.title = t("Package the current workflow as a kapp app");
+}
 function mountPackButton() {
   ensurePackCss();   // 必须先注样式：无样式按钮落在 body 末尾，会被 100vh 画布挤出屏幕外
+  if (!kpBtnSubDone) {
+    kpBtnSubDone = true;
+    onLocaleChange(() => { kpBtnEls.forEach((b) => { if (document.contains(b)) kpEntryLabel(b); }); });
+  }
   // 入口挂载在左侧栏：新版前端的官方侧栏页签接口
   try {
     if (app.extensionManager && typeof app.extensionManager.registerSidebarTab === "function") {
@@ -1735,8 +1779,8 @@ function mountPackButton() {
       app.extensionManager.registerSidebarTab({
         id: "kedou-pack",
         icon: "pi pi-box",
-        title: "打包应用",
-        tooltip: "把当前工作流打包成 kapp 应用",
+        title: t("Pack app"),
+        tooltip: t("Package the current workflow as a kapp app"),
         content: packTabContent,
         render: packTabContent,
       });
@@ -1770,16 +1814,16 @@ function mountPackButton() {
     btn.className = "kp-pill";
     document.body.appendChild(btn);
   }
-  btn.textContent = "打包应用";
-  btn.title = "把当前工作流打包成 kapp 应用";
+  kpEntryLabel(btn);
+  kpBtnEls.push(btn);
   btn.onclick = openPackPanel;
   // 防御：前端框架重渲染可能移除外挂按钮，3 秒后若不在文档中则重挂为悬浮 pill
   setTimeout(function () {
     if (!document.contains(btn)) {
       const pill = document.createElement("button");
       pill.className = "kp-pill";
-      pill.textContent = "打包应用";
-      pill.title = "把当前工作流打包成 kapp 应用";
+      kpEntryLabel(pill);
+      kpBtnEls.push(pill);
       pill.onclick = openPackPanel;
       document.body.appendChild(pill);
     }
@@ -1788,7 +1832,8 @@ function mountPackButton() {
 
 app.registerExtension({
   name: "kedou.packPanel",
-  setup() {
+  async setup() {
+    await initI18n(app);   // 语言包就绪后再挂载入口（重复调用只生效一次）
     try {
       mountPackButton();
     } catch (e) {

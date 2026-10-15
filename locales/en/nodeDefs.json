@@ -1,0 +1,33 @@
+{
+  "KedouImageLoader": {
+    "display_name": "Kedou Image Loader",
+    "description": "Pick images on the node panel (multi-select, upload supported); each image gets its own IMAGE output slot. Unused slots emit None, so downstream multi-image nodes ignore that route. Select outputs only the picked photos in click order; Batch queues the photos through the workflow one by one.",
+    "inputs": {
+      "media_state": {
+        "name": "media_state",
+        "tooltip": "JSON describing the photos currently on the panel. Hidden by the node UI; do not wire or edit it by hand."
+      }
+    },
+    "outputs": {
+      "0": { "name": "image_1" },
+      "1": { "name": "image_2" }
+    }
+  },
+  "KedouPromptBox": {
+    "display_name": "Kedou Prompt Box",
+    "description": "Prompt input box with a built-in phrase library: type on the node, append entries from the library dropdown, pin/recall recent prompts and save the current text as a preset. Connect prompt to the positive conditioning input of a text encoder.",
+    "inputs": {
+      "prompt_state": {
+        "name": "prompt_state",
+        "tooltip": "The prompt text; passed straight through to the prompt output."
+      },
+      "usage": {
+        "name": "usage",
+        "tooltip": "Which kind of job this prompt is for; only filters the phrase library, it does not affect the output."
+      }
+    },
+    "outputs": {
+      "0": { "name": "prompt" }
+    }
+  }
+}

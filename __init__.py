@@ -41,10 +41,14 @@ ComfyUI_KeDou —— 修图工坊 · ComfyUI 桥接（v2：直接对接原生「
 
 from __future__ import annotations
 
+import asyncio
 import copy
+import hashlib
 import json
 import os
 import re
+import tempfile
+import time
 from datetime import datetime as _kdt
 
 # ---- 只有在 ComfyUI 里才有这两个依赖；单独跑脚本做测试时允许缺失 ----
@@ -158,8 +162,27 @@ FALLBACK_LABEL = {
 
 # ---------------------------------------------------------------- 基础工具
 def _safe_id(app_id: str) -> bool:
-    """防路径穿越：只允许纯文件名（不含 / \\ 和 ..）"""
-    return bool(app_id) and "/" not in app_id and "\\" not in app_id and ".." not in app_id
+    """防路径穿越：只允许纯文件名（不含 / \\ .. 和 :）
+
+    ":" 也要挡：Windows 下 "C:evil" 这类盘限定名会让 os.path.join 直接丢掉基准目录，
+    "x:y" 还会在 NTFS 上写出备用数据流（ADS）。
+    """
+    return (bool(app_id) and "/" not in app_id and "\\" not in app_id
+            and ".." not in app_id and ":" not in app_id)
+
+
+def _under(base_dir: str, path: str) -> bool:
+    """path 落在 base_dir 内才算数（realpath 归一化后比 commonpath，符号链接也拦得住）。
+
+    落盘前最后一道闸：_safe_id 只是字符层面的黑名单，这里按解析后的真实路径复核，
+    防住盘限定名、符号链接、大小写盘符等一切 join 层面的逃逸。
+    """
+    base = os.path.realpath(base_dir)
+    target = os.path.realpath(path)
+    try:
+        return os.path.commonpath([base, target]) == base
+    except ValueError:                                  # 不同盘符 / 大小写盘符
+        return False
 
 
 def _clean_label(node: dict, widget: str) -> str:
@@ -1107,6 +1130,7 @@ def save_kapp(name: str, desc, kapp) -> dict:
       * graph 必须是非空 dict（API 格式工作流）；
       * params 必须是 list，且每一条 widget 在 _KAPP_WIDGETS 内；
       * name 经 _safe_id 防穿越 + _stem 去 .kapp.json/.app.json/.json 后缀清洗；
+      * 写前用 _under（realpath + commonpath）复核最终路径仍落在 WORKFLOW_DIR 内；
       * 写 WORKFLOW_DIR/<stem>.kapp.json（UTF-8、ensure_ascii=False）。
     不合法如实返回中文错误，绝不静默。
     """
@@ -1131,12 +1155,13 @@ def save_kapp(name: str, desc, kapp) -> dict:
     if not raw:
         return {"ok": False, "error": "应用名不能为空"}
     if not _safe_id(raw):
-        return {"ok": False, "error": "应用名含非法字符（不能含 / \\ 或 ..）"}
+        return {"ok": False, "error": "应用名含非法字符（不能含 / \\ .. 或 :）"}
     stem = _stem(raw)
     if stem.lower().endswith(".kapp"):           # 兜底：用户误带 .kapp 后缀
         stem = stem[: -len(".kapp")]
     if not stem:
         return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
+    warns = []
     # 完整性校验：坏图坚决不落盘，把问题在人能看懂的地方说清楚
     vinfo = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()})) if _NODE_MAP else {}
     if vinfo:
@@ -1153,6 +1178,8 @@ def save_kapp(name: str, desc, kapp) -> dict:
     except Exception as e:                        # noqa: BLE001
         return {"ok": False, "error": "工作流目录不可写：%s" % e}
     out_path = os.path.join(out_dir, stem + ".kapp.json")
+    if not _under(out_dir, out_path):              # 落盘前按真实路径复核，绝不出工作流目录
+        return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
     try:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(kapp, f, ensure_ascii=False, indent=1)
@@ -1332,8 +1359,11 @@ def _media_input_path(filename: str) -> str:
         path = os.path.join(in_dir, filename.replace("/", os.sep))
         if not os.path.isfile(path):
             path = os.path.join(out_dir, filename.replace("/", os.sep))
+        # 兜底分支没有 folder_paths 的越界检查，自己补一道（同 save_kapp 的落盘前复核）
+        if not (_under(in_dir, path) or _under(out_dir, path)):
+            raise ValueError("Media filename escapes the media folders, rejected: %s" % filename)
     if not os.path.isfile(path):
-        raise ValueError("媒体加载器找不到文件（input / output 都没有）：%s" % filename)
+        raise ValueError("Kedou Image Loader: file not found in input / output: %s" % filename)
     return path
 
 
@@ -1354,14 +1384,17 @@ def _load_image(filename: str):
 class KedouImageLoader:
     """蝌蚪图片加载器 —— 在面板上挑图片，一张图一路输出。"""
 
-    CATEGORY = "蝌蚪 · Kedou"
+    CATEGORY = "kedou"
     FUNCTION = "load"
     RETURN_TYPES = ("IMAGE",) * IMG_SLOTS
     RETURN_NAMES = tuple("image_%d" % i for i in range(1, IMG_SLOTS + 1))
-    DESCRIPTION = ("在面板上挑图片（可多选、可上传），一张图一路 IMAGE 输出（上限 %d 路）。"
-                   "未启用的槽输出 None，下游多图节点会忽略该路；"
-                   "开「选择」可从面板上按点击顺序挑选要输出的照片；"
-                   "开「批次」并点「跑 N 张」可让这些图从图片1 依次自动跑完。" % IMG_SLOTS)
+    DESCRIPTION = (
+        "Pick images on the node panel (multi-select, upload supported); each image gets "
+        "its own IMAGE output slot (up to %d). Unused slots emit None, so downstream "
+        "multi-image nodes ignore that route. Turn on Select to output only the picked "
+        "photos, in click order. Turn on Batch and press Run to queue the photos through "
+        "the workflow one by one." % IMG_SLOTS
+    )
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -1402,7 +1435,7 @@ class KedouImageLoader:
                 if first_err is None:
                     first_err = str(exc)
         if state["images"] and missing == len(state["images"]):
-            return first_err or "媒体加载器找不到任何一张面板图片（input / output 都没有）"
+            return first_err or "Kedou Image Loader: none of the panel images exist in input / output"
         return True
 
     def load(self, media_state=""):
@@ -1426,7 +1459,8 @@ class KedouImageLoader:
                 imgs = picked_imgs
         if state.get("batch"):
             if not imgs:
-                raise ValueError("蝌蚪图片加载器：没有可用的图片 —— 请在加载器/应用面板里先选择图片")
+                raise ValueError("Kedou Image Loader: no image selected - pick photos on the "
+                                 "loader node or in the app panel first")
             cur = max(0, min(int(state.get("cursor") or 0), len(imgs) - 1))
             entry = imgs[cur]
             pick = _load_image(entry["filename"])
@@ -1442,7 +1476,8 @@ class KedouImageLoader:
                     out.append(None)
             if not any(x is not None for x in out):
                 # 全都读不出来才算无图；个别失败只空对应槽，不前移错位
-                raise ValueError("蝌蚪图片加载器：没有可用的图片 —— 请在加载器/应用面板里先选择图片")
+                raise ValueError("Kedou Image Loader: none of the selected images could be read "
+                                 "- check the files still exist in input / output")
             ok = sum(1 for x in out if x is not None)
             print("[kedou] 图片加载器：%d/%d 张有效；未启用槽输出 None（下游多图节点会忽略）"
                   % (ok, IMG_SLOTS))
@@ -1478,8 +1513,9 @@ class KedouPromptBox:
 
 
 KedouPromptBox.DESCRIPTION = (
-    "蝌蚪提示词输入框：节点上直接输入提示词，集成词库抽屉（填入/追加）、"
-    "置顶/最近快捷 chips、存为预设；prompt 输出连到编码类节点的正向提示词输入。"
+    "Prompt input box with a built-in phrase library: type on the node, append entries from "
+    "the library dropdown, pin/recall recent prompts and save the current text as a preset. "
+    "Connect prompt to the positive conditioning input of a text encoder."
 )
 
 
@@ -1489,8 +1525,8 @@ NODE_CLASS_MAPPINGS = {
     "KedouPromptBox": KedouPromptBox,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "KedouImageLoader": "蝌蚪图片加载器",
-    "KedouPromptBox": "蝌蚪提示词输入框",
+    "KedouImageLoader": "Kedou Image Loader",
+    "KedouPromptBox": "Kedou Prompt Box",
 }
 
 
@@ -1556,13 +1592,139 @@ def list_media(mtype="image", tab="all", q="", cap=MEDIA_CAP):
     return items[:cap]
 
 
+# ---------------------------------------------------------------- 真缩略图
+# ComfyUI 自带的 /view?preview= 只重编码、不缩尺寸（server.py 里那句 preview 分支没有
+# 任何 resize），5120x8192 的图照样回 8.7MB，而且全图解码同步跑在 async 处理函数里，
+# 一屏 80 格能把事件循环堵死。这里出真正的缩略图，并按 源文件指纹 落盘缓存：
+# 一张图一辈子只解一次码，之后纯静态发文件。
+THUMB_MAX_SIDE = 512
+THUMB_QUALITY = 72
+THUMB_KEEP_DAYS = 30
+THUMB_DIR = os.path.join(os.path.dirname(WORKFLOW_DIR), "kedou_thumbs")
+_thumb_pruned = False
+
+
+def _media_file(name, sub, tab):
+    """(tab, subfolder, filename) -> 真实文件路径；落在媒体目录之外或不存在都返回 None。"""
+    in_dir, out_dir = _media_dirs()
+    root = in_dir if tab == "input" else out_dir
+    base = os.path.basename(str(name or ""))
+    if not base or not _safe_id(base):
+        return None
+    path = os.path.join(root, str(sub or ""), base)
+    if not _under(root, path) or not os.path.isfile(path):
+        return None
+    return path
+
+
+def _make_thumb(src, dst, w):
+    """缩到 w 以内存成 webp。跑在 asyncio.to_thread 里，不碰事件循环。"""
+    from PIL import Image, ImageOps                        # noqa: PLC0415
+    os.makedirs(THUMB_DIR, exist_ok=True)
+    with Image.open(src) as im:
+        try:
+            # JPEG 支持按 1/2、1/4、1/8 直接解，先把解码量砍掉一个数量级再谈缩放
+            im.draft("RGB", (w * 2, w * 2))
+        except Exception:                                   # noqa: BLE001
+            pass                                            # 非 JPEG（PNG/webp）不支持，照常全解
+        im = ImageOps.exif_transpose(im)                    # 手机图的 EXIF 方向，不转就躺倒
+        im.thumbnail((w, w))
+        if im.mode not in ("RGB", "RGBA", "L", "LA"):
+            im = im.convert("RGBA" if "A" in im.getbands() or "transparency" in im.info else "RGB")
+        fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=".webp")
+        os.close(fd)
+        try:
+            im.save(tmp, "WEBP", quality=THUMB_QUALITY, method=4)
+            os.replace(tmp, dst)                            # 原子替换：并发请求不会读到半截文件
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
+
+def _thumb_prune_old():
+    """清掉 THUMB_KEEP_DAYS 天没再命中的缓存（源图删了/换机了就靠这个收口）。"""
+    try:
+        cutoff = time.time() - THUMB_KEEP_DAYS * 86400
+        for fn in os.listdir(THUMB_DIR):
+            if not fn.endswith(".webp"):
+                continue
+            p = os.path.join(THUMB_DIR, fn)
+            try:
+                st = os.stat(p)
+                if max(st.st_mtime, st.st_atime) < cutoff:
+                    os.remove(p)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
 if _HAS_COMFY:
+    # 前端语言包：ComfyUI 的 /extensions/<节点名>/ 静态根指向 WEB_DIRECTORY(./web)，
+    # 够不到仓库根的 locales/，所以自己开一条只读口（注册表的 /i18n 走的是另一套，
+    # 它只在启动时读一次，且我们自己的面板要能随 Comfy.Locale 切换即时重绘）。
+    LOCALE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales")
+
+    @PromptServer.instance.routes.get("/ps/locale")
+    async def ps_locale(request):
+        """GET /ps/locale?lang=zh -> { ok, messages }，messages 即 locales/<lang>/main.json。"""
+        lang = str(request.query.get("lang") or "")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z-]{1,7}", lang):
+            return web.json_response({"ok": False, "error": "lang 非法"})
+        path = os.path.join(LOCALE_DIR, lang, "main.json")
+        if not _under(LOCALE_DIR, path) or not os.path.isfile(path):
+            return web.json_response({"ok": True, "messages": {}})   # 没这个语言包：回英文
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                messages = json.load(f)
+        except Exception as e:                        # noqa: BLE001
+            return web.json_response({"ok": False, "error": "语言包读取失败：%s" % e})
+        return web.json_response({"ok": True, "messages": messages})
+
     @PromptServer.instance.routes.get("/ps/media")
     async def ps_media(request):
         """GET /ps/media?type=image|video|audio&tab=all|input|output&q=关键词"""
         qq = request.query
         return web.json_response({"ok": True, "items": list_media(
             qq.get("type", "image"), qq.get("tab", "all"), qq.get("q", ""))})
+
+    @PromptServer.instance.routes.get("/ps/thumb")
+    async def ps_thumb(request):
+        """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256 -> image/webp
+
+        只服务图片；不是图 / 解不开 / 越界，一律 404，由前端回退到 /view 原图。
+        """
+        global _thumb_pruned
+        qq = request.query
+        tab = "output" if str(qq.get("type") or "input") == "output" else "input"
+        try:
+            w = int(qq.get("w") or 256)
+        except ValueError:
+            w = 256
+        w = max(32, min(THUMB_MAX_SIDE, w))
+        src = _media_file(qq.get("filename"), qq.get("subfolder"), tab)
+        if not src:
+            return web.Response(status=404)
+        if not _thumb_pruned:
+            _thumb_pruned = True
+            await asyncio.to_thread(_thumb_prune_old)
+        try:
+            st = os.stat(src)
+        except OSError:
+            return web.Response(status=404)
+        key = hashlib.sha1(("%s|%d|%d|%d" % (src, st.st_mtime_ns, st.st_size, w)
+                            ).encode("utf-8")).hexdigest()
+        dst = os.path.join(THUMB_DIR, key + ".webp")
+        if not os.path.isfile(dst):
+            try:
+                await asyncio.to_thread(_make_thumb, src, dst, w)
+            except Exception:                              # noqa: BLE001
+                return web.Response(status=404)
+        # 文件名带源图指纹，内容变了 key 就变，可以放心让浏览器永久缓存
+        return web.FileResponse(dst, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
     @PromptServer.instance.routes.get("/ps/pack/candidates")
     async def ps_pack_candidates(request):

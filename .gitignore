@@ -6,3 +6,6 @@ __pycache__/
 *.bak
 *.bak-*
 _newver/
+
+# Visual Studio 装的可嵌入 Python 运行时（36MB，与插件无关）
+/Python/
