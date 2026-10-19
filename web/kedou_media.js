@@ -62,6 +62,33 @@ const CSS = [
   ".kd-btn:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
   ".kd-btn.kd-p{border-color:transparent;background:var(--p-primary-color,#4a7dff);color:#fff;font-weight:600;}",
   ".kd-btn[disabled]{opacity:.45;cursor:default;}",
+  // 图片排列预设：浮在按钮下方的小面板
+  ".kd-setsmenu{position:fixed;z-index:100003;width:min(330px,calc(100vw - 24px));max-height:min(440px,72vh);",
+  "display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:12px;",
+  "background:var(--comfy-menu-bg,#232329);color:var(--fg-color,#e7e7ea);",
+  "border:1px solid var(--border-color,#3a3a44);box-shadow:0 14px 40px rgba(0,0,0,.45);",
+  "font:12px/1.5 system-ui,sans-serif;}",
+  ".kd-sets-head{display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;}",
+  ".kd-sets-head button{margin-left:auto;border:none;background:none;color:var(--descrip-text,#9a9aa6);",
+  "font:inherit;font-size:16px;line-height:1;cursor:pointer;padding:0 4px;}",
+  ".kd-sets-head button:hover{color:var(--error-text,#ffb3b3);}",
+  ".kd-sets-save{display:flex;gap:6px;}",
+  ".kd-sets-save input{flex:1;min-width:0;border:1px solid var(--border-color,#3a3a44);background:transparent;",
+  "color:inherit;font:inherit;font-size:11.5px;padding:5px 9px;border-radius:7px;outline:none;}",
+  ".kd-sets-save input:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kd-sets-list{display:flex;flex-direction:column;gap:3px;overflow-y:auto;scrollbar-width:thin;min-height:34px;}",
+  ".kd-setsrow{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:8px;cursor:pointer;",
+  "border:1px solid transparent;}",
+  ".kd-setsrow:hover{background:var(--content-bg,#16161c);border-color:var(--border-color,#3a3a44);}",
+  ".kd-setsrow .kd-sets-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;}",
+  ".kd-setsrow .kd-sets-meta{flex:none;font-size:10px;color:var(--descrip-text,#9a9aa6);white-space:nowrap;}",
+  ".kd-setsrow .kd-sets-del{flex:none;border:none;background:none;color:var(--descrip-text,#9a9aa6);",
+  "font:inherit;font-size:13px;line-height:1;padding:2px 5px;cursor:pointer;border-radius:5px;}",
+  ".kd-setsrow .kd-sets-del:hover{color:var(--error-text,#ffb3b3);background:var(--content-bg,#16161c);}",
+  ".kd-setsrow .kd-sets-del.kd-armed{color:#fff;background:var(--error-text,#a33);}",
+  ".kd-sets-empty{padding:8px 4px;font-size:11px;color:var(--descrip-text,#9a9aa6);text-align:center;}",
+  ".kd-sets-hint{font-size:10px;line-height:1.45;color:var(--descrip-text,#9a9aa6);",
+  "border-top:1px solid var(--border-color,#3a3a44);padding-top:6px;}",
   ".kd-body{padding:8px 10px 10px;display:flex;flex-direction:column;gap:9px;flex:1;overflow:auto;}",
   ".kd-sec{display:flex;flex-direction:column;gap:6px;}",
   ".kd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;}",
@@ -319,6 +346,12 @@ function writeState(node, state) {
     /* callback 不是必须的 */
   }
   node.setDirtyCanvas(true, true);
+  // 提示词框里的引用缩略图靠这个事件跟着换图/换序（promptlib.js 监听）
+  try {
+    window.dispatchEvent(new CustomEvent("kedou:media-changed", { detail: { nodeId: node.id } }));
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 // ---------------------------------------------------------------- 输出槽重建
@@ -908,6 +941,228 @@ async function runBatch(node) {
   }
 }
 
+// ---------------------------------------------------------------- 图片排列预设
+// 一条记录只存文件名/顺序/选择状态；图片本身仍在 input/output，加载时逐张检查。
+const SETS_API = "/ps/image-sets";
+let setsMenu = null;
+let setsOwner = null;
+
+function closeSetsMenu() {
+  if (!setsMenu) return;
+  if (setsMenu.__kdCleanup) setsMenu.__kdCleanup();
+  setsMenu.remove();
+  setsMenu = null;
+  setsOwner = null;
+}
+
+// 排列在「排列」菜单里增删后，提示词库面板（词库 → 图片排列）要能立刻看到
+function notifySetsChanged() {
+  try { window.dispatchEvent(new CustomEvent("kedou:sets-changed")); } catch (e) { /* ignore */ }
+}
+
+async function setsApi(path, body) {
+  const r = await fetch(SETS_API + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  let d = null;
+  try { d = await r.json(); } catch (e) { /* 非 JSON 错误 */ }
+  if (!r.ok) throw new Error((d && d.error) || ("HTTP " + r.status));
+  return d || {};
+}
+
+async function openSetsMenu(node, anchor) {
+  closeSetsMenu();
+  const menu = document.createElement("div");
+  menu.className = "kd-setsmenu";
+  setsMenu = menu;
+  setsOwner = node;
+
+  const head = document.createElement("div");
+  head.className = "kd-sets-head";
+  const title = document.createElement("span");
+  title.textContent = t("Image arrangements");
+  const x = document.createElement("button");
+  x.type = "button";
+  x.textContent = "×";
+  x.title = t("Close");
+  x.onclick = closeSetsMenu;
+  head.append(title, x);
+
+  const saveRow = document.createElement("div");
+  saveRow.className = "kd-sets-save";
+  const nameEl = document.createElement("input");
+  nameEl.type = "text";
+  nameEl.placeholder = t("Name this arrangement (optional)");
+  nameEl.maxLength = 60;
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button";
+  saveBtn.className = "kd-btn kd-p";
+  saveBtn.textContent = t("Save");
+  saveRow.append(nameEl, saveBtn);
+
+  const list = document.createElement("div");
+  list.className = "kd-sets-list";
+
+  const hint = document.createElement("div");
+  hint.className = "kd-sets-hint";
+  hint.textContent = t("Only names and order are saved. Images must still be in the input/output folders.");
+
+  menu.append(head, saveRow, list, hint);
+  document.body.appendChild(menu);
+
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth || 330;
+  const mh = Math.min(menu.offsetHeight || 260, Math.round((window.innerHeight || 800) * 0.72));
+  menu.style.left = Math.max(6, Math.min(r.left, (window.innerWidth || 1280) - mw - 6)) + "px";
+  const below = r.bottom + 6;
+  menu.style.top = (below + mh <= (window.innerHeight || 800) - 6)
+    ? below + "px"
+    : Math.max(6, r.top - mh - 6) + "px";
+
+  // 点面板外 / Escape 收掉；点按钮本身由按钮的 onclick 负责切换
+  const onDoc = (e) => {
+    if (menu.contains(e.target) || anchor.contains(e.target)) return;
+    closeSetsMenu();
+  };
+  const onKey = (e) => { if (e.key === "Escape") closeSetsMenu(); };
+  document.addEventListener("pointerdown", onDoc, true);
+  document.addEventListener("keydown", onKey);
+  menu.__kdCleanup = () => {
+    document.removeEventListener("pointerdown", onDoc, true);
+    document.removeEventListener("keydown", onKey);
+  };
+
+  async function paintList() {
+    list.innerHTML = "";
+    let items = [];
+    try {
+      const r = await fetch(SETS_API);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      items = (d && d.items) || [];
+    } catch (e) {
+      const err = document.createElement("div");
+      err.className = "kd-sets-empty";
+      err.textContent = t("Load failed: {error}", { error: serverError(e.message) });
+      list.appendChild(err);
+      return;
+    }
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "kd-sets-empty";
+      empty.textContent = t("No saved arrangements yet");
+      list.appendChild(empty);
+      return;
+    }
+    let armed = { id: "", at: 0 };
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "kd-setsrow";
+      const nm = document.createElement("span");
+      nm.className = "kd-sets-name";
+      nm.textContent = item.name || t("(unnamed)");
+      nm.title = item.name || "";
+      const meta = document.createElement("span");
+      meta.className = "kd-sets-meta";
+      meta.textContent = t("{n} images", { n: (item.images || []).length });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "kd-sets-del";
+      del.textContent = "×";
+      del.title = t("Delete");
+      row.append(nm, meta, del);
+
+      row.onclick = async () => {
+        try {
+          const res = await setsApi("/load", { id: item.id });
+          const found = res.found || [];
+          if (!found.length) {
+            kpToast(t("No images in this arrangement are still available"), true);
+            return;
+          }
+          const st = readState(node);
+          st.images = found.map((f) => ({ filename: f.filename }));
+          st.picked = (res.item.picked || []).filter(
+            (f) => found.some((x) => x.filename === f));
+          st.select = !!res.item.select;
+          st.batch = !!res.item.batch;
+          st.cursor = 0;
+          writeState(node, st);
+          renderPanel(node);
+          let msg = t("Arrangement loaded: {name} ({n} images)",
+            { name: res.item.name, n: found.length });
+          const missing = res.missing || [];
+          if (missing.length) {
+            msg += " · " + t("Missing {n}: {names}", {
+              n: missing.length,
+              names: missing.slice(0, 3).join(", ") + (missing.length > 3 ? "…" : ""),
+            });
+          }
+          kpToast(msg, missing.length > 0);
+          closeSetsMenu();
+        } catch (e) {
+          kpToast(t("Load failed: {error}", { error: serverError(e.message) }), true);
+        }
+      };
+
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        if (armed.id !== item.id || Date.now() - armed.at > 2500) {
+          armed = { id: item.id, at: Date.now() };
+          del.textContent = t("Confirm");
+          del.classList.add("kd-armed");
+          setTimeout(() => {
+            if (Date.now() - armed.at >= 2500) {
+              del.textContent = "×";
+              del.classList.remove("kd-armed");
+            }
+          }, 2600);
+          return;
+        }
+        try {
+          await setsApi("/delete", { id: item.id });
+          armed = { id: "", at: 0 };
+          notifySetsChanged();
+          await paintList();
+        } catch (e) {
+          kpToast(t("Delete failed: {error}", { error: serverError(e.message) }), true);
+        }
+      };
+      list.appendChild(row);
+    });
+  }
+
+  saveBtn.onclick = async () => {
+    const st = readState(node);
+    if (!(st.images || []).length) {
+      kpToast(t("No images to save"), true);
+      return;
+    }
+    saveBtn.disabled = true;
+    try {
+      const res = await setsApi("/save", {
+        name: nameEl.value.trim(),
+        images: st.images.map((x) => x.filename),
+        batch: st.batch,
+        select: st.select,
+        picked: st.picked,
+      });
+      kpToast(t("Arrangement saved: {name}", { name: res.item.name }));
+      nameEl.value = "";
+      notifySetsChanged();
+      await paintList();
+    } catch (e) {
+      kpToast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+    } finally {
+      saveBtn.disabled = false;
+    }
+  };
+
+  await paintList();
+}
+
 function build(node) {
   ensureCss();
   hideWidget(wOf(node, "media_state"), false);
@@ -924,6 +1179,21 @@ function build(node) {
   const libBtn = document.createElement("button");
   libBtn.className = "kd-btn";
   libBtn.textContent = t("Media library");
+  // 图片排列预设：存文件名+顺序，换工作流也能一键还原（不复制图片）
+  const setsBtn = document.createElement("button");
+  setsBtn.className = "kd-btn";
+  setsBtn.textContent = t("Sets");
+  setsBtn.title = t("Save or load an image arrangement");
+  setsBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (setsMenu && setsOwner === node) {
+      closeSetsMenu();
+      return;
+    }
+    openSetsMenu(node, setsBtn).catch((err) => {
+      kpToast(t("Load failed: {error}", { error: serverError(err && err.message) }), true);
+    });
+  };
   // 一键清除全部已加载图片：二次确认态（2.5 秒内再点才执行），防止误触
   const clearBtn = document.createElement("button");
   clearBtn.className = "kd-btn";
@@ -966,7 +1236,7 @@ function build(node) {
   runBtn.className = "kd-btn kd-p";
   runBtn.style.display = "none";
   runBtn.onclick = () => runBatch(node);
-  btns.append(libBtn, clearBtn, upBtn, runBtn, fileEl);
+  btns.append(libBtn, setsBtn, clearBtn, upBtn, runBtn, fileEl);
   // 批次 / 选择两个开关（toggle 样式）
   const mkSwitch = (label, title) => {
     const lab = document.createElement("label");
@@ -997,7 +1267,7 @@ function build(node) {
   body.className = "kd-body";
   card.append(top, body);
 
-  node._kdUI = { card, body, count, libBtn, upBtn, fileEl, runBtn, swBatchCb: swBatch.cb, swSelCb: swSel.cb };
+  node._kdUI = { card, body, count, libBtn, setsBtn, upBtn, fileEl, runBtn, swBatchCb: swBatch.cb, swSelCb: swSel.cb };
   // 选择/框选手势（仅选择模式生效）：点击切换、Shift 范围、点击空白清空、拖框多选
   kdGesture(body, () => Array.from(body.querySelectorAll(".kd-cell")), {
     enabled: () => !!readState(node).select,
@@ -1149,6 +1419,22 @@ function build(node) {
   node.setSize([Math.max(Number(size[0]) || 0, 360), Math.max(Number(size[1]) || 0, 320)]);
   renderPanel(node);
 }
+
+// 词库面板的「图片排列」点加载时走这里：由媒体模块自己写 media_state 并重绘，
+// 两个扩展只通过事件通信，不各自维护一份序列化逻辑。
+window.addEventListener("kedou:media-apply", (ev) => {
+  const d = ev.detail || {};
+  const node = (app.graph && d.nodeId != null) ? app.graph.getNodeById(d.nodeId) : null;
+  if (!node) return;
+  writeState(node, {
+    images: (d.images || []).map((f) => ({ filename: String(f) })),
+    batch: !!d.batch,
+    select: !!d.select,
+    picked: Array.isArray(d.picked) ? d.picked : [],
+    cursor: 0,
+  });
+  renderPanel(node);
+});
 
 app.registerExtension({
   name: "kedou.imageLoader",

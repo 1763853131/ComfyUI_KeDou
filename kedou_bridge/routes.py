@@ -10,7 +10,7 @@ import json
 import os
 import re
 
-from . import apps, compat, media, pack, paths, state
+from . import apps, compat, image_sets, media, pack, paths, state
 
 LOCALE_DIR = os.path.join(paths.PLUGIN_DIR, "locales")
 _thumb_pruned = False
@@ -75,6 +75,7 @@ def register(routes):
                 "sidecar_state": True,
                 "graph_cache": True,
                 "write_token": True,
+                "image_sets": True,
                 "app_formats": ["kapp", "official"],
             },
             "write_auth": {
@@ -192,6 +193,55 @@ def register(routes):
         result = await asyncio.to_thread(media.pick_media, body.get("name"),
                                          body.get("subfolder"), body.get("tab"))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    # ---- 图片排列预设：只存文件名/顺序，不复制图片 ----
+    @routes.get("/ps/image-sets")
+    async def ps_image_sets_list(request):
+        return compat.web.json_response(await asyncio.to_thread(image_sets.list_sets))
+
+    @routes.post("/ps/image-sets/save")
+    async def ps_image_sets_save(request):
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(
+            image_sets.save_set, body.get("name", ""), body.get("images"),
+            body.get("batch", False), body.get("select", False),
+            body.get("picked"), body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/image-sets/load")
+    async def ps_image_sets_load(request):
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(image_sets.load_set, body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 404)
+
+    @routes.post("/ps/image-sets/rename")
+    async def ps_image_sets_rename(request):
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(
+            image_sets.rename_set, body.get("id", ""), body.get("name", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/image-sets/delete")
+    async def ps_image_sets_delete(request):
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(image_sets.delete_set, body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 404)
 
     @routes.get("/ps/thumb")
     async def ps_thumb(request):

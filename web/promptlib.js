@@ -35,6 +35,133 @@ const USAGE_LABELS = {
   "参考生视频": "Reference to video",
 };
 const usageLabel = (u) => t(USAGE_LABELS[u] || u);
+
+// ───────── 参考图写法：各模型在提示词里指代第 N 张参考图的格式不一样 ─────────
+// 只负责把「第 N 张」渲染成目标模型认识的 token；图片本身仍要按同样顺序接到模型。
+// 依据（2026-10）：Seedance 2.x = @图片N / @Image N；MiniMax H3 = <Picture N>；
+// 万相 2.7 = 图 N / Image N；Vidu Q2+ = @图N；可灵 3.0 Omni API = <<<image_N>>>。
+const REF_STYLES = [
+  { id: "generic", label: "Generic · @图片N", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
+  { id: "seedance-zh", label: "Seedance · @图片N", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
+  { id: "seedance-en", label: "Seedance EN · @Image N", token: (n) => `@Image ${n}`, re: /@Image (\d+)/g },
+  { id: "h3", label: "MiniMax H3 · <Picture N>", token: (n) => `<Picture ${n}>`, re: /<Picture (\d+)>/g },
+  { id: "wan-zh", label: "Wan · 图 N", token: (n) => `图 ${n}`, re: /图 (\d+)/g },
+  { id: "wan-en", label: "Wan EN · Image N", token: (n) => `Image ${n}`, re: /Image (\d+)/g },
+  { id: "vidu", label: "Vidu · @图N", token: (n) => `@图${n}`, re: /@图(\d+)/g },
+  { id: "kling", label: "Kling Omni API · <<<image_N>>>", token: (n) => `<<<image_${n}>>>`, re: /<<<image_(\d+)>>>/g },
+];
+const REF_STORE_KEY = "kedou_ref_style";
+function refStyle(id) {
+  return REF_STYLES.find((s) => s.id === id) || REF_STYLES[0];
+}
+function refToken(id, n) {
+  return refStyle(id).token(Math.max(1, Number(n) || 1));
+}
+function loadRefStyleId() {
+  try {
+    const v = localStorage.getItem(REF_STORE_KEY);
+    if (REF_STYLES.some((s) => s.id === v)) return v;
+  } catch (_) { /* ignore */ }
+  return REF_STYLES[0].id;
+}
+function saveRefStyleId(id) {
+  try { localStorage.setItem(REF_STORE_KEY, id); } catch (_) { /* ignore */ }
+}
+
+// 历史日期只显示相对短格式：今天/昨天带时间，今年内只留月日，跨年才带年。
+// 完整时间放在 meta 的 title 里，鼠标停一下就能看全。
+function historyDay(stamp) {
+  const s = String(stamp || "");
+  if (s.length < 10) return s;
+  const day = s.slice(0, 10), hm = s.slice(11, 16);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterday = `${y.getFullYear()}-${pad(y.getMonth() + 1)}-${pad(y.getDate())}`;
+  if (day === today) return t("Today") + (hm ? " " + hm : "");
+  if (day === yesterday) return t("Yesterday") + (hm ? " " + hm : "");
+  if (day.slice(0, 4) === String(now.getFullYear())) return day.slice(5);
+  return day;
+}
+function historyWhen(stamp) {
+  const s = String(stamp || "");
+  const day = historyDay(s);
+  const hm = s.slice(11, 16);
+  return (day === t("Today") || day === t("Yesterday")) && hm ? day + " " + hm : day;
+}
+// 版本行只要“哪一天”，今天/昨天不重复写时间
+function historyDayLabel(stamp) {
+  const day = historyDay(stamp);
+  if (day === t("Today") || day.startsWith(t("Today") + " ")) return t("Today");
+  if (day === t("Yesterday") || day.startsWith(t("Yesterday") + " ")) return t("Yesterday");
+  return day;
+}
+
+// ───────── 历史迭代归组：几乎相同的提示词只留一行，旧版本折在下面 ─────────
+// 判断只做两件轻量的事：一条是不是另一条的开头（追加式修改），或字符二元组相似度够高。
+// 全量两两比较上限 50 条，开销可以忽略；不落库，删/改后分组会自动重算。
+function normPrompt(s) {
+  return String(s || "").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+function bigramSet(s) {
+  const out = new Set();
+  if (!s) return out;
+  if (s.length === 1) { out.add(s); return out; }
+  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+  return out;
+}
+function promptSimilar(a, b) {
+  const x = normPrompt(a), y = normPrompt(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const short = x.length <= y.length ? x : y;
+  const long = x.length <= y.length ? y : x;
+  if (short.length < 4) return false;
+  // 追加式迭代：短的是长的前缀，且长度不能差太远（防止 "masterpiece" 把一堆无关提示词串起来）
+  if (long.startsWith(short) && short.length / long.length >= 0.55) return true;
+  if (short.length / long.length < 0.45) return false;
+  const A = bigramSet(x), B = bigramSet(y);
+  let hit = 0;
+  for (const g of A) if (B.has(g)) hit++;
+  return (2 * hit) / (A.size + B.size) >= 0.72;
+}
+function histTime(e) {
+  const s = String((e && (e.updated || e.created)) || "");
+  // 只有日期的旧条目按当天 00:00 比，别让 localeCompare 把“长字符串”排到前面
+  return s.length === 10 ? s + " 00:00:00" : s;
+}
+function histCmp(a, b) {
+  const x = histTime(a), y = histTime(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+function groupHistory(items) {
+  const n = items.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i) => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  };
+  const union = (i, j) => {
+    const a = find(i), b = find(j);
+    if (a !== b) parent[b] = a;
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (promptSimilar(items[i].positive, items[j].positive)) union(i, j);
+    }
+  }
+  const map = new Map();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    if (!map.has(root)) map.set(root, []);
+    map.get(root).push(items[i]);
+  }
+  const groups = [...map.values()];
+  groups.forEach((g) => g.sort(histCmp));
+  groups.sort((a, b) => histCmp(b[b.length - 1], a[a.length - 1]));
+  return groups;
+}
 // type 同理：后端存的是 "精选" 中文数据，提交时继续用原值。
 
 // ───────── 样式（全主题安全色 + 深色回退） ─────────
@@ -46,6 +173,28 @@ const CSS = `
 .kd-pbox-use{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;
   color:var(--fg-color,#ddd);font:inherit;font-size:11.5px;padding:4px 8px;outline:none;cursor:pointer;}
 .kd-pbox-use:focus{border-color:var(--p-primary-color,#4a7dff);}
+.kd-pbox-refrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.kd-pbox-refrow[hidden]{display:none !important;}
+.kd-pbox-refthumbs{display:flex;gap:6px;overflow-x:auto;padding:1px 1px 2px;
+  scrollbar-width:none;-ms-overflow-style:none;}
+.kd-pbox-refthumbs[hidden]{display:none !important;}
+.kd-pbox-refthumbs::-webkit-scrollbar{display:none;}
+.kd-refthumb{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;width:62px;padding:3px;
+  border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;background:transparent;
+  cursor:pointer;transition:border-color .15s,background .15s;}
+.kd-refthumb:hover{border-color:var(--p-primary-color,#4a7dff);background:var(--content-bg,#16161c);}
+.kd-refthumb .kd-refthumb-img{position:relative;display:flex;align-items:center;justify-content:center;
+  width:46px;height:46px;border-radius:5px;overflow:hidden;background:var(--content-bg,#16161c);
+  color:var(--fg-color,#777);font-size:16px;font-weight:600;}
+.kd-refthumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+.kd-refthumb .kd-refthumb-tag{max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:9.5px;color:var(--fg-color,#999);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;}
+.kd-refthumb:hover .kd-refthumb-tag{color:var(--p-primary-color,#6a9bff);}
+.kd-refthumb.kd-bad{border-color:var(--error-text,#a33);}
+.kd-refthumb.kd-bad .kd-refthumb-img{color:var(--error-text,#ffb3b3);}
+.kd-pbox-reflab{font-size:10.5px;color:var(--fg-color,#888);white-space:nowrap;}
+.kd-pbox-ref{flex:1;min-width:150px;max-width:250px;font-size:11px;}
+.kd-pbox-refrow .kd-pbox-btn{padding:4px 8px;font-size:11px;}
 .kd-pbox-btn{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#bbb);
   font:inherit;font-size:11px;padding:4px 10px;border-radius:7px;cursor:pointer;
   transition:border-color .15s,color .15s,transform .12s;}
@@ -104,6 +253,11 @@ const CSS = `
 .kd-plib-cat:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#6a9bff);}
 .kd-plib-cat.kd-on{border-color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.14);
   color:var(--p-primary-color,#8fb0ff);}
+.kd-cat-input{width:104px;max-width:40vw;background:var(--content-bg,#16161c);
+  border:1px solid var(--p-primary-color,#4a7dff);border-radius:999px;color:var(--fg-color,#ddd);
+  font:inherit;font-size:11.5px;padding:3px 10px;outline:none;}
+.kd-row-name .kd-badge + .kd-badge{margin-left:0;}
+.kd-cat-badge{color:var(--p-primary-color,#6a9bff) !important;border-color:var(--p-primary-color,#4a7dff66) !important;}
 .kd-plib-subcats .kd-plib-cat{font-size:11px;padding:2px 9px;}
 .kd-plib-list{flex:1;overflow-y:auto;padding:0 14px 12px;scrollbar-width:thin;
   scrollbar-color:var(--interface-stroke,#3a3a44) transparent;}
@@ -121,6 +275,42 @@ const CSS = `
   border-radius:5px;padding:0 5px;margin-left:auto;white-space:nowrap;flex:none;}
 .kd-row-prev{font-size:11.5px;color:var(--fg-color,#9a9a9a);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .kd-row:hover .kd-row-prev{white-space:normal;overflow:visible;}
+/* 图片排列：行内小缩略图条，加载前先确认是哪套图 */
+.kd-set-ico{flex:none;font-size:11px;color:var(--p-primary-color,#8fb0ff);}
+.kd-set-thumbs{display:flex;gap:3px;margin-top:5px;align-items:center;min-height:30px;overflow:hidden;}
+.kd-set-thumb{width:30px;height:30px;flex:none;border-radius:4px;overflow:hidden;background:rgba(127,127,127,.12);
+  display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--fg-color,#888);}
+.kd-set-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.kd-set-thumb.kd-bad{border:1px dashed var(--error-text,#a33);color:var(--error-text,#ff8a8a);}
+.kd-set-more{flex:none;font-size:10px;color:var(--fg-color,#888);padding:0 2px;}
+.kd-set-row .kd-row-prev{margin-top:4px;font-size:10.5px;}
+/* 历史：正文只显示一行；悬停展开，最多 4 行，再多就在正文里滚动 */
+.kd-hist-row .kd-row-head{display:flex;align-items:flex-start;gap:6px;min-width:0;}
+.kd-hist-row .kd-hist-text{flex:1;min-width:0;display:block;font-size:12.5px;font-weight:600;
+  color:var(--fg-color,#e0e0e0);line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kd-hist-row .kd-hist-meta{flex:none;margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;
+  gap:2px;line-height:1.3;font-size:10px;color:var(--fg-color,#888);}
+.kd-hist-row .kd-hist-uses{white-space:nowrap;color:var(--p-primary-color,#8fb0ff);
+  border:1px solid var(--p-primary-color,#4a7dff55);border-radius:5px;padding:0 5px;}
+.kd-hist-row .kd-hist-when{white-space:nowrap;font-size:9.5px;opacity:.85;}
+.kd-hist-row:hover .kd-hist-text{white-space:pre-wrap;word-break:break-word;overflow-y:auto;
+  max-height:6em;font-weight:400;color:var(--fg-color,#ccc);padding-right:4px;
+  scrollbar-width:thin;scrollbar-color:var(--interface-stroke,#3a3a44) transparent;}
+.kd-hist-fold{flex:none;align-self:center;display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;margin-right:1px;padding:0;border:none;border-radius:5px;background:none;
+  color:var(--fg-color,#999);font:inherit;font-size:16px;line-height:1;cursor:pointer;}
+.kd-hist-fold:hover{color:var(--p-primary-color,#6a9bff);background:var(--content-bg,#16161c);}
+.kd-hist-versions{margin-top:6px;padding-top:5px;border-top:1px dashed var(--interface-stroke,#3a3a44);
+  display:flex;flex-direction:column;gap:3px;}
+.kd-hist-versions[hidden]{display:none !important;}
+.kd-hist-ver{display:flex;align-items:baseline;gap:6px;min-width:0;padding:3px 4px;border-radius:6px;cursor:pointer;}
+.kd-hist-ver:hover{background:var(--content-bg,#16161c);}
+.kd-hist-vtag{flex:none;font-size:9.5px;color:var(--p-primary-color,#8fb0ff);
+  border:1px solid var(--p-primary-color,#4a7dff55);border-radius:4px;padding:0 4px;}
+.kd-hist-ver-text{flex:1;min-width:0;font-size:11.5px;color:var(--fg-color,#bbb);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kd-hist-ver.kd-used .kd-hist-ver-text{color:var(--p-primary-color,#8fb0ff);}
+.kd-hist-ver-meta{flex:none;font-size:9.5px;color:var(--fg-color,#777);white-space:nowrap;}
 .kd-star{color:#e2b341;}
 /* 词库：分组标题 + 两行小卡 */
 .kd-tag-group{font-size:11px;font-weight:600;color:var(--fg-color,#8a8a8a);margin:11px 1px 6px;
@@ -165,6 +355,23 @@ const CSS = `
 .kd-menu button.kd-armed{color:var(--error-text,#ffb3b3);background:var(--content-bg,#16161c);}
 .kd-menu-title{font-size:10.5px;color:var(--fg-color,#777);padding:3px 10px 5px;margin-bottom:2px;
   border-bottom:1px solid var(--interface-stroke,#3a3a44);}
+.kd-menu.kd-ref-menu{min-width:250px;max-width:min(390px,calc(100vw - 24px));max-height:min(440px,72vh);
+  overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--interface-stroke,#3a3a44) transparent;}
+.kd-ref-group{font-size:10px;color:var(--fg-color,#777);padding:5px 10px 2px;margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kd-ref-group:first-of-type{margin-top:0;}
+.kd-menu .kd-ref-item{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 8px;}
+.kd-menu .kd-ref-thumb{flex:none;position:relative;display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:5px;overflow:hidden;background:var(--content-bg,#16161c);
+  color:var(--fg-color,#777);font-size:13px;font-weight:600;}
+.kd-menu .kd-ref-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
+.kd-menu .kd-ref-thumb.kd-bad{color:var(--error-text,#ffb3b3);}
+.kd-menu .kd-ref-token{flex:none;font-size:11.5px;color:var(--p-primary-color,#8fb0ff);
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;}
+.kd-menu .kd-ref-file{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:10.5px;color:var(--fg-color,#888);}
+.kd-menu .kd-ref-hint{font-size:10.5px;color:var(--fg-color,#777);padding:5px 10px;line-height:1.45;}
+.kd-menu .kd-ref-foot{border-top:1px solid var(--interface-stroke,#3a3a44);margin-top:4px;}
 .kd-edit{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px;
   border:1px dashed var(--interface-stroke,#3a3a44);border-radius:9px;background:rgba(0,0,0,.08);}
 .kd-edit input,.kd-edit textarea{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;color:var(--fg-color,#ddd);padding:6px 9px;font:inherit;font-size:12px;outline:none;scrollbar-width:none;-ms-overflow-style:none;}
@@ -207,8 +414,8 @@ function toast(msg, isErr) {
   }, 2600);
 }
 
-async function api(path, body) {
-  const r = await fetch(API + path, body
+async function apiAbs(url, body) {
+  const r = await fetch(url, body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : undefined);
   if (!r.ok) {
@@ -217,6 +424,10 @@ async function api(path, body) {
     throw new Error(msg);
   }
   return r.json();
+}
+
+async function api(path, body) {
+  return apiAbs(API + path, body);
 }
 
 function esc(s) {
@@ -255,7 +466,26 @@ async function historyLib(force) {
   }
   return histCache;
 }
-function libInvalidate() { libCache = phraseCache = histCache = null; }
+// 图片排列存在词库目录（<vault>/.kedou/image_sets.json），词库面板里单独一组展示。
+const SETS_API = "/ps/image-sets";
+const SETS_GROUP = "__sets";
+let setsCache = null;
+let setsStamp = 0;
+async function setsLib(force) {
+  if (force || !setsCache || Date.now() - setsStamp > 30000) {
+    setsCache = await apiAbs(SETS_API);
+    setsStamp = Date.now();
+  }
+  return setsCache;
+}
+function libInvalidate() { libCache = phraseCache = histCache = setsCache = null; }
+// 图片加载器上的「排列」菜单增删后，词库面板里的同一份记录要跟着更新
+window.addEventListener("kedou:sets-changed", () => {
+  setsCache = null;
+  if (libPanel && libTab === "phrases" && libState.phraseGroup === SETS_GROUP && libRefresh) {
+    libRefresh();
+  }
+});
 
 // ───────── 库面板：语库 / 词库 / 历史 三个入口都在节点上，面板内部不再分标签页 ─────────
 let libPanel = null;
@@ -266,15 +496,17 @@ let libReposition = null;   // 窗口尺寸变化时重新贴到节点旁边
 const libState = {
   editId: null,            // 语库就地编辑
   phraseEditId: null,      // 词库编辑
+  setEditId: null,         // 图片排列就地重命名
   phraseFormOpen: false,   // 词库新建
   phraseInit: false,       // 只在第一次拿到数据时选默认分类
   phraseGroup: "",         // ""=全部 / "__fav"=收藏 / 顶层分组名
   phraseCat: "",           // 词库二级分类
+  promptCat: "",           // 语库分类（与用途叠加筛选）
   q: { prompts: "", phrases: "", history: "" },
   clearArmed: 0,
 };
-let libData = { prompts: [], phrases: [], history: [], groups: [], categories: [] };
-let libErrors = { prompts: "", phrases: "", history: "" };
+let libData = { prompts: [], phrases: [], history: [], groups: [], categories: [], promptCategories: [], sets: [] };
+let libErrors = { prompts: "", phrases: "", history: "", sets: "" };
 const USE_URL = { prompt: "/use", history: "/use", phrase: "/phrases/use" };
 
 // 存/移进词库的词一律落在「我的词 · 未分类」；下次打开词库直接停在这一格
@@ -352,6 +584,8 @@ function openRowMenu(x, y, entry, kind, onChanged) {
         name: entry.name || String(entry.positive || "").slice(0, 20),
         type: "精选",
         positive: entry.positive,
+        category: isHistory ? (libState.promptCat || "")
+          : ((entry.category && entry.category !== "未分类") ? entry.category : (libState.promptCat || "")),
         usage: (entry.use_for && entry.use_for.length) ? entry.use_for : [panelUsage()],
       });
       if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
@@ -429,12 +663,15 @@ document.addEventListener("contextmenu", (e) => {
   if (menuEl && libPanel && !libPanel.contains(e.target)) closeMenu();
 }, true);
 
-// 就地编辑（行内展开：短名 / 正文 / 负面 / 用途勾选 / 保存）
+// 就地编辑（行内展开：短名 / 分类 / 正文 / 负面 / 用途勾选 / 保存）
 function renderRowEdit(row, entry, onSaved) {
   const box = document.createElement("div");
   box.className = "kd-edit";
   box.innerHTML = `
-    <input data-f="name" value="${esc(entry.name)}" placeholder="${t("Short name")}">
+    <div class="kd-form-row">
+      <input data-f="name" value="${esc(entry.name)}" placeholder="${t("Short name")}">
+      <input data-f="category" value="${esc(entry.category || "")}" placeholder="${t("Category (optional)")}">
+    </div>
     <textarea data-f="positive" placeholder="${t("Prompt body")}">${esc(entry.positive)}</textarea>
     <textarea data-f="negative" placeholder="${t("Negative (optional)")}" style="min-height:44px">${esc(entry.negative)}</textarea>
     <div class="kd-use-row">${USAGES.map((u) => `<label class="kd-use-c"><input type="checkbox" data-u="${esc(u)}" ${(entry.use_for || []).indexOf(u) !== -1 ? "checked" : ""}>${esc(usageLabel(u))}</label>`).join("")}</div>
@@ -452,6 +689,7 @@ function renderRowEdit(row, entry, onSaved) {
     const body = {
       id: entry.id,
       name: g("name").value.trim(),
+      category: g("category").value.trim(),
       positive: g("positive").value,
       negative: g("negative").value,
       usage,
@@ -477,7 +715,9 @@ function renderRowEdit(row, entry, onSaved) {
 function renderPhraseForm(entry, onSaved) {
   const box = document.createElement("div");
   box.className = "kd-edit kd-phrase-form";
-  const cat = entry ? entry.category : "";
+  const group = entry ? entry.group
+    : (libState.phraseGroup && libState.phraseGroup !== "__fav" ? libState.phraseGroup : "");
+  const cat = entry ? entry.category : (group ? libState.phraseCat : "");
   box.innerHTML = `
     <div class="kd-form-row">
       <input data-f="name" value="${esc(entry ? entry.name : "")}" placeholder="${t("Short name (optional)")}">
@@ -508,6 +748,8 @@ function renderPhraseForm(entry, onSaved) {
     if (entry) {
       body.id = entry.id;
       body.group = entry.group;
+    } else if (group) {
+      body.group = group;
     }
     try {
       const r = await api("/phrases/save", body);
@@ -662,6 +904,7 @@ function openLib(node, tab) {
   libTab = tab === "phrases" ? "phrases" : tab === "history" ? "history" : "prompts";
   libState.editId = null;
   libState.phraseEditId = null;
+  libState.setEditId = null;
   libState.phraseFormOpen = false;
   libState.clearArmed = 0;
 
@@ -676,6 +919,7 @@ function openLib(node, tab) {
     <div class="kd-plib-tools">
       <input class="kd-plib-q" spellcheck="false">
       <button class="kd-pbox-btn kd-plib-new">＋ ${t("New tag")}</button>
+      <button class="kd-pbox-btn kd-plib-newcat">＋ ${t("New category")}</button>
       <button class="kd-pbox-btn kd-plib-clear">${t("Clear history")}</button>
     </div>
     <div class="kd-plib-cats"></div>
@@ -712,6 +956,7 @@ function openLib(node, tab) {
   const usePill = libPanel.querySelector(".kd-plib-use");
   const tipEl = libPanel.querySelector(".kd-plib-tip");
   const newBtn = libPanel.querySelector(".kd-plib-new");
+  const newCatBtn = libPanel.querySelector(".kd-plib-newcat");
   const clearBtn = libPanel.querySelector(".kd-plib-clear");
   const locEl = libPanel.querySelector(".kd-plib-loc");
   libPanel.querySelector(".kd-plib-x").onclick = () => closeLib();
@@ -773,9 +1018,14 @@ function openLib(node, tab) {
     newBtn.textContent = "＋ " + t("New tag");
     clearBtn.textContent = t("Clear history");
     clearBtn.style.color = "";
-    newBtn.hidden = libTab !== "phrases";
+    newBtn.hidden = libTab !== "phrases" || libState.phraseGroup === SETS_GROUP;
+    const catIn = libPanel.querySelector(".kd-cat-input");
+    if (catIn && catIn.dataset.kdCatTab !== libTab) catIn.remove();
+    newCatBtn.hidden = libTab === "history" || libState.phraseGroup === SETS_GROUP
+      || !!libPanel.querySelector(".kd-cat-input");
     clearBtn.hidden = libTab !== "history";
-    qEl.placeholder = libTab === "phrases" ? t("Search tags…")
+    qEl.placeholder = libTab === "phrases"
+      ? (libState.phraseGroup === SETS_GROUP ? t("Search arrangements…") : t("Search tags…"))
       : libTab === "history" ? t("Search history…") : t("Search prompts…");
     if (qEl.value !== (libState.q[libTab] || "")) qEl.value = libState.q[libTab] || "";
   }
@@ -791,6 +1041,12 @@ function openLib(node, tab) {
     libState.phraseFormOpen = true;
     libState.phraseEditId = null;
     paintBody();
+  };
+  newCatBtn.onclick = () => {
+    const scope = libTab === "phrases" ? "phrases" : "prompts";
+    const group = scope === "phrases" && libState.phraseGroup && libState.phraseGroup !== "__fav"
+      ? libState.phraseGroup : "";
+    addCategoryInline(libPanel.querySelector(".kd-plib-tools"), newCatBtn, scope, group);
   };
   clearBtn.onclick = async () => {
     if (Date.now() - libState.clearArmed > 2500) {
@@ -825,6 +1081,7 @@ function openLib(node, tab) {
         try {
           const d = await lib(force);
           libData.prompts = d.items || [];
+          libData.promptCategories = d.categories || [];
           if (d.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
           libErrors.prompts = "";
         } catch (e) {
@@ -848,6 +1105,15 @@ function openLib(node, tab) {
           }
         } catch (e) {
           libErrors.phrases = serverError(e.message);
+        }
+      })(),
+      (async () => {
+        try {
+          const d = await setsLib(force);
+          libData.sets = d.items || [];
+          libErrors.sets = "";
+        } catch (e) {
+          libErrors.sets = serverError(e.message);
         }
       })(),
       (async () => {
@@ -921,20 +1187,80 @@ function openLib(node, tab) {
   function paint() {
     if (!libPanel) return;
     applyLabels();
-    if (libTab === "phrases") paintCats();
+    if (libTab === "phrases" || libTab === "prompts") paintCats();
     else { catsEl.hidden = true; subcatsEl.hidden = true; }
     paintBody();
     tipEl.textContent = libTab === "phrases"
-      ? t("Click a tag to insert · click again to remove · right-click to edit")
+      ? (libState.phraseGroup === SETS_GROUP
+        ? t("Click an arrangement to load it into the image loader · right-click to rename or delete")
+        : t("Click a tag to insert · click again to remove · right-click to edit"))
       : libTab === "history"
         ? t("Prompts you run land here automatically · right-click to delete")
         : t("Click to insert · click again to remove · right-click for more");
   }
 
+  // 分类输入：就地变成一个小输入框，Enter 保存、Esc 取消、点外面按输入内容提交
+  function addCategoryInline(container, btn, scope, group) {
+    btn.hidden = true;
+    const input = document.createElement("input");
+    input.className = "kd-cat-input";
+    input.placeholder = t("Category name");
+    input.maxLength = 60;
+    input.dataset.kdCatTab = scope === "prompts" ? "prompts" : "phrases";
+    container.appendChild(input);
+    input.focus();
+    let done = false, busy = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      input.remove();
+      btn.hidden = false;
+    };
+    const commit = async () => {
+      if (busy || done) return;
+      const name = input.value.trim();
+      if (!name) { finish(); return; }
+      busy = true;
+      try {
+        const r = await api("/categories", { scope, name, group: group || "" });
+        if (!r.ok) {
+          toast(t("Save failed: {error}", { error: serverError(r.error) }), true);
+          busy = false;
+          try { input.focus(); } catch (_) { /* ignore */ }
+          return;
+        }
+        finish();
+        if (scope === "prompts") {
+          libState.q.prompts = "";
+          libState.promptCat = name;
+        } else {
+          libState.q.phrases = "";
+          libState.phraseInit = true;
+          libState.phraseGroup = r.group || group || "我的词";
+          libState.phraseCat = name;
+        }
+        toast(t("Category created: {name}", { name }));
+        refresh();
+      } catch (e) {
+        toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+        busy = false;
+        try { input.focus(); } catch (_) { /* ignore */ }
+      }
+    };
+    input.onkeydown = (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+      else if (ev.key === "Escape") finish();
+    };
+    input.onblur = () => { if (!done && !busy) commit(); };
+    input.onpointerdown = (e) => e.stopPropagation();
+    input.onclick = (e) => e.stopPropagation();
+  }
   function paintCats() {
     catsEl.innerHTML = "";
     subcatsEl.innerHTML = "";
-    if ((libState.q.phrases || "").trim()) {
+    const qkey = libTab === "phrases" ? "phrases" : "prompts";
+    if ((libState.q[qkey] || "").trim()) {
       catsEl.hidden = true;
       subcatsEl.hidden = true;
       return;
@@ -948,12 +1274,31 @@ function openLib(node, tab) {
       b.onclick = onClick;
       catsEl.appendChild(b);
     };
+
+    if (libTab === "prompts") {
+      subcatsEl.hidden = true;
+      add(t("All categories"), !libState.promptCat, () => {
+        libState.promptCat = ""; paint();
+      });
+      (libData.promptCategories || []).forEach((c) => add(c, libState.promptCat === c, () => {
+        libState.promptCat = c; paint();
+      }));
+      return;
+    }
+
     add(t("All"), libState.phraseGroup === "", () => {
       libState.phraseGroup = ""; libState.phraseCat = ""; paint();
     });
     add(t("Favorites"), libState.phraseGroup === "__fav", () => {
       libState.phraseGroup = "__fav"; libState.phraseCat = ""; paint();
     });
+    const setsN = (libData.sets || []).length;
+    add(t("Image arrangements") + (setsN ? ` (${setsN})` : ""),
+      libState.phraseGroup === SETS_GROUP, () => {
+        libState.phraseGroup = SETS_GROUP;
+        libState.phraseCat = "";
+        paint();
+      });
     (libData.groups || []).forEach((g) => add(g, libState.phraseGroup === g, () => {
       libState.phraseGroup = g;
       const cats = libData.categories.filter((c) => c.group === g);
@@ -961,11 +1306,15 @@ function openLib(node, tab) {
       paint();
     }));
 
-    const cats = libState.phraseGroup && libState.phraseGroup !== "__fav"
-      ? libData.categories.filter((c) => c.group === libState.phraseGroup).map((c) => c.name)
-      : [];
-    subcatsEl.hidden = cats.length < 2;
-    if (cats.length < 2) return;
+    if (libState.phraseGroup === SETS_GROUP) {
+      subcatsEl.hidden = true;
+      return;
+    }
+    const group = libState.phraseGroup && libState.phraseGroup !== "__fav"
+      ? libState.phraseGroup : "";
+    subcatsEl.hidden = !group;
+    if (!group) return;
+    const cats = libData.categories.filter((c) => c.group === group).map((c) => c.name);
     const addSub = (label, active, onClick) => {
       const b = document.createElement("button");
       b.type = "button";
@@ -995,20 +1344,27 @@ function openLib(node, tab) {
       return;
     }
     if (libTab === "prompts") paintPrompts();
-    else if (libTab === "phrases") paintPhrases();
-    else paintHistory();
+    else if (libTab === "phrases") {
+      if (libState.phraseGroup === SETS_GROUP) paintSets();
+      else paintPhrases();
+    } else paintHistory();
   }
 
   function paintPrompts() {
     const use = pb.useSel.value;
     const q = (libState.q.prompts || "").trim().toLowerCase();
-    const pool = (libData.prompts || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
+    const all = (libData.prompts || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
+    const pool = libState.promptCat
+      ? all.filter((e) => (e.category || "") === libState.promptCat) : all;
     const rows = pool.filter((e) => match(e, q));
-    if (!pool.length && !q) {
+    if (!all.length && !q) {
       empty(t('No prompts for "{usage}" yet — write one and hit "Save"', { usage: usageLabel(use) }), true);
       return;
     }
-    if (!rows.length) { empty(t("Nothing matches this filter")); return; }
+    if (!rows.length) {
+      empty(libState.promptCat ? t("No prompts in this category yet") : t("Nothing matches this filter"));
+      return;
+    }
     const grid = document.createElement("div");
     grid.className = "kd-lib-grid";
     rows.forEach((e) => {
@@ -1018,6 +1374,7 @@ function openLib(node, tab) {
       row.title = (e.positive || e.negative || "").slice(0, 400);
       row.innerHTML = `
         <div class="kd-row-name">${e.pinned ? '<span class="kd-star">★</span>' : ""}<span class="kd-name-t">${esc(e.name)}</span>
+          ${e.category ? `<span class="kd-badge kd-cat-badge">${esc(e.category)}</span>` : ""}
           <span class="kd-badge">${t("{n} uses", { n: e.uses || 0 })}</span></div>
         <div class="kd-row-prev">${esc((e.positive || e.negative || "").slice(0, 80)) || t("(Body is in the Negative field)")}</div>`;
       bindToggle(row, e, "prompt");
@@ -1101,36 +1458,353 @@ function openLib(node, tab) {
     }
   }
 
+  // ---- 图片排列（与图片加载器上的「排列」是同一份数据，存在词库目录里） ----
+  function setThumbStrip(imgs) {
+    const strip = document.createElement("div");
+    strip.className = "kd-set-thumbs";
+    imgs.slice(0, 6).forEach((name) => {
+      const box = document.createElement("span");
+      box.className = "kd-set-thumb";
+      box.title = name;
+      const img = document.createElement("img");
+      img.loading = "eager";
+      img.draggable = false;
+      img.alt = String(name).split(/[\\/]/).pop();
+      img.src = refThumbUrl(name, 64, "input");
+      img.onerror = () => {
+        if (img.dataset.tried !== "output") {
+          img.dataset.tried = "output";
+          img.src = refThumbUrl(name, 64, "output");
+          return;
+        }
+        img.remove();
+        box.textContent = "?";
+        box.classList.add("kd-bad");
+      };
+      box.appendChild(img);
+      strip.appendChild(box);
+    });
+    if (imgs.length > 6) {
+      const more = document.createElement("span");
+      more.className = "kd-set-more";
+      more.textContent = "+" + (imgs.length - 6);
+      strip.appendChild(more);
+    }
+    return strip;
+  }
+
+  async function loadSetInto(node, set) {
+    try {
+      const r = await apiAbs(SETS_API + "/load", { id: set.id });
+      if (!r.ok) {
+        toast(t("Load failed: {error}", { error: serverError(r.error) }), true);
+        return;
+      }
+      const found = r.found || [];
+      if (!found.length) {
+        toast(t("No images in this arrangement are still available"), true);
+        return;
+      }
+      // 状态写入交给 kedou_media.js：它知道怎么同步输出槽和重绘面板
+      try {
+        window.dispatchEvent(new CustomEvent("kedou:media-apply", { detail: {
+          nodeId: node.id,
+          images: found.map((f) => f.filename),
+          batch: !!r.item.batch,
+          select: !!r.item.select,
+          picked: r.item.picked || [],
+        } }));
+      } catch (_) { /* 事件失败也要提示，至少状态已由后端确认 */ }
+      let msg = t("Arrangement loaded: {name} ({n} images)",
+        { name: r.item.name || t("(unnamed)"), n: found.length });
+      const missing = r.missing || [];
+      if (missing.length) {
+        msg += " · " + t("Missing {n}: {names}", {
+          n: missing.length,
+          names: missing.slice(0, 3).join(", ") + (missing.length > 3 ? "…" : ""),
+        });
+      }
+      toast(msg, missing.length > 0);
+    } catch (e) {
+      toast(t("Load failed: {error}", { error: serverError(e.message) }), true);
+    }
+  }
+
+  // 画布上有多个加载器时先问一句，避免把排列盖到错误的节点上
+  function openLoaderPicker(set, loaders, anchorEl) {
+    closeMenu();
+    menuEl = document.createElement("div");
+    menuEl.className = "kd-menu";
+    const title = document.createElement("div");
+    title.className = "kd-menu-title";
+    title.textContent = t("Apply to which image loader?");
+    menuEl.appendChild(title);
+    loaders.forEach((n) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = (n.title || t("Image loader")) + " · " +
+        t("{n} images", { n: loaderImageList(n).length });
+      b.onclick = () => {
+        closeMenu();
+        loadSetInto(n, set);
+      };
+      menuEl.appendChild(b);
+    });
+    document.body.appendChild(menuEl);
+    const r = anchorEl && anchorEl.getBoundingClientRect
+      ? anchorEl.getBoundingClientRect()
+      : { left: 40, top: 40, bottom: 70 };
+    menuEl.style.left = Math.max(6, Math.min(r.left, window.innerWidth - 230)) + "px";
+    const mh = Math.min(menuEl.offsetHeight || 170, window.innerHeight - 12);
+    menuEl.style.top = (r.bottom + mh + 6 <= window.innerHeight)
+      ? (r.bottom + 4) + "px"
+      : Math.max(6, r.top - mh - 4) + "px";
+    void menuEl.offsetWidth;
+    menuEl.classList.add("kd-in");
+  }
+
+  function applySet(set, row) {
+    const loaders = imageLoaderNodes();
+    if (!loaders.length) {
+      toast(t("No image loader on the canvas. Add a Kedou Image Loader first."), true);
+      return;
+    }
+    if (loaders.length === 1) {
+      loadSetInto(loaders[0], set);
+      return;
+    }
+    openLoaderPicker(set, loaders, row);
+  }
+
+  function renderSetEdit(row, entry, onSaved) {
+    const box = document.createElement("div");
+    box.className = "kd-edit";
+    box.innerHTML = `
+      <div class="kd-form-row">
+        <input data-f="name" value="${esc(entry.name || "")}" placeholder="${t("Name this arrangement (optional)")}">
+      </div>
+      <div class="kd-edit-acts">
+        <button class="kd-pbox-btn kd-main" data-a="save">${t("Save")}</button>
+        <button class="kd-pbox-btn" data-a="cancel">${t("Cancel")}</button>
+      </div>`;
+    box.addEventListener("pointerdown", (e) => e.stopPropagation());
+    box.addEventListener("click", (e) => e.stopPropagation());
+    box.querySelector("[data-a=cancel]").onclick = () => { libState.setEditId = null; onSaved(); };
+    box.querySelector("[data-a=save]").onclick = async () => {
+      const name = box.querySelector("[data-f=name]").value.trim();
+      if (!name) { toast(t("Name cannot be empty"), true); return; }
+      try {
+        const r = await apiAbs(SETS_API + "/rename", { id: entry.id, name });
+        if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+        setsCache = null;
+        libState.setEditId = null;
+        toast(t("Renamed to “{name}”", { name }));
+        onSaved();
+      } catch (e) {
+        toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+      }
+    };
+    row.appendChild(box);
+    const input = box.querySelector("[data-f=name]");
+    input.focus();
+    input.select();
+    input.onkeydown = (e) => {
+      e.stopPropagation();             // Escape 只退出重命名，不要把整个词库面板一起关掉
+      if (e.key === "Enter") { e.preventDefault(); box.querySelector("[data-a=save]").click(); }
+      else if (e.key === "Escape") box.querySelector("[data-a=cancel]").click();
+    };
+  }
+
+  function openSetMenu(x, y, entry, onChanged) {
+    closeMenu();
+    menuEl = document.createElement("div");
+    menuEl.className = "kd-menu";
+    menuEl.innerHTML = `
+      <button data-a="rename">✎ ${t("Rename")}</button>
+      <button data-a="del">🗑 ${t("Delete")}</button>`;
+    menuEl.style.left = Math.max(6, Math.min(x, window.innerWidth - 170)) + "px";
+    menuEl.style.top = Math.max(6, Math.min(y, window.innerHeight - 100)) + "px";
+    document.body.appendChild(menuEl);
+    void menuEl.offsetWidth;
+    menuEl.classList.add("kd-in");
+    menuEl.querySelector("[data-a=rename]").onclick = () => {
+      closeMenu();
+      libState.setEditId = entry.id;
+      if (libRepaint) libRepaint();
+    };
+    const del = menuEl.querySelector("[data-a=del]");
+    del.onclick = async () => {
+      if (!del.classList.contains("kd-armed")) {
+        del.classList.add("kd-armed");
+        del.textContent = t("Confirm delete?");
+        return;
+      }
+      closeMenu();
+      try {
+        const r = await apiAbs(SETS_API + "/delete", { id: entry.id });
+        if (!r.ok) { toast(t("Delete failed: {error}", { error: serverError(r.error) }), true); return; }
+        setsCache = null;
+        if (libState.setEditId === entry.id) libState.setEditId = null;
+        toast(t("Deleted"));
+        onChanged();
+      } catch (e) {
+        toast(t("Delete failed: {error}", { error: serverError(e.message) }), true);
+      }
+    };
+  }
+
+  function setRow(e) {
+    const imgs = Array.isArray(e.images) ? e.images : [];
+    const row = document.createElement("div");
+    row.className = "kd-row kd-set-row";
+    row.dataset.id = e.id;
+    row.title = imgs.join("\n");
+
+    const head = document.createElement("div");
+    head.className = "kd-row-name";
+    const ico = document.createElement("span");
+    ico.className = "kd-set-ico";
+    ico.textContent = "▦";
+    const nm = document.createElement("span");
+    nm.className = "kd-name-t";
+    nm.textContent = e.name || t("(unnamed)");
+    const badge = document.createElement("span");
+    badge.className = "kd-badge";
+    const flags = [t("{n} images", { n: imgs.length })];
+    if (e.batch) flags.push(t("Batch"));
+    if (e.select) flags.push(t("Select"));
+    badge.textContent = flags.join(" · ");
+    head.append(ico, nm, badge);
+    row.appendChild(head);
+    if (imgs.length) row.appendChild(setThumbStrip(imgs));
+
+    const prev = document.createElement("div");
+    prev.className = "kd-row-prev";
+    prev.textContent = imgs.slice(0, 4).join(" · ") + (imgs.length > 4 ? " …" : "");
+    row.appendChild(prev);
+
+    row.onclick = () => {
+      if (libState.setEditId === e.id) return;
+      applySet(e, row);
+    };
+    row.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openSetMenu(ev.clientX, ev.clientY, e, refresh);
+    };
+    if (libState.setEditId === e.id) renderSetEdit(row, e, refresh);
+    return row;
+  }
+
+  function paintSets() {
+    const q = (libState.q.phrases || "").trim().toLowerCase();
+    const all = libData.sets || [];
+    if (!all.length) {
+      if (libErrors.sets) {
+        empty(t("Failed to load: {error}", { error: libErrors.sets }));
+        return;
+      }
+      empty(q ? t("Nothing matches this filter")
+        : t('No image arrangements yet — save one with the "Sets" button on an image loader'));
+      return;
+    }
+    const rows = all.filter((e) => {
+      if (!q) return true;
+      return String(e.name || "").toLowerCase().includes(q)
+        || (e.images || []).some((n) => String(n).toLowerCase().includes(q));
+    });
+    if (!rows.length) {
+      empty(t("Nothing matches this filter"));
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "kd-lib-grid";
+    rows.forEach((e) => grid.appendChild(setRow(e)));
+    listEl.appendChild(grid);
+  }
+
+  function histMetaHtml(e, group) {    const total = group.reduce((sum, x) => sum + (Number(x.uses) || 0), 0);
+    const uses = group.length > 1
+      ? t("{n} versions", { n: group.length }) + " · " + t("{n} uses", { n: total })
+      : t("{n} uses", { n: total });
+    const when = historyWhen(e.updated || e.created);
+    return `<span class="kd-hist-meta" title="${esc(String(e.updated || e.created || "").slice(0, 16))}">
+      <span class="kd-hist-uses">${uses}</span>
+      ${when ? `<span class="kd-hist-when">${esc(when)}</span>` : ""}
+    </span>`;
+  }
+
+  // 一组迭代只占一张卡：主行是最新版本，旧版本点开后才展开
+  function renderHistGroup(group) {
+    const latest = group[group.length - 1];
+    const grouped = group.length > 1;
+    const row = document.createElement("div");
+    row.className = "kd-row kd-hist-row" + (insText(pb.ta, latest) ? " kd-used" : "");
+    row.dataset.id = latest.id;
+    // 只显示正文一行；名字就是正文前 20 字，再单独放一遍只会重复
+    row.innerHTML = `
+      <div class="kd-row-head">
+        ${grouped ? `<button type="button" class="kd-hist-fold" title="${t("Toggle versions")}">▸</button>` : ""}
+        <span class="kd-hist-text">${esc(latest.positive || latest.name || "")}</span>
+        ${histMetaHtml(latest, group)}
+      </div>`;
+    bindToggle(row, latest, "history");
+    row.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openRowMenu(ev.clientX, ev.clientY, latest, "history", refresh);
+    };
+    if (grouped) {
+      const box = document.createElement("div");
+      box.className = "kd-hist-versions";
+      box.hidden = true;
+      group.slice(0, -1).forEach((v, idx) => {
+        const vr = document.createElement("div");
+        vr.className = "kd-hist-ver" + (insText(pb.ta, v) ? " kd-used" : "");
+        vr.title = v.positive || "";
+        vr.innerHTML = `
+          <span class="kd-hist-vtag">v${idx + 1}</span>
+          <span class="kd-hist-ver-text">${esc(v.positive || v.name || "")}</span>
+          <span class="kd-hist-ver-meta">${t("{n} uses", { n: v.uses || 0 })}${v.updated ? " · " + esc(historyDayLabel(v.updated)) : ""}</span>`;
+        bindToggle(vr, v, "history");
+        vr.oncontextmenu = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          openRowMenu(ev.clientX, ev.clientY, v, "history", refresh);
+        };
+        box.appendChild(vr);
+      });
+      const fold = row.querySelector(".kd-hist-fold");
+      fold.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        box.hidden = !box.hidden;
+        fold.textContent = box.hidden ? "▸" : "▾";
+      };
+      fold.onpointerdown = (ev) => ev.stopPropagation();
+      row.appendChild(box);
+    }
+    return row;
+  }
+
   function paintHistory() {
     const use = pb.useSel.value;
     const q = (libState.q.history || "").trim().toLowerCase();
     const pool = (libData.history || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
-    const rows = pool.filter((e) => match(e, q));
     if (!pool.length) {
       empty(t("No history for this usage yet — prompts you run land here automatically"), true);
       return;
     }
-    if (!rows.length) { empty(t("Nothing matches this filter")); return; }
     const grid = document.createElement("div");
     grid.className = "kd-lib-grid";
-    rows.forEach((e) => {
-      const row = document.createElement("div");
-      row.className = "kd-row" + (insText(pb.ta, e) ? " kd-used" : "");
-      row.dataset.id = e.id;
-      row.title = (e.positive || "").slice(0, 400);
-      const stamp = String(e.updated || "").slice(0, 16);
-      row.innerHTML = `
-        <div class="kd-row-name"><span class="kd-name-t">${esc(e.name)}</span>
-          <span class="kd-badge">${t("{n} uses", { n: e.uses || 0 })}${stamp ? " · " + esc(stamp) : ""}</span></div>
-        <div class="kd-row-prev">${esc((e.positive || "").slice(0, 80))}</div>`;
-      bindToggle(row, e, "history");
-      row.oncontextmenu = (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        openRowMenu(ev.clientX, ev.clientY, e, "history", refresh);
-      };
-      grid.appendChild(row);
-    });
+    if (q) {
+      // 搜索时保持平铺：要精确看到哪一条命中，不把结果藏进折叠组
+      const rows = pool.filter((e) => match(e, q));
+      if (!rows.length) { empty(t("Nothing matches this filter")); return; }
+      rows.forEach((e) => grid.appendChild(renderHistGroup([e])));
+    } else {
+      groupHistory(pool).forEach((g) => grid.appendChild(renderHistGroup(g)));
+    }
     listEl.appendChild(grid);
   }
 
@@ -1153,6 +1827,7 @@ function closeLib(instant) {
   libReposition = null;
   libState.editId = null;
   libState.phraseEditId = null;
+  libState.setEditId = null;
   libState.phraseFormOpen = false;
   libState.clearArmed = 0;
   libRepaint = null; libRefresh = null;
@@ -1180,6 +1855,214 @@ document.addEventListener("pointerdown", (e) => {
 }, true);
 window.addEventListener("resize", () => { if (libReposition) libReposition(); });
 
+// ───────── 参考图插入：读画布上的 KedouImageLoader，不依赖连线 ─────────
+function imageLoaderNodes() {
+  const nodes = (app.graph && app.graph._nodes) || [];
+  return nodes.filter((n) => {
+    if (!n || n.mode !== 0) return false;                       // 跳过静音/旁路节点
+    const cls = (n.constructor && n.constructor.comfyClass) || n.comfyClass || n.type || "";
+    return cls === "KedouImageLoader";
+  });
+}
+
+// 与 kedou_media.js 的 effectiveImages 保持一致：选择模式有选中项时，输出顺序就是选中顺序。
+function loaderImageList(node) {
+  const w = (node.widgets || []).find((x) => x.name === "media_state");
+  let st = null;
+  try { st = JSON.parse(String(w ? w.value == null ? "" : w.value : "")); } catch (_) { st = null; }
+  let list = st && Array.isArray(st.images) ? st.images : [];
+  list = list
+    .map((it) => (it && typeof it === "object" ? it : { filename: it }))
+    .filter((it) => it && typeof it.filename === "string" && it.filename.trim());
+  const picked = st && Array.isArray(st.picked) ? st.picked : [];
+  if (st && st.select && picked.length) {
+    const map = new Map(list.map((it) => [it.filename, it]));
+    const ordered = picked.filter((f) => map.has(f)).map((f) => map.get(f));
+    if (ordered.length) list = ordered;
+  }
+  return list;
+}
+
+// 从提示词里找出所有已知写法的图片编号；长 token 优先，避免 "@Image 1" 又被 "Image 1" 匹配一次。
+function parseRefTokens(text) {
+  const src = String(text || "");
+  const found = [];
+  for (const style of REF_STYLES) {
+    const re = new RegExp(style.re.source, "g");
+    let m;
+    while ((m = re.exec(src))) {
+      const n = Number(m[1]) || 0;
+      if (n > 0) found.push({ n, token: m[0], start: m.index, end: m.index + m[0].length });
+    }
+  }
+  found.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const picked = [];
+  for (const f of found) {
+    if (picked.some((x) => f.start < x.end && f.end > x.start)) continue;   // 被更长的 token 包住
+    picked.push(f);
+  }
+  // 同一张图多处引用只占一个缩略图位，保留第一次出现的位置
+  const seen = new Set();
+  return picked.filter((f) => {
+    if (seen.has(f.n)) return false;
+    seen.add(f.n);
+    return true;
+  }).sort((a, b) => a.start - b.start);
+}
+
+// 编号 -> 图片加载器里的第 N 张（与菜单/输出槽同一套顺序）。多个加载器时返回所有命中。
+function resolveRefImages(n, loaders) {
+  const hits = [];
+  for (const node of loaders) {
+    const item = loaderImageList(node)[n - 1];
+    if (item) hits.push({ node, item });
+  }
+  return hits;
+}
+
+function refThumbUrl(filename, w, tab) {
+  const raw = String(filename || "").replace(/\\/g, "/");
+  const i = raw.lastIndexOf("/");
+  const name = i >= 0 ? raw.slice(i + 1) : raw;
+  const sub = i >= 0 ? raw.slice(0, i) : "";
+  return "/ps/thumb?" + new URLSearchParams(
+    { filename: name, subfolder: sub, type: tab || "input", w: String(w || 64) }).toString();
+}
+
+// 切写法时把已写入的旧 token 全部换成新写法（只认本写法自己的模式，不动别的文字）。
+function rewriteRefTokens(ta, oldId, newId) {
+  const old = refStyle(oldId);
+  if (!old.re || oldId === newId) return 0;
+  let n = 0;
+  ta.value = ta.value.replace(old.re, (m, digits) => {
+    const next = refToken(newId, digits);
+    if (next === m) return m;
+    n += 1;
+    return next;
+  });
+  return n;
+}
+
+// @ 菜单：按当前写法列出所有图片加载器里的图；编号 = 输出槽顺序。
+function openRefMenu(ta, sync, triggerAt, styleId) {
+  closeMenu();
+  styleId = REF_STYLES.some((s) => s.id === styleId) ? styleId : loadRefStyleId();
+  const m = document.createElement("div");
+  m.className = "kd-menu kd-ref-menu";
+
+  const title = document.createElement("div");
+  title.className = "kd-menu-title";
+  title.textContent = t("Insert image reference · {style}", { style: refStyle(styleId).label });
+  m.appendChild(title);
+
+  const loaders = imageLoaderNodes();
+  loaders.forEach((node) => {
+    const list = loaderImageList(node);
+    const head = document.createElement("div");
+    head.className = "kd-ref-group";
+    head.textContent = loaders.length > 1 ? (node.title || t("Image loader")) : t("Images");
+    m.appendChild(head);
+    if (!list.length) {
+      const hint = document.createElement("div");
+      hint.className = "kd-ref-hint";
+      hint.textContent = t("No images in this loader yet");
+      m.appendChild(hint);
+      return;
+    }
+    list.forEach((it, i) => {
+      const n = i + 1;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-ref-item";
+      const token = refToken(styleId, n);
+      const file = String(it.filename || "").split(/[\\/]/).pop();
+      // 缩略图直接给“选哪张”一个视觉答案；input 找不到再退 output，都不行就留 ?
+      const thumb = document.createElement("span");
+      thumb.className = "kd-ref-thumb";
+      thumb.textContent = "?";
+      const img = document.createElement("img");
+      img.loading = "eager";
+      img.draggable = false;
+      img.alt = file;
+      img.src = refThumbUrl(it.filename, 56, "input");
+      img.onerror = () => {
+        if (img.dataset.tried !== "output") {
+          img.dataset.tried = "output";
+          img.src = refThumbUrl(it.filename, 56, "output");
+          return;
+        }
+        img.remove();
+        thumb.classList.add("kd-bad");
+      };
+      thumb.appendChild(img);
+      const tokenEl = document.createElement("span");
+      tokenEl.className = "kd-ref-token";
+      tokenEl.textContent = token;
+      const fileEl = document.createElement("span");
+      fileEl.className = "kd-ref-file";
+      fileEl.textContent = file;
+      b.append(thumb, tokenEl, fileEl);
+      b.title = t("Slot {n}: {name}", { n, name: it.filename });
+      b.onclick = () => {
+        closeMenu();
+        const tok = insertRefToken(ta, sync, styleId, n, triggerAt);
+        if (tok) toast(t("Inserted {token}", { token: tok }));
+      };
+      m.appendChild(b);
+    });
+  });
+
+  if (!loaders.length) {
+    const hint = document.createElement("div");
+    hint.className = "kd-ref-hint";
+    hint.textContent = t("No image loader on the canvas. Add a Kedou Image Loader first.");
+    m.appendChild(hint);
+  }
+  const foot = document.createElement("div");
+  foot.className = "kd-ref-hint kd-ref-foot";
+  foot.textContent = loaders.length > 1
+    ? t("Multiple loaders: numbers restart from 1 in each. Make sure the model receives images in the same order.")
+    : t("Numbering follows the loader's output slots. Wire images to the model in the same order.");
+  m.appendChild(foot);
+
+  menuEl = m;
+  document.body.appendChild(m);
+  // 先量再定位：贴输入框左下/左上，避免超出视口
+  const r = ta.getBoundingClientRect();
+  const mw = m.offsetWidth || 260;
+  const mh = Math.min(m.offsetHeight || 240, Math.round((window.innerHeight || 800) * 0.72));
+  const left = Math.max(6, Math.min(r.left + 6, (window.innerWidth || 1280) - mw - 6));
+  const top = (r.bottom + 6 + mh <= (window.innerHeight || 800))
+    ? r.bottom + 6
+    : Math.max(6, r.top - mh - 6);
+  m.style.left = left + "px";
+  m.style.top = top + "px";
+  void m.offsetWidth;
+  m.classList.add("kd-in");
+}
+
+function insertRefToken(ta, sync, styleId, n, triggerAt) {
+  const tok = refToken(styleId, n);
+  if (!tok) return "";
+  const st = typeof ta.selectionStart === "number" ? ta.selectionStart : ta.value.length;
+  const en = typeof ta.selectionEnd === "number" ? ta.selectionEnd : st;
+  // 输入 @ 触发时，把那个 @ 本身替换掉；点按钮触发时按当前光标/选区插入
+  const start = (typeof triggerAt === "number" && triggerAt >= 0) ? triggerAt : st;
+  const end = (typeof triggerAt === "number" && triggerAt >= 0) ? triggerAt + 1 : en;
+  const after = ta.value.slice(end);
+  const suffix = (after && !isSepChar(after[0])) ? " " : "";
+  const text = tok + suffix;
+  if (typeof ta.setRangeText === "function") {
+    ta.setRangeText(text, start, end, "end");
+  } else {
+    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+  }
+  try { ta.focus(); ta.setSelectionRange(start + text.length, start + text.length); } catch (_) { /* ignore */ }
+  sync();
+  try { ta.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) { /* ignore */ }
+  return tok;
+}
+
 // ───────── KedouPromptBox 节点面板 ─────────
 function buildPromptBox(node) {
   const pw = (node.widgets || []).find((w) => w.name === "prompt_state");
@@ -1206,6 +2089,7 @@ function buildPromptBox(node) {
   useSel.onchange = () => {
     if (uw) uw.value = useSel.value;
     try { node.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }
+    updateRefRow();
     paintChips();
     // 面板开着时换用途：语库/历史立刻按新用途重新筛
     if (libOwner === node && libRefresh) libRefresh();
@@ -1228,6 +2112,52 @@ function buildPromptBox(node) {
   clearBtn.style.marginLeft = "auto";   // 组整体靠右：清除 → 保存 → 语库 → 词库 → 历史
   top.append(lab, useSel, clearBtn, saveBtn, libBtn, phraseBtn, histBtn);
 
+  // 参考图写法：各模型 token 不同，写错等于没引用。下拉只影响“插入什么”，
+  // 图片仍要按编号顺序接到模型；切换写法会把已写入的同格式 token 一起改掉。
+  const refRow = document.createElement("div");
+  refRow.className = "kd-pbox-refrow";
+  const refLab = document.createElement("span");
+  refLab.className = "kd-pbox-reflab";
+  refLab.textContent = t("Reference");
+  const refSel = document.createElement("select");
+  refSel.className = "kd-pbox-use kd-pbox-ref";
+  refSel.title = t('Reference syntax. The tag is inserted when you type @ or click "@ Image".');
+  REF_STYLES.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.id; o.textContent = s.label;
+    refSel.appendChild(o);
+  });
+  refSel.value = loadRefStyleId();
+  refSel.__kdPrev = refSel.value;
+  refSel.onpointerdown = (e) => e.stopPropagation();
+  refSel.onchange = () => {
+    const oldId = refSel.__kdPrev || refSel.value;
+    const newId = refSel.value;
+    refSel.__kdPrev = newId;
+    saveRefStyleId(newId);
+    const n = rewriteRefTokens(ta, oldId, newId);
+    if (n) {
+      sync();
+      toast(t("Updated {n} reference tag(s)", { n }));
+    }
+    paintRefThumbs(true);
+  };
+  const atBtn = document.createElement("button");
+  atBtn.type = "button"; atBtn.className = "kd-pbox-btn";
+  atBtn.textContent = t("@ Image");
+  atBtn.title = t("Insert a reference to an image from the image loader");
+  atBtn.onpointerdown = (e) => e.stopPropagation();
+  atBtn.onclick = (ev) => { ev.stopPropagation(); openRefMenu(ta, sync, null, refSel.value); };
+  refRow.append(refLab, refSel, atBtn);
+
+  // @图片 对图生视频/参考生视频有意义（首帧、参考图都要点名）：其它用途整行隐藏，输入 @ 也不弹菜单。
+  function updateRefRow() {
+    const on = useSel.value === "参考生视频" || useSel.value === "图生视频";
+    refRow.hidden = !on;
+    if (!on && menuEl && menuEl.classList.contains("kd-ref-menu")) closeMenu();
+    paintRefThumbs(true);
+  }
+
   const ta = document.createElement("textarea");
   ta.className = "kd-pbox-ta";
   ta.placeholder = t('Enter a prompt… open "Prompts" to insert / "Save" to store under the current usage');
@@ -1244,13 +2174,29 @@ function buildPromptBox(node) {
     clearTimeout(usedT);
     usedT = setTimeout(() => {
       paintChips();
+      paintRefThumbs();
       if (libOwner === node && libRepaint) libRepaint();
     }, 250);
+  });
+  // 输入 @ 立刻列出图片加载器里的图；继续输入别的字符就收掉菜单。
+  ta.addEventListener("input", () => {
+    if (useSel.value !== "参考生视频" && useSel.value !== "图生视频") return;
+    const pos = typeof ta.selectionStart === "number" ? ta.selectionStart : 0;
+    if (pos > 0 && ta.value.charAt(pos - 1) === "@") {
+      openRefMenu(ta, sync, pos - 1, refSel.value);
+    } else if (menuEl && menuEl.classList.contains("kd-ref-menu")) {
+      closeMenu();
+    }
   });
   ta.addEventListener("pointerdown", (e) => e.stopPropagation());
   ta.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
 
-  card.append(top, ta);
+  // 提示词里出现的引用编号 -> 小缩略图，确认 @ 的到底是哪张图。
+  const refThumbs = document.createElement("div");
+  refThumbs.className = "kd-pbox-refthumbs";
+  refThumbs.hidden = true;
+  card.append(top, refRow, ta, refThumbs);
+  updateRefRow();
 
   // 快捷 chips：只放置顶语库。一个入口点一下就能插，不打开面板。
   // 词库和历史都不进这里：短词数量大、历史更新频繁，都会把常用区挤满。
@@ -1313,6 +2259,80 @@ function buildPromptBox(node) {
     } catch (_) { /* 静默 */ }
   }
 
+  // 提示词里的引用 token -> 缩略图。签名不变就不重建，避免每次按键都重新请求图片。
+  function paintRefThumbs(force) {
+    const on = useSel.value === "参考生视频" || useSel.value === "图生视频";
+    const refs = on ? parseRefTokens(ta.value) : [];
+    if (!on || !refs.length) {
+      refThumbs.hidden = true;
+      refThumbs.innerHTML = "";
+      refThumbs.__sig = "";
+      return;
+    }
+    const loaders = imageLoaderNodes();
+    const sig = JSON.stringify([
+      useSel.value,
+      refs.map((r) => [r.n, r.token]),
+      loaders.map((n) => String(n.id)),
+    ]);
+    if (!force && refThumbs.__sig === sig) return;
+    refThumbs.__sig = sig;
+    refThumbs.hidden = false;
+    refThumbs.innerHTML = "";
+    const multi = loaders.length > 1;
+    refs.forEach((r) => {
+      const hits = resolveRefImages(r.n, loaders);
+      const hit = hits[0] || null;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-refthumb" + (hit ? "" : " kd-bad");
+      const box = document.createElement("span");
+      box.className = "kd-refthumb-img";
+      box.textContent = "?";
+      if (hit) {
+        const img = document.createElement("img");
+        img.loading = "eager";
+        img.draggable = false;
+        const name = String(hit.item.filename || "");
+        img.alt = name.split(/[\\/]/).pop();
+        img.src = refThumbUrl(name, 64, "input");
+        img.onerror = () => {
+          if (img.dataset.tried !== "output") {
+            img.dataset.tried = "output";
+            img.src = refThumbUrl(name, 64, "output");
+            return;
+          }
+          img.remove();                         // input/output 都找不到：露出底下的 "?"
+          b.classList.add("kd-bad");
+        };
+        box.appendChild(img);
+      }
+      const tag = document.createElement("span");
+      tag.className = "kd-refthumb-tag";
+      tag.textContent = r.token;
+      b.append(box, tag);
+      if (hit) {
+        const where = hits.length > 1
+          ? t(" (matches {n} loaders)", { n: hits.length })
+          : (multi ? " · " + (hit.node.title || t("Image loader")) : "");
+        b.title = t("Slot {n}: {name}", { n: r.n, name: hit.item.filename }) + where
+          + "\n" + t("Click to locate this reference in the prompt");
+      } else {
+        b.title = t("Image {n} is missing from the loader. It may have been removed or reordered.", { n: r.n });
+      }
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        const at = ta.value.indexOf(r.token);
+        if (at < 0) return;
+        try {
+          ta.focus();
+          ta.setSelectionRange(at, at + r.token.length);
+        } catch (_) { /* ignore */ }
+      };
+      refThumbs.appendChild(b);
+    });
+  }
+
   // 三个按钮各自打开面板的对应内容：再点当前那个就关，点另一个原地切换
   function togglePanel(tab) {
     if (libOwner === node && libPanel) {
@@ -1320,6 +2340,7 @@ function buildPromptBox(node) {
       libTab = tab;
       libState.editId = null;
       libState.phraseEditId = null;
+      libState.setEditId = null;
       libState.phraseFormOpen = false;
       libState.clearArmed = 0;
       markPboxBtns(node, tab);
@@ -1343,11 +2364,14 @@ function buildPromptBox(node) {
         applyPhraseItemState(r.item);
         toast(r.deduped ? t("Already in the tag library") : t("Saved to the tag library (Uncategorized)"));
       } else {
-        const r = await api("/save", { name: text.slice(0, 20), type: "精选", positive: text, usage: [useSel.value] });
+        const r = await api("/save", { name: text.slice(0, 20), type: "精选", positive: text,
+          category: libState.promptCat || "", usage: [useSel.value] });
         if (!r.ok) { toast(t("Save failed"), true); return; }
         libState.q.prompts = "";      // 保存后清掉搜索，刚存的那条一定看得见
         toast(r.deduped ? t("Already in the library")
-          : t("Saved under {usage}", { usage: usageLabel(useSel.value) }));
+          : (libState.promptCat
+            ? t("Saved under {usage} · {category}", { usage: usageLabel(useSel.value), category: libState.promptCat })
+            : t("Saved under {usage}", { usage: usageLabel(useSel.value) })));
       }
       libTouch();
     } catch (e) {
@@ -1403,6 +2427,10 @@ function buildPromptBox(node) {
       ta.value = String(pw.value || "");
       ta.__kdIns = null;          // 工作流切换/重载：旧的插入记录不再可信
       useSel.value = String((uw && uw.value) || USAGES[0]);
+      refSel.value = loadRefStyleId();
+      refSel.__kdPrev = refSel.value;
+      updateRefRow();
+      paintRefThumbs(true);
       paintChips();
     }, 0);
     return r;
@@ -1414,7 +2442,7 @@ function buildPromptBox(node) {
     return typeof prevRemoved === "function" ? prevRemoved.apply(this, arguments) : undefined;
   };
 
-  node.__kdPbox = { ta, sync, pw, useSel, paintChips, libBtn, phraseBtn, histBtn };
+  node.__kdPbox = { ta, sync, pw, useSel, refSel, atBtn, paintChips, paintRefThumbs, libBtn, phraseBtn, histBtn };
   paintChips();
 }
 
@@ -1425,6 +2453,19 @@ function refreshAllPbox() {
       if (n.__kdPbox && n.__kdPbox.paintChips) n.__kdPbox.paintChips();
     }
   } catch (_) { /* ignore */ }
+}
+
+// 图片加载器增删/换序/改选中后，提示词框里的缩略图跟着刷新
+let refThumbT = null;
+function refreshAllRefThumbs() {
+  clearTimeout(refThumbT);
+  refThumbT = setTimeout(() => {
+    try {
+      for (const n of ((app.graph && app.graph._nodes) || [])) {
+        if (n.__kdPbox && n.__kdPbox.paintRefThumbs) n.__kdPbox.paintRefThumbs(true);
+      }
+    } catch (_) { /* ignore */ }
+  }, 120);
 }
 
 // ───────── 自动历史：execution_success 事件（带用途） ─────────
@@ -1552,7 +2593,10 @@ app.registerExtension({
     onLocaleChange(() => {
       try { if (libRepaint) libRepaint(); } catch (_) { /* ignore */ }
       try { refreshAllPbox(); } catch (_) { /* ignore */ }
+      try { refreshAllRefThumbs(); } catch (_) { /* ignore */ }
     });
+    // 图片加载器改图/换序/改选中时由 kedou_media.js 发事件，缩略图立刻跟上
+    try { window.addEventListener("kedou:media-changed", refreshAllRefThumbs); } catch (_) { /* ignore */ }
     try {
       if (!document.querySelector("style[data-kpl]")) {
         const st = document.createElement("style");

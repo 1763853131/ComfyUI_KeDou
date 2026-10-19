@@ -60,6 +60,7 @@ STORE_DIR = ".kedou"                               # 历史 / 词库的 JSON 都
 HISTORY_FILE = "history.json"
 PHRASES_FILE = "phrases.json"
 PHRASES_SEED = "phrases_seed.json"
+CATEGORIES_FILE = "categories.json"                # 用户新建的空分类也留档（否则没条目就消失）
 PHRASE_GROUP_FALLBACK = "我的词"
 PHRASE_CAT_FALLBACK = "未分类"
 
@@ -495,6 +496,73 @@ def _write_phrases(vault, items):
     _write_store(vault, PHRASES_FILE, {"version": 1, "items": items})
 
 
+# ---------------------------------------------------------------- 分类（语库 / 词库共用）
+# 分类不写进每一条正文里，而是单独记一份「用户手动建过的分类」：
+# 这样即使分类下还没有条目，标签也会留在面板上，不会一刷新就消失。
+def _cat_name(value):
+    return " ".join(str(value or "").splitlines()).strip()[:60]
+
+
+def _category_store(vault):
+    data = _read_store(vault, CATEGORIES_FILE, {"version": 1, "prompts": [], "phrases": []})
+    if not isinstance(data, dict):
+        data = {}
+    prompts, phrases = [], []
+    raw_p = data.get("prompts")
+    for x in raw_p if isinstance(raw_p, list) else []:
+        name = _cat_name(x)
+        if name and name not in prompts:
+            prompts.append(name)
+    raw_s = data.get("phrases")
+    for x in raw_s if isinstance(raw_s, list) else []:
+        if not isinstance(x, dict):
+            continue
+        name = _cat_name(x.get("name"))
+        group = str(x.get("group") or "").strip() or PHRASE_GROUP_FALLBACK
+        if name and not any(p["group"] == group and p["name"] == name for p in phrases):
+            phrases.append({"group": group, "name": name})
+    return {"version": 1, "prompts": prompts, "phrases": phrases}
+
+
+def _write_categories(vault, cats):
+    _write_store(vault, CATEGORIES_FILE, cats)
+
+
+def list_categories(scope=""):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用", "categories": []}
+    cats = _category_store(vault)
+    if scope == "prompts":
+        return {"ok": True, "scope": "prompts", "categories": cats["prompts"]}
+    if scope == "phrases":
+        return {"ok": True, "scope": "phrases", "categories": cats["phrases"]}
+    return dict({"ok": True}, **cats)
+
+
+def add_category(scope, name, group=""):
+    """新建一个分类；只是标签，不会凭空生成条目。"""
+    scope = "phrases" if str(scope or "") == "phrases" else "prompts"
+    name = _cat_name(name)
+    if not name:
+        return {"ok": False, "error": "分类名不能为空"}
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    with _store_lock:
+        cats = _category_store(vault)
+        if scope == "prompts":
+            if name not in cats["prompts"]:
+                cats["prompts"].append(name)
+        else:
+            group = str(group or "").strip() or PHRASE_GROUP_FALLBACK
+            if not any(x["group"] == group and x["name"] == name for x in cats["phrases"]):
+                cats["phrases"].append({"group": group, "name": name})
+        _write_categories(vault, cats)
+        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
+                "categories": cats[scope]}
+
+
 def _history_to_trash(vault, files):
     """旧历史笔记迁走后放进 .trash（可找回），不留在 Obsidian 的笔记树里。"""
     tdir = _trash_dir(vault)
@@ -755,7 +823,7 @@ def _backup_daily(vault):
                             full = os.path.join(root, fn)
                             z.write(full, os.path.relpath(full, vault))
                 # .kedou 是隐藏目录，上面的 walk 不会进去；词库/历史是用户数据，单独补进备份
-                for extra in (PHRASES_FILE, HISTORY_FILE):
+                for extra in (PHRASES_FILE, HISTORY_FILE, CATEGORIES_FILE):
                     full = _store_path(vault, extra)
                     if os.path.isfile(full):
                         z.write(full, os.path.join(STORE_DIR, extra))
@@ -772,7 +840,7 @@ def list_prompts(q_type="", q_dir="", tag="", model="", q="", use=""):
     vault = vault_dir()
     if not vault:
         return dict({"ok": False, "error": last_error() or "词库目录不可用", "items": [],
-                     "dirs": [], "types": [], "count": 0}, **vault_info())
+                     "dirs": [], "types": [], "categories": [], "count": 0}, **vault_info())
     # 兼容旧调用方：显式要 type=历史 时只返回历史（从 JSON 读），默认列表里永远没有历史
     if q_type == "历史":
         items = _history_items(vault)
@@ -782,7 +850,7 @@ def list_prompts(q_type="", q_dir="", tag="", model="", q="", use=""):
             ql = q.lower()
             items = [e for e in items if ql in e["name"].lower() or ql in e["positive"].lower()]
         return dict({"ok": True, "items": items, "dirs": [], "types": ["历史"],
-                     "count": len(items)}, **vault_info())
+                     "categories": [], "count": len(items)}, **vault_info())
     _backup_daily(vault)
     items = [e for e in _walk(vault) if e["type"] != "历史"]
     if use:
@@ -804,8 +872,11 @@ def list_prompts(q_type="", q_dir="", tag="", model="", q="", use=""):
     items.sort(key=lambda e: (not e["pinned"],))
     dirs = sorted({e["dir"] for e in items if e["dir"]})
     types = sorted({e["type"] for e in items})
+    # 分类 = 条目里已有的 + 用户手动建过但还没放东西的（空分类也要留在面板上）
+    cats = {e["category"] for e in items if e.get("category")}
+    cats.update(_category_store(vault)["prompts"])
     return dict({"ok": True, "items": items, "dirs": dirs, "types": types,
-                 "count": len(items)}, **vault_info())
+                 "categories": sorted(cats), "count": len(items)}, **vault_info())
 
 
 def _find_path(vault, pid):
@@ -1011,6 +1082,13 @@ def list_phrases(q="", category="", group=""):
         if it["group"] not in groups:
             groups.append(it["group"])
         key = (it["group"], it["category"])
+        if key not in cats:
+            cats.append(key)
+    # 手动新建但还没放词的分类也要出现，否则用户建完一刷新就看不见了
+    for c in _category_store(vault)["phrases"]:
+        if c["group"] not in groups:
+            groups.append(c["group"])
+        key = (c["group"], c["name"])
         if key not in cats:
             cats.append(key)
     # 新建/移入的词默认落在「我的词 · 未分类」，即使当前还是空的也要能选到
@@ -1270,6 +1348,20 @@ def register_routes(routes):
         return web.json_response(await asyncio.to_thread(
             bump_phrase_use, str(body.get("id") or "")))
 
+    @routes.get("/ps/prompts/categories")
+    async def _cats_list(request):
+        return web.json_response(await asyncio.to_thread(
+            list_categories, request.query.get("scope", "")))
+
+    @routes.post("/ps/prompts/categories")
+    async def _cats_add(request):
+        body = await _body(request)
+        if body is None:
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        return web.json_response(await asyncio.to_thread(
+            add_category, str(body.get("scope") or ""),
+            str(body.get("name") or ""), str(body.get("group") or "")))
+
     @routes.post("/ps/prompts/delete")
     async def _del(request):
         body = await _body(request) or {}
@@ -1296,6 +1388,7 @@ __all__ = [
     "list_prompts", "save_prompt", "save_history", "delete_prompt", "bump_use",
     "list_history", "delete_history", "clear_history",
     "list_phrases", "save_phrase", "delete_phrase", "bump_phrase_use",
+    "list_categories", "add_category",
     "register_routes",
     "ENV_KEY", "SETTING_KEY", "CONFIG_NAME",
 ]
