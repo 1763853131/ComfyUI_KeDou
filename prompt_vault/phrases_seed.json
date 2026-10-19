@@ -1,0 +1,9086 @@
+[
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "杰作",
+  "positive": "masterpiece"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "写实",
+  "positive": "realistic"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "提高质量",
+  "positive": "HDR,UHD,8K"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "最佳质量",
+  "positive": "best quality"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "高分辨率",
+  "positive": "highres"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "超高分辨率",
+  "positive": "absurdres"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "超高清",
+  "positive": "ultra-highres"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "更多细节",
+  "positive": "Highly detailed"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "简单背景",
+  "positive": "simple background"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "模糊背景",
+  "positive": "blurry background"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "清晰背景",
+  "positive": "clear background"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "清晰细节",
+  "positive": "clear details"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "超精细绘画",
+  "positive": "ultra-fine painting"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "聚焦清晰",
+  "positive": "sharp focus"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "物理渲染",
+  "positive": "physically-based rendering"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "极详细刻画",
+  "positive": "extreme detail description"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "改善细节",
+  "positive": "Professional"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "添加鲜艳色彩",
+  "positive": "Vivid Colors"
+ },
+ {
+  "group": "常规标签",
+  "category": "画质",
+  "name": "扫描",
+  "positive": "High resolution scan"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "基础负面",
+  "positive": "low resolution,worst quality, low quality, normal quality, lowres,jpeg, cropped, bad composition, artifacts bad proportions, error, inaccurate limb, bad anatomy, bad, ugly, terrible, extra fingers, fewer fingers, missing fingers, extra arms, extra legs, inaccurate eyes,extra digit, fewer digits, trademark, artist's name, username, watermarksignature, watermark,text, words"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "低分辨率",
+  "positive": "lowres"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "NSFW",
+  "positive": "nsfw"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "变异手指",
+  "positive": "mutated hands and fingers"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "畸形的",
+  "positive": "deformed"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "解剖不良",
+  "positive": "bad anatomy"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "毁容",
+  "positive": "disfigured"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "脸不好",
+  "positive": "poorly drawn face"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "变异的",
+  "positive": "mutated"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "多余肢体",
+  "positive": "extra limb"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "丑陋",
+  "positive": "ugly"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "手画得差",
+  "positive": "poorly drawn hands"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "缺少的肢体",
+  "positive": "missing limb"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "漂浮的四肢",
+  "positive": "floating limbs"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "肢体不连贯",
+  "positive": "disconnected limbs"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "畸形的手",
+  "positive": "malformed hands"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "脱离焦点",
+  "positive": "out of focus"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "长颈",
+  "positive": "long neck"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "身体长",
+  "positive": "long body"
+ },
+ {
+  "group": "常规标签",
+  "category": "负面标签",
+  "name": "张嘴",
+  "positive": "gape"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "相机设置",
+  "positive": "(EOS R8,50mm,F1.2,8K,RAW photo"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "散景",
+  "positive": "Bokeh"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "景深",
+  "positive": "depth of field"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "广角",
+  "positive": "wide angle"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "微距",
+  "positive": "macro"
+ },
+ {
+  "group": "常规标签",
+  "category": "摄影",
+  "name": "大光圈",
+  "positive": "wide aperture"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "演播室灯光",
+  "positive": "Studio lighting"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "电影光效",
+  "positive": "cinematic_lighting"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "镜头光晕",
+  "positive": "lens_flare"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "光追",
+  "positive": "reality_ray_tracing"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "正面光",
+  "positive": "frontlight"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "侧面光",
+  "positive": "sidelight"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "背光",
+  "positive": "backlight"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "逆光",
+  "positive": "backlighting"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "边缘光",
+  "positive": "rim_light"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "强边缘光",
+  "positive": "strong_rim_light"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "自上而下的光线",
+  "positive": "god_rays"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "明亮的射线光束",
+  "positive": "light_rays"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "环境光",
+  "positive": "ambient_light"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "轮廓光",
+  "positive": "rim light"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "体积光",
+  "positive": "Volumetric Lighting"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "霓虹灯",
+  "positive": "glowing neon lights"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "透镜光晕",
+  "positive": "lens flare"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "金属光泽",
+  "positive": "metallic luster"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "氛围光照",
+  "positive": "moody lighting"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "丁达尔效应",
+  "positive": "Tyndall effect"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "漏光光效",
+  "positive": "light leaks"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "背景光",
+  "positive": "background light"
+ },
+ {
+  "group": "常规标签",
+  "category": "光影",
+  "name": "自然光",
+  "positive": "available light"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "全身",
+  "positive": "full body"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "半身像",
+  "positive": "portrait"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "上半身",
+  "positive": "upper body"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "正面视角",
+  "positive": "front view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "侧面视角",
+  "positive": "from_side"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "从上方往下看",
+  "positive": "from_above"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "从下方往上看",
+  "positive": "from_below"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "左侧",
+  "positive": "left side view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "右侧",
+  "positive": "right side view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "动态角度",
+  "positive": "dynamic angle"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "倾斜视角",
+  "positive": "dutch angle"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "特写",
+  "positive": "close-up"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "微距",
+  "positive": "macro_shot"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "近景",
+  "positive": "selfie"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "中景",
+  "positive": "medium view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "中长镜头",
+  "positive": "medium long shot"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "远景",
+  "positive": "wide shot"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "全景",
+  "positive": "panorama"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "近拍",
+  "positive": "close shot"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "俯视",
+  "positive": "vertical view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "鸟瞰",
+  "positive": "bird's-eye view"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "鱼眼镜头",
+  "positive": "fisheye"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "多视角分解",
+  "positive": "multiple_views"
+ },
+ {
+  "group": "常规标签",
+  "category": "构图",
+  "name": "裙底视角",
+  "positive": "phone_screen"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "动漫",
+  "positive": "Anime"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "Q版",
+  "positive": "Chibi"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "摄影",
+  "positive": "Photographic"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "数字艺术",
+  "positive": "Digital Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "连环漫画",
+  "positive": "Comic Book"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "四格漫画",
+  "positive": "4koma"
+ },
+ {
+  "group": "艺术题材",
+  "category": "表现形式",
+  "name": "幻想艺术",
+  "positive": "Fantasy Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "素描",
+  "positive": "Sketch"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "漫画",
+  "positive": "Comic"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "厚涂",
+  "positive": "Impasto"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "油画",
+  "positive": "Oil Painting"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "水彩",
+  "positive": "Watercolor"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "国风水墨",
+  "positive": "Chinese Monochrome Ink"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "剪影",
+  "positive": "Silhouette"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "马克笔",
+  "positive": "Marker"
+ },
+ {
+  "group": "艺术题材",
+  "category": "绘画技法",
+  "name": "超写实",
+  "positive": "Photorealism"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "像素艺术",
+  "positive": "Pixel Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "低多边形",
+  "positive": "Low Poly"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "等距艺术",
+  "positive": "Isometric"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "线条艺术",
+  "positive": "Line Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "故障艺术",
+  "positive": "Glitch Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "气泡艺术",
+  "positive": "Bubble Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "玻璃拟态",
+  "positive": "Glassmorphism"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "新拟物风格",
+  "positive": "Neumorphism"
+ },
+ {
+  "group": "艺术题材",
+  "category": "技术风格",
+  "name": "3D插画",
+  "positive": "3D Graphics"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术家风格",
+  "name": "宫崎骏风格",
+  "positive": "Hayao Miyazaki Style"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术家风格",
+  "name": "蒂姆伯顿风格",
+  "positive": "Tim Burton Style"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "赛博朋克",
+  "positive": "Cyberpunk"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "霓虹朋克",
+  "positive": "Neon Punk"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "蒸汽波",
+  "positive": "Vaporwave"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "迷幻艺术",
+  "positive": "Psychedelia Art"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "酸性风格",
+  "positive": "Acid Graphics"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "极简主义",
+  "positive": "Minimalism"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "构成主义",
+  "positive": "Constructivism"
+ },
+ {
+  "group": "艺术题材",
+  "category": "艺术流派",
+  "name": "孟菲斯风格",
+  "positive": "Memphis"
+ },
+ {
+  "group": "艺术题材",
+  "category": "媒介与效果",
+  "name": "胶片滤镜",
+  "positive": "Analog Film"
+ },
+ {
+  "group": "艺术题材",
+  "category": "媒介与效果",
+  "name": "电影质感",
+  "positive": "Cinematic"
+ },
+ {
+  "group": "艺术题材",
+  "category": "媒介与效果",
+  "name": "胶片电影",
+  "positive": "Celluloid"
+ },
+ {
+  "group": "艺术题材",
+  "category": "媒介与效果",
+  "name": "复古风格",
+  "positive": "Retro Style"
+ },
+ {
+  "group": "艺术题材",
+  "category": "载体与应用",
+  "name": "杂志封面",
+  "positive": "Magazine Cover"
+ },
+ {
+  "group": "艺术题材",
+  "category": "载体与应用",
+  "name": "海报",
+  "positive": "Poster"
+ },
+ {
+  "group": "艺术题材",
+  "category": "载体与应用",
+  "name": "拍立得",
+  "positive": "Polaroid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "公主",
+  "positive": "princess"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "舞者",
+  "positive": "dancer"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "啦啦队",
+  "positive": "cheerleader"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "芭蕾舞女演员",
+  "positive": "ballerina"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "体操队队长",
+  "positive": "gym leader"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "女服务员",
+  "positive": "waitress"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "和风女仆",
+  "positive": "wa maid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "女仆",
+  "positive": "maid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "偶像",
+  "positive": "idol"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "弓道",
+  "positive": "kyuudou"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "女武神",
+  "positive": "valkyrie"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "办公室小姐",
+  "positive": "office lady"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "赛车女郎",
+  "positive": "race queen"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "魔女",
+  "positive": "Witch"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "巫女",
+  "positive": "miko"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "修女",
+  "positive": "nun"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "牧师",
+  "positive": "priest"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "神职人员(基督教)",
+  "positive": "cleric"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "忍者",
+  "positive": "ninja"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "女警",
+  "positive": "policewoman"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "警察",
+  "positive": "police"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "医生",
+  "positive": "doctor"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "护士",
+  "positive": "nurse"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "眼镜娘",
+  "positive": "glasses"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "狐狸精",
+  "positive": "kitsune"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "公交车",
+  "positive": "public use"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "女王(SM中)",
+  "positive": "dominatrix"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "机娘",
+  "positive": "mecha musume"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "另一种机娘",
+  "positive": "gynoid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "类人机器人",
+  "positive": "humanoid robot"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 职业",
+  "name": "半机械人",
+  "positive": "cyborg"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "单人",
+  "positive": "solo"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "女人",
+  "positive": "female"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "男人",
+  "positive": "male"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "性转",
+  "positive": "genderswap"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "扶她",
+  "positive": "futanari"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "伪娘",
+  "positive": "otoko no ko"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "儿童",
+  "positive": "child"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "未成年",
+  "positive": "underage"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "年轻",
+  "positive": "young"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "熟女",
+  "positive": "mature female"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 性别/年龄",
+  "name": "老年",
+  "positive": "old"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "胸",
+  "positive": "chest"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "胸肌",
+  "positive": "pectorals"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "大胸肌",
+  "positive": "large pectorals"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "小胸部(B",
+  "positive": "small breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "中等胸部(C",
+  "positive": "medium breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "大胸部(D",
+  "positive": "big breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "巨乳(E",
+  "positive": "huge breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "魔乳(F",
+  "positive": "gigantic breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 胸部",
+  "name": "未扣扣子",
+  "positive": "unbuttoned clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "瓜子脸",
+  "positive": "heart-shaped face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "鹅蛋脸",
+  "positive": "oval face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "国字脸",
+  "positive": "square face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "可爱脸",
+  "positive": "cute face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "菱形脸",
+  "positive": "rhomboid face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "圆脸",
+  "positive": "round face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "长脸",
+  "positive": "long face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "瘦脸",
+  "positive": "Thin face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "平脸",
+  "positive": "Flat face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "柔和的脸",
+  "positive": "Soft face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 脸型",
+  "name": "棱角分明的脸",
+  "positive": "Angular face"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "蒜头鼻",
+  "positive": "pug nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "肉鼻子",
+  "positive": "dumpy nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "朝天鼻",
+  "positive": "upturned nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "扁鼻",
+  "positive": "flat nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "鹰勾鼻",
+  "positive": "aquliline nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "罗马鼻",
+  "positive": "Roman nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "翘鼻",
+  "positive": "Snub nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "长鼻",
+  "positive": "Long nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 鼻子",
+  "name": "短鼻",
+  "positive": "Short nose"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "樱桃小嘴",
+  "positive": "Cupid mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "心形嘴",
+  "positive": "Heart-shaped mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "薄唇",
+  "positive": "Thin mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "丰唇",
+  "positive": "Full lips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "嘟嘴",
+  "positive": "Pouty lips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "方唇",
+  "positive": "Square lips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "上扬唇",
+  "positive": "Up-turned lips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 嘴巴",
+  "name": "下撇唇",
+  "positive": "Down-turned lips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "有光泽的皮肤",
+  "positive": "shiny skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "苍白皮肤",
+  "positive": "pale skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "白皙皮肤",
+  "positive": "white skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "棕色皮肤",
+  "positive": "brown skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "深色皮肤",
+  "positive": "deep skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "偏黑皮肤",
+  "positive": "black skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "晒日线",
+  "positive": "tan lines"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "泳装晒痕",
+  "positive": "pang"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 皮肤",
+  "name": "如白色大理石般有光泽的肌肤",
+  "positive": "white marble glowing skin"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "模特",
+  "positive": "model"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "苗条",
+  "positive": "slender"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "诱惑",
+  "positive": "glamor"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "丰满",
+  "positive": "plump"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "肥胖",
+  "positive": "fat"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "高大",
+  "positive": "tall"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "纤弱",
+  "positive": "petite"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "肌肉",
+  "positive": "muscular"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "细腰",
+  "positive": "narrow waist"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 体型",
+  "name": "宽臀",
+  "positive": "wide hips"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "浓眉",
+  "positive": "thick  eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "眉毛翘起",
+  "positive": "cocked  eyebrow"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "短眉毛",
+  "positive": "short  eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "V字眉",
+  "positive": "v-shaped  eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "剑眉",
+  "positive": "dashing eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "一字眉",
+  "positive": "straight united eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "柳叶眉",
+  "positive": "arched eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "新月眉",
+  "positive": "crescent eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "描画过的眉毛",
+  "positive": "pencilled eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眉毛",
+  "name": "浓密而粗短的眉毛",
+  "positive": "bushy and stubby eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "绿头发",
+  "positive": "green hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "粉色头发",
+  "positive": "pink hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "红头发",
+  "positive": "red hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "铂金色头发",
+  "positive": "platinum blonde hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "青色头发",
+  "positive": "azure hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "水蓝色头发",
+  "positive": "aqua hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "红宝石色头发",
+  "positive": "ruby hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "两色头发",
+  "positive": "two-tone hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "多色的头发",
+  "positive": "multicolored hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "渐变头发",
+  "positive": "gradient hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "分色头发",
+  "positive": "split-color hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 颜色",
+  "name": "彩虹头发",
+  "positive": "rainbow hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "长发",
+  "positive": "long hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "很短的头发",
+  "positive": "very short hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "短发",
+  "positive": "short hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "后短发，前长发",
+  "positive": "short hair with long locks"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "中等头发",
+  "positive": "medium hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "很长的头发",
+  "positive": "very long hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 长度",
+  "name": "超级长的头发",
+  "positive": "absurdly long hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "马尾",
+  "positive": "ponytail"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "双马尾",
+  "positive": "twintails"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "高双马尾",
+  "positive": "canonicals"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "低双马尾",
+  "positive": "low twintails"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "披肩单马尾",
+  "positive": "one side up"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "披肩双马尾",
+  "positive": "two side up"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "短马尾",
+  "positive": "short ponytail"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 马尾",
+  "name": "侧马尾",
+  "positive": "side ponytail"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "辫子",
+  "positive": "braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "法式辫子",
+  "positive": "french braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "辫子头发",
+  "positive": "braiding hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "双辫子",
+  "positive": "twin braids"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "三股辫",
+  "positive": "braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "短辫子",
+  "positive": "short braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "长辫子",
+  "positive": "long braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "辫子刘海",
+  "positive": "braided bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "辫式发髻",
+  "positive": "braided bun"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "麻花辫马尾",
+  "positive": "braided ponytail"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "法式冠编发",
+  "positive": "crown braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "多股(麻花)辫",
+  "positive": "multiple braids"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "披在一侧的单条辫",
+  "positive": "side braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "披在两侧的两条辫",
+  "positive": "side braids"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "单股辫",
+  "positive": "single braid"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 辫子",
+  "name": "两条辫子",
+  "positive": "twin braids"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "进气口发型",
+  "positive": "hair intakes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "发瓣",
+  "positive": "hair flaps"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "刘海",
+  "positive": "bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "空气刘海",
+  "positive": "air bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "齐刘海",
+  "positive": "blunt bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "侧面空气刘海",
+  "positive": "side blunt bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "中分刘海",
+  "positive": "parted bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "斜刘海",
+  "positive": "swept bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 刘海",
+  "name": "不对称刘海",
+  "positive": "asymmetric bangs"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "眼睛之间的头发",
+  "positive": "hair between eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "头发覆盖一只眼",
+  "positive": "hair over one eye"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "头发遮住眉毛",
+  "positive": "hair over one eyebrow"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "透过头发可见腮红",
+  "positive": "blush visible through hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "透过头发可见眼睛",
+  "positive": "eyes visible through hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "头发撩到耳后",
+  "positive": "hair behind ear"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "披肩发",
+  "positive": "hair over shoulder"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "头发遮住三点",
+  "positive": "hair censor"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "头发披在胸上",
+  "positive": "hair over breasts"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "直发",
+  "positive": "straight hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "卷发",
+  "positive": "curly hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "波浪卷",
+  "positive": "wavy hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "钻头(配双)",
+  "positive": "drill hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "姬发式(齐刘海后长黑发",
+  "positive": "hime cut"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "齐而短头发(波波发",
+  "positive": "bob cut"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "公主发型",
+  "positive": "princess head"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "上半部分束起",
+  "positive": "Half-up"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "额头",
+  "positive": "forehead"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "扎过的头发",
+  "positive": "tied hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "低扎头发",
+  "positive": "low tied hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "多扎头发",
+  "positive": "multi-tied hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "丸子头",
+  "positive": "double bun"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "圆发髻",
+  "positive": "hair bun"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "芭蕾髻",
+  "positive": "ballet hair bun"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "尖头头发",
+  "positive": "pointy hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "羽毛头发",
+  "positive": "feather hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "弓形头发",
+  "positive": "bow-shaped hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "孤颈头发",
+  "positive": "lone nape hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "变换发型",
+  "positive": "alternate hairstyle"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "与原设不同头发长度",
+  "positive": "alternate hair length"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "鬓角",
+  "positive": "sideburns"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "长鬓角",
+  "positive": "long sideburns"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "侧边发辫",
+  "positive": "sidelocks"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "秃头",
+  "positive": "bald"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "鸟窝头|爆炸头",
+  "positive": "afro"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 头发 / 其他",
+  "name": "尖刺的头发",
+  "positive": "spiked hair"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眼袋",
+  "positive": "bags under eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "缠着绷带的单眼",
+  "positive": "bandage over one eye"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "遮眼|眼罩",
+  "positive": "blindfold"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眼罩",
+  "positive": "eyepatch"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眼影",
+  "positive": "eyeshadow"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "医用眼罩",
+  "positive": "medical eyepatch"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眼睛上的疤痕",
+  "positive": "scar across eye"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "闭眼",
+  "positive": "eyes closed"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "半闭双眼",
+  "positive": "half closed eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眯起眼睛",
+  "positive": "narrowed eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "拉下眼睑的鬼脸",
+  "positive": "akanbe"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "睁大眼睛",
+  "positive": "wide eyed"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "一只眼睛闭着",
+  "positive": "one eye closed"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "蒙眼",
+  "positive": "blindfold"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眨眼",
+  "positive": "wink"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "失去高光的眼睛",
+  "positive": "empty eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "翻白眼",
+  "positive": "rolling eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "眼泪",
+  "positive": "tears"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "锐利的眼",
+  "positive": "slanted eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "低眉顺眼",
+  "positive": "tareme"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 眼睛",
+  "name": "上翘的眼睛",
+  "positive": "upturned eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "瞳孔",
+  "positive": "pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "明亮的瞳孔",
+  "positive": "bright pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "异色瞳",
+  "positive": "heterochromia"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "竖的瞳孔/猫眼",
+  "positive": "slit pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "蛇瞳孔",
+  "positive": "snake pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "瞳孔闪光",
+  "positive": "pupils sparkling"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "爱心形瞳孔",
+  "positive": "heart shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "钻石形状瞳孔",
+  "positive": "diamond shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "五角星形状瞳孔",
+  "positive": "star shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "瞳孔散大",
+  "positive": "dilated pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "没有瞳孔",
+  "positive": "no pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "缩瞳",
+  "positive": "constricted pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "眼睛里的星星",
+  "positive": "star in eye"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "星形瞳孔",
+  "positive": "star shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "X形瞳孔",
+  "positive": "x shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "水平瞳孔",
+  "positive": "horizontal pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "虚线的眼睛",
+  "positive": "dashed eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "蝴蝶形瞳孔",
+  "positive": "butterfly shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "菱形瞳孔",
+  "positive": "diamond shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "长方形瞳孔",
+  "positive": "rectangular pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "方形瞳孔",
+  "positive": "square pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "点瞳孔",
+  "positive": "dot pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "额外的瞳孔",
+  "positive": "extra pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "十字形瞳孔",
+  "positive": "cross shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "人设 / 瞳孔",
+  "name": "符号形瞳孔",
+  "positive": "symbol shaped pupils"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "连衣裙",
+  "positive": "dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "裙子",
+  "positive": "skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "衬衫",
+  "positive": "blouse"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "t 恤",
+  "positive": "t-shirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "毛衣",
+  "positive": "sweater"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "夹克",
+  "positive": "jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "背心",
+  "positive": "tank top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "卫衣",
+  "positive": "hoodie"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "马甲",
+  "positive": "vest"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "风衣",
+  "positive": "trench coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "西装",
+  "positive": "suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "骑士夹克",
+  "positive": "biker jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "外套",
+  "positive": "coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "罩衫",
+  "positive": "shawl"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "披肩",
+  "positive": "cape"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "庞乔斗篷",
+  "positive": "poncho"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "大衣",
+  "positive": "overcoat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "毛皮大衣",
+  "positive": "fur coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "斗篷",
+  "positive": "cape"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "披风",
+  "positive": "cloak"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 上装",
+  "name": "皮衣",
+  "positive": "leather jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "牛仔裤",
+  "positive": "jeans"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "裤子",
+  "positive": "pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "连体裤",
+  "positive": "jumpsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "短裤",
+  "positive": "shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "长裤",
+  "positive": "trousers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "裙子",
+  "positive": "skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "打底裤",
+  "positive": "leggings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "紧身裤",
+  "positive": "leggings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "便裤",
+  "positive": "slacks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "阔腿裤",
+  "positive": "wide-leg pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "七分裤",
+  "positive": "capri pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "短裙",
+  "positive": "mini skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "中裙",
+  "positive": "midi skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "长裙",
+  "positive": "maxi skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "运动裤",
+  "positive": "sweatpants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "卡其裤",
+  "positive": "khaki pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "牛仔短裤",
+  "positive": "denim shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "裙裤",
+  "positive": "skort"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "束脚裤",
+  "positive": "joggers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "瑜伽裤",
+  "positive": "yoga pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 下装",
+  "name": "哈伦裤",
+  "positive": "harem pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "泳衣",
+  "positive": "swimsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "比基尼",
+  "positive": "bikini"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "连体泳衣",
+  "positive": "one-piece swimsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "泳裙",
+  "positive": "swim skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "沙滩裙",
+  "positive": "beach cover-up"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "遮阳衣",
+  "positive": "rash guard"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "泳裤",
+  "positive": "swim shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "泳帽",
+  "positive": "swim cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "浮潜套装",
+  "positive": "snorkel set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "潜水衣",
+  "positive": "wetsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "潜水裤",
+  "positive": "wetsuit pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 泳装",
+  "name": "冲浪裤",
+  "positive": "boardshorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动文胸",
+  "positive": "sports bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动上衣",
+  "positive": "sports top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动裤",
+  "positive": "sports pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动短裤",
+  "positive": "athletic shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动紧身衣",
+  "positive": "compression suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动套装",
+  "positive": "athletic set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "运动连衣裙",
+  "positive": "athletic dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "健身服",
+  "positive": "gym wear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "跑步裤",
+  "positive": "running pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "篮球裤",
+  "positive": "basketball shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "网球裤",
+  "positive": "tennis shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "足球裤",
+  "positive": "soccer shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "高尔夫服",
+  "positive": "golf attire"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "瑜伽服",
+  "positive": "yoga wear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "太极服",
+  "positive": "tai chi suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "拳击装",
+  "positive": "boxing attire"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "羽毛球服",
+  "positive": "badminton attire"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "游泳裤",
+  "positive": "swim trunks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "健身紧身衣",
+  "positive": "fitness tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 运动装",
+  "name": "长跑服",
+  "positive": "marathon suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "文胸",
+  "positive": "bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "内裤",
+  "positive": "panties"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "丁字裤",
+  "positive": "thong"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "连体内衣",
+  "positive": "bodysuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "睡衣",
+  "positive": "pajamas"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "底裤",
+  "positive": "long johns"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "吊袜带",
+  "positive": "garter belt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "情趣内衣",
+  "positive": "lingerie"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "背心",
+  "positive": "camisole"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "泳衣内衣",
+  "positive": "swimwear bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "塑身内衣",
+  "positive": "shapewear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "胸衣",
+  "positive": "bustier"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "纹身文胸",
+  "positive": "tattoo bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "丰胸垫",
+  "positive": "push-up pad"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "吊带内衣",
+  "positive": "strapless bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "无肩带文胸",
+  "positive": "convertible bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "无线文胸",
+  "positive": "wireless bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "无痕内衣",
+  "positive": "seamless underwear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "泳装内衣",
+  "positive": "swimwear bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "小胸文胸",
+  "positive": "small cup bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 内衣",
+  "name": "大胸文胸",
+  "positive": "large cup bra"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "项链",
+  "positive": "necklace"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "耳环",
+  "positive": "earrings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "手链",
+  "positive": "bracelet"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "戒指",
+  "positive": "ring"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "围巾",
+  "positive": "scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "帽子",
+  "positive": "hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "手套",
+  "positive": "gloves"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "皮带",
+  "positive": "belt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "太阳镜",
+  "positive": "sunglasses"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "包包",
+  "positive": "handbag"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "披肩",
+  "positive": "shawl"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "发夹",
+  "positive": "hairpin"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "发带",
+  "positive": "headband"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "项链套装",
+  "positive": "necklace set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "手表",
+  "positive": "watch"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "腰链",
+  "positive": "waist chain"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "胸针",
+  "positive": "brooch"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "手镯",
+  "positive": "bangle"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "项链链子",
+  "positive": "chain necklace"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "胸花",
+  "positive": "corsage"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 配饰",
+  "name": "围巾固定器",
+  "positive": "scarf clip"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "高跟鞋",
+  "positive": "high heels"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "运动鞋",
+  "positive": "sneakers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "平底鞋",
+  "positive": "flats"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "靴子",
+  "positive": "boots"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "凉鞋",
+  "positive": "sandals"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "拖鞋",
+  "positive": "slippers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "尖头鞋",
+  "positive": "pointed-toe shoes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "帆布鞋",
+  "positive": "canvas shoes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "平底便鞋",
+  "positive": "loafers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "牛仔鞋",
+  "positive": "cowboy boots"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "坡跟鞋",
+  "positive": "wedges"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "男鞋",
+  "positive": "oxfords"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "马丁靴",
+  "positive": "ankle boots"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "水鞋",
+  "positive": "water shoes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "人字拖",
+  "positive": "flip-flops"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "木底拖鞋",
+  "positive": "clogs"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "运动凉鞋",
+  "positive": "sport sandals"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 鞋类",
+  "name": "豆豆鞋",
+  "positive": "penny loafers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡衣",
+  "positive": "pajamas"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡袍",
+  "positive": "robe"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡裙",
+  "positive": "nightgown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡袍套装",
+  "positive": "robe set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "家居服",
+  "positive": "loungewear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "居家裤",
+  "positive": "lounging pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡裤",
+  "positive": "sleep shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡裙套装",
+  "positive": "nightgown set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "短睡裤套装",
+  "positive": "sleep shorts set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "居家内衣",
+  "positive": "lounging lingerie"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "睡裤套装",
+  "positive": "sleep shorts set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "夜袍",
+  "positive": "night robe"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 睡衣",
+  "name": "夜裙",
+  "positive": "evening dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "帽子",
+  "positive": "hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "棒球帽",
+  "positive": "baseball cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "遮阳帽",
+  "positive": "sun hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "渔夫帽",
+  "positive": "bucket hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "毛线帽",
+  "positive": "beanie"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "礼帽",
+  "positive": "top hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "鸭舌帽",
+  "positive": "duckbill cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "贝雷帽",
+  "positive": "beret"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "军帽",
+  "positive": "military cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "斗篷",
+  "positive": "cape"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "围巾",
+  "positive": "scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "披肩",
+  "positive": "shawl"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "发带",
+  "positive": "headband"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "发夹",
+  "positive": "hairpin"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "草帽",
+  "positive": "straw hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "兔毛帽",
+  "positive": "fur hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "军官帽",
+  "positive": "officer's cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "帽套",
+  "positive": "hat cover"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "卡其帽",
+  "positive": "newsboy cap"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "洪堡帽",
+  "positive": "homburg hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "英式帽",
+  "positive": "bowler hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 帽子",
+  "name": "圆顶礼帽",
+  "positive": "derby hat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "连袜裤",
+  "positive": "tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "裤袜",
+  "positive": "pantyhose"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "厚连裤袜",
+  "positive": "opaque tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "薄连裤袜",
+  "positive": "sheer tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "蕾丝连袜裤",
+  "positive": "lace tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "鱼网袜",
+  "positive": "fishnet tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "中筒袜",
+  "positive": "knee-high socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "长筒袜",
+  "positive": "thigh-high socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "踝筒袜",
+  "positive": "ankle socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "脚趾袜",
+  "positive": "toe socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "冬季连袜裤",
+  "positive": "winter tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "体育袜",
+  "positive": "sport socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "格子连袜裤",
+  "positive": "plaid tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "格子袜",
+  "positive": "argyle socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "袜套",
+  "positive": "sock covers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "睡袜",
+  "positive": "sleep socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 连袜裤",
+  "name": "美腿袜",
+  "positive": "leggings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "围巾",
+  "positive": "scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "丝巾",
+  "positive": "silk scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "披肩",
+  "positive": "shawl"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "围巾固定器",
+  "positive": "scarf clip"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "领巾",
+  "positive": "neckerchief"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "围巾环",
+  "positive": "scarf ring"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "围脖",
+  "positive": "snood"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "飘带",
+  "positive": "streamer"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "绒线围巾",
+  "positive": "knit scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "披风",
+  "positive": "cape"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "莱卡围巾",
+  "positive": "lycra scarf"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "领巾固定器",
+  "positive": "neckerchief clip"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "鸟巾",
+  "positive": "boa"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 围巾",
+  "name": "围巾链子",
+  "positive": "scarf chain"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜连裤袜",
+  "positive": "pantyhose"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "网纹丝袜",
+  "positive": "fishnet stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "压力丝袜",
+  "positive": "compression stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "无缝丝袜",
+  "positive": "seamless stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "花边丝袜",
+  "positive": "lace stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "大网格丝袜",
+  "positive": "large fishnet stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "薄款丝袜",
+  "positive": "sheer stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "加强型丝袜",
+  "positive": "reinforced stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "超薄丝袜",
+  "positive": "ultra-sheer stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜袜子",
+  "positive": "stocking socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜裤袜",
+  "positive": "tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "蕾丝丝袜",
+  "positive": "lace tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "鱼网丝袜",
+  "positive": "fishnet tights"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "肉色丝袜",
+  "positive": "nude stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "彩色丝袜",
+  "positive": "colored stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "黑色丝袜",
+  "positive": "black stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "白色丝袜",
+  "positive": "white stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "红色丝袜",
+  "positive": "red stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "粉色丝袜",
+  "positive": "pink stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "紫色丝袜",
+  "positive": "purple stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "蓝色丝袜",
+  "positive": "blue stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "绿色丝袜",
+  "positive": "green stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "黄色丝袜",
+  "positive": "yellow stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "灰色丝袜",
+  "positive": "gray stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "褐色丝袜",
+  "positive": "brown stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "条纹丝袜",
+  "positive": "striped stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "格子丝袜",
+  "positive": "checkered stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "花卉丝袜",
+  "positive": "floral stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "圆点丝袜",
+  "positive": "polka dot stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "复古丝袜",
+  "positive": "vintage stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "半透明丝袜",
+  "positive": "semi-opaque stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "珠光丝袜",
+  "positive": "shimmer stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "亮片丝袜",
+  "positive": "glitter stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "珍珠丝袜",
+  "positive": "pearl stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "水钻丝袜",
+  "positive": "rhinestone stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "厚款丝袜",
+  "positive": "opaque stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "坎肩丝袜",
+  "positive": "cowl neck stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "连体丝袜",
+  "positive": "bodystocking"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "性感丝袜",
+  "positive": "sexy stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜内衣套装",
+  "positive": "lingerie and stockings set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "高腰丝袜",
+  "positive": "high-waisted stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜配饰",
+  "positive": "stocking accessories"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "网纹袜套",
+  "positive": "fishnet leg warmers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜腿套",
+  "positive": "stocking leg warmers"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 丝袜",
+  "name": "丝袜吊带",
+  "positive": "stocking garters"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙",
+  "positive": "deep v-neck dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领毛衣",
+  "positive": "deep v-neck sweater"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领上衣",
+  "positive": "deep v-neck top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连体裤",
+  "positive": "deep v-neck jumpsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领紧身衣",
+  "positive": "deep v-neck bodysuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领背心",
+  "positive": "deep v-neck camisole"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领吊带连衣裙",
+  "positive": "deep v-neck halter dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连身短裤",
+  "positive": "deep v-neck romper"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领礼服连衣裙",
+  "positive": "deep v-neck evening gown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领薄款针织衫",
+  "positive": "deep v-neck lightweight knit sweater"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领运动上衣",
+  "positive": "deep v-neck athletic top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领丝绒连衣裙",
+  "positive": "deep v-neck velvet dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领夏季连衣裙",
+  "positive": "deep v-neck summer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领短袖衬衫",
+  "positive": "deep v-neck short sleeve shirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领包裹裙",
+  "positive": "deep v-neck bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领流苏裙",
+  "positive": "deep v-neck fringe skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领蕾丝连衣裙",
+  "positive": "deep v-neck lace dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙套装",
+  "positive": "deep v-neck dress set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领吊带上衣",
+  "positive": "deep v-neck halter top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙配饰",
+  "positive": "deep v-neck dress accessories"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙外套",
+  "positive": "deep v-neck dress coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙帽衫",
+  "positive": "deep v-neck dress hooded sweater"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领拼接连衣裙",
+  "positive": "deep v-neck patchwork dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领卫衣连衣裙",
+  "positive": "deep v-neck hoodie dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领夜店装",
+  "positive": "deep v-neck clubwear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领网纱连衣裙",
+  "positive": "deep v-neck mesh dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领迷彩连衣裙",
+  "positive": "deep v-neck camouflage dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领蕾丝上衣",
+  "positive": "deep v-neck lace top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领透明连衣裙",
+  "positive": "deep v-neck sheer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领复古连衣裙",
+  "positive": "deep v-neck vintage dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领长款连衣裙",
+  "positive": "deep v-neck long dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领迷你连衣裙",
+  "positive": "deep v-neck mini dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领宴会装",
+  "positive": "deep v-neck cocktail dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领无袖连衣裙",
+  "positive": "deep v-neck sleeveless dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领绒线连衣裙",
+  "positive": "deep v-neck knit dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领运动连衣裙",
+  "positive": "deep v-neck athletic dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领修身连衣裙",
+  "positive": "deep v-neck fitted dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领皮质连衣裙",
+  "positive": "deep v-neck leather dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领连衣裙裙子",
+  "positive": "deep v-neck dress skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领裹胸连衣裙",
+  "positive": "deep v-neck wrap dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领露肩连衣裙",
+  "positive": "deep v-neck off-shoulder dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领背带连衣裙",
+  "positive": "deep v-neck suspender dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领夏日连衣裙",
+  "positive": "deep v-neck summer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领金属纹裙",
+  "positive": "deep v-neck metallic skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领高腰连衣裙",
+  "positive": "deep v-neck high-waisted dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 深V",
+  "name": "深V领包裹上衣",
+  "positive": "deep v-neck bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀连衣裙",
+  "positive": "bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀裙",
+  "positive": "bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀上衣",
+  "positive": "bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀连体裤",
+  "positive": "bodycon jumpsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀紧身裙",
+  "positive": "bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀礼服",
+  "positive": "bodycon gown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀针织裙",
+  "positive": "knit bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀运动短裤",
+  "positive": "sports booty shorts"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀派对服",
+  "positive": "party bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀露背连衣裙",
+  "positive": "backless bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀剧院装",
+  "positive": "theater bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀半身裙",
+  "positive": "mini bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀连衣裙套装",
+  "positive": "bodycon dress set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀纹理裙",
+  "positive": "textured bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀夏季连衣裙",
+  "positive": "summer bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀针织上衣",
+  "positive": "knit bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀夏日裙子",
+  "positive": "summer bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀毛织裙",
+  "positive": "knit bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀花纹裙",
+  "positive": "patterned bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀网纱连衣裙",
+  "positive": "mesh bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀迷你连衣裙",
+  "positive": "mini bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀薄款上衣",
+  "positive": "lightweight bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀复古连衣裙",
+  "positive": "vintage bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀夜店装",
+  "positive": "clubwear bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀蕾丝裙",
+  "positive": "lace bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀宴会装",
+  "positive": "cocktail bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀皮质短裙",
+  "positive": "leather bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀纯色连衣裙",
+  "positive": "solid color bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀迷你半身裙",
+  "positive": "mini bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀吊带连衣裙",
+  "positive": "strapless bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀连衣裙配饰",
+  "positive": "bodycon dress accessories"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀高腰裙",
+  "positive": "high-waisted bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀透明连衣裙",
+  "positive": "sheer bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀金属纹裙",
+  "positive": "metallic bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀卫衣连衣裙",
+  "positive": "hooded bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀深V领连衣裙",
+  "positive": "deep v-neck bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀丝绒连衣裙",
+  "positive": "velvet bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀迷你连衣裙套装",
+  "positive": "mini bodycon dress set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀牛仔短裙",
+  "positive": "denim bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀低背连衣裙",
+  "positive": "low-back bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀修身连衣裙",
+  "positive": "fitted bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀雪纺连衣裙",
+  "positive": "chiffon bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀长款连衣裙",
+  "positive": "long bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀背心上衣",
+  "positive": "sleeveless bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀无袖连衣裙",
+  "positive": "sleeveless bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀蕾丝连衣裙",
+  "positive": "lace bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀紧身衬衫",
+  "positive": "bodycon shirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀绒线连衣裙",
+  "positive": "knit bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀薄纱连衣裙",
+  "positive": "chiffon bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀高领连衣裙",
+  "positive": "high-neck bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 包臀",
+  "name": "包臀纯色半身裙",
+  "positive": "solid color bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝连衣裙",
+  "positive": "lace dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝上衣",
+  "positive": "lace top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝裙子",
+  "positive": "lace skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝连体裤",
+  "positive": "lace jumpsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝裤子",
+  "positive": "lace pants"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝外套",
+  "positive": "lace jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝背心",
+  "positive": "lace camisole"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝内衣",
+  "positive": "lace lingerie"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝袜子",
+  "positive": "lace stockings"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝长袜",
+  "positive": "lace thigh-high socks"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝长袖上衣",
+  "positive": "lace long-sleeve top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝吊带上衣",
+  "positive": "lace camisole top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝连衣裙配饰",
+  "positive": "lace dress accessories"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝短袖上衣",
+  "positive": "lace short-sleeve top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝披肩",
+  "positive": "lace shawl"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝长袖裙",
+  "positive": "lace long-sleeve dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝袖套",
+  "positive": "lace sleeves"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝贴边裙",
+  "positive": "lace-edged skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝花边上衣",
+  "positive": "lace trim top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝贴边连衣裙",
+  "positive": "lace-edged dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝夏季裙",
+  "positive": "lace summer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝春季外套",
+  "positive": "lace spring jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝晚礼服",
+  "positive": "lace evening gown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝迷你裙",
+  "positive": "lace mini skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝修身裙",
+  "positive": "lace bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝冬季外套",
+  "positive": "lace winter jacket"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝紧身上衣",
+  "positive": "lace fitted top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝包臀连衣裙",
+  "positive": "lace bodycon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝裙裤套装",
+  "positive": "lace skirt and pants set"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝夜店装",
+  "positive": "lace clubwear"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝流苏裙",
+  "positive": "lace fringe skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝露背连衣裙",
+  "positive": "lace backless dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝深V领上衣",
+  "positive": "lace deep v-neck top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝高腰裙",
+  "positive": "lace high-waisted skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝透明连衣裙",
+  "positive": "lace sheer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝圆领上衣",
+  "positive": "lace round neck top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝半袖连衣裙",
+  "positive": "lace short-sleeve dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝花边连衣裙",
+  "positive": "lace trim dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝低背连衣裙",
+  "positive": "lace low-back dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝包臀上衣",
+  "positive": "lace bodycon top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝薄纱连衣裙",
+  "positive": "lace chiffon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝针织裙",
+  "positive": "lace knit skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝连衣裙外套",
+  "positive": "lace dress coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 蕾丝",
+  "name": "蕾丝背心上衣",
+  "positive": "lace camisole top"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "连衣裙",
+  "positive": "dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "迷你裙",
+  "positive": "miniskirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "中裙",
+  "positive": "midi skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "长裙",
+  "positive": "maxi skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "半身裙",
+  "positive": "skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "包臀裙",
+  "positive": "bodycon skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "百褶裙",
+  "positive": "pleated skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "牛仔裙",
+  "positive": "denim skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "礼服裙",
+  "positive": "gown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "夏季裙",
+  "positive": "summer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "冬季裙",
+  "positive": "winter dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "花卉裙",
+  "positive": "floral dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "印花裙",
+  "positive": "printed dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "纱裙",
+  "positive": "chiffon dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "针织裙",
+  "positive": "knit skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "派对裙",
+  "positive": "party dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "背心裙",
+  "positive": "camisole dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "吊带裙",
+  "positive": "halter dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "圆领裙",
+  "positive": "round neck dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "蕾丝裙",
+  "positive": "lace dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "修身裙",
+  "positive": "fitted skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "流苏裙",
+  "positive": "fringe skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "包裹裙",
+  "positive": "wrap dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "无袖裙",
+  "positive": "sleeveless dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "宴会裙",
+  "positive": "cocktail dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "露肩裙",
+  "positive": "off-shoulder dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "连体裙",
+  "positive": "jumpsuit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "迷你连衣裙",
+  "positive": "minidress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "深V领连衣裙",
+  "positive": "deep v-neck dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "丝绒裙",
+  "positive": "velvet dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "复古裙",
+  "positive": "vintage dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "亮片裙",
+  "positive": "sequin skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "亮丝裙",
+  "positive": "shimmer dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "格子裙",
+  "positive": "plaid skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "牛仔迷你裙",
+  "positive": "denim miniskirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "棉质连衣裙",
+  "positive": "cotton dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "运动裙",
+  "positive": "athletic skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "低背连衣裙",
+  "positive": "low-back dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "高领连衣裙",
+  "positive": "turtleneck dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "珍珠裙",
+  "positive": "pearl skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "水钻裙",
+  "positive": "rhinestone skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "条纹裙",
+  "positive": "striped skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "亮片迷你裙",
+  "positive": "sequin miniskirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "印花迷你裙",
+  "positive": "printed miniskirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "薄纱连衣裙",
+  "positive": "chiffon minidress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "无袖连衣裙",
+  "positive": "sleeveless minidress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "背带连衣裙",
+  "positive": "suspender dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "麂皮迷你裙",
+  "positive": "suede miniskirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 服装 / 裙子",
+  "name": "纯色连衣裙",
+  "positive": "solid color dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "职场制服",
+  "positive": "business_suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "校服",
+  "positive": "school_uniform"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "水手服",
+  "positive": "serafuku"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "护士",
+  "positive": "nurse"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "警服",
+  "positive": "police_uniform"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "海军制服",
+  "positive": "naval_uniform"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "陆军制服",
+  "positive": "military_uniform"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "女仆装",
+  "positive": "maid"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "围裙",
+  "positive": "apron"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "厨师工装",
+  "positive": "chef_uniform"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "宇航服",
+  "positive": "space_suit"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "实验服",
+  "positive": "labcoat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "啦啦队服",
+  "positive": "cheerleader"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "燕尾服",
+  "positive": "tuxedo"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "礼服",
+  "positive": "evening_gown"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "婚纱",
+  "positive": "wedding_dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "巫女服",
+  "positive": "miko"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "修女服",
+  "positive": "nun_cloth"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "兔子服装",
+  "positive": "bunny_costume"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "猫系服装",
+  "positive": "cat_costume"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "皮套狗",
+  "positive": "dog_costume"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "熊套装",
+  "positive": "bear_costume"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "圣诞风格服装",
+  "positive": "santa_costume"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "盔甲",
+  "positive": "armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "比基尼盔甲",
+  "positive": "bikini_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "穿着全套盔甲的",
+  "positive": "full_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "板甲",
+  "positive": "plate_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "日本铠甲",
+  "positive": "japanese_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "动力装甲",
+  "positive": "power_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "机甲",
+  "positive": "mecha"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "头盔",
+  "positive": "helmet"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "头盔(日式)",
+  "positive": "kabuto"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "無肩甲盔甲",
+  "positive": "off-shoulder_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "肩甲",
+  "positive": "shoulder_armor"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "日本弓道護胸甲",
+  "positive": "muneate"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "胸甲",
+  "positive": "breastplate"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "腹甲",
+  "positive": "faulds"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "胫甲",
+  "positive": "shin_guards"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "装甲靴",
+  "positive": "armored_boots"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "道袍",
+  "positive": "Taoist robe"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "长袍",
+  "positive": "robe"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "混合长袍",
+  "positive": "robe_of_blending"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "斗篷",
+  "positive": "cloak"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 制服COS",
+  "name": "羽衣",
+  "positive": "hagoromo"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "中国服饰",
+  "positive": "china_dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "中国风",
+  "positive": "chinese_style"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "旗袍",
+  "positive": "china_dress"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "印花旗袍",
+  "positive": "print_cheongsam"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "汉服",
+  "positive": "hanfu"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "汉服唐风",
+  "positive": "hanfu, tang style"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "上杉",
+  "positive": "upper shan"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "长上杉",
+  "positive": "long upper shan"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "齐胸破裙",
+  "positive": "chest po skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "齐胸褶裙",
+  "positive": "chest pleated skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "系带",
+  "positive": "waistband"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "披帛",
+  "positive": "pibo"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "汉服宋风",
+  "positive": "hanfu, song style outfits"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "短杉",
+  "positive": "short shan"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "长杉",
+  "positive": "long shan"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "宋抹",
+  "positive": "songmo"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "百褶裙",
+  "positive": "pleated skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "汉服明风",
+  "positive": "hanfu, ming style outfits"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "短袄",
+  "positive": "short coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "长袄",
+  "positive": "long coat"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "马面裙",
+  "positive": "mamian skirt"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "交领",
+  "positive": "overlapping collar"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "圆领",
+  "positive": "round collar"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "立领",
+  "positive": "standing collar"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "方领",
+  "positive": "square collar"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "云肩",
+  "positive": "overlapping collar"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "刺绣",
+  "positive": "embroidery"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "织金",
+  "positive": "woven gold"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "妆花",
+  "positive": "makeup flower"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "补服",
+  "positive": "bufu"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "和服",
+  "positive": "kimono"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "印花和服",
+  "positive": "print_kimono"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "衣带(和服用)",
+  "positive": "obi"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "浴衣",
+  "positive": "yukata"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "韩服",
+  "positive": "hanbok"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "朝鲜服饰",
+  "positive": "korean_clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "西部风格",
+  "positive": "western"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "德国服装",
+  "positive": "german_clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "哥特风格",
+  "positive": "gothic"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "洛丽塔风格",
+  "positive": "gothic_lolita"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "拜占庭风格",
+  "positive": "byzantine_fashion"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "热带特征的",
+  "positive": "Tropical"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "印度风格",
+  "positive": "indian_style"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "越南校服（奥黛）",
+  "positive": "Ao_Dai"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "阿伊努人的服饰",
+  "positive": "ainu_clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "阿拉伯服饰",
+  "positive": "arabian_clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "服饰 / 传统服饰",
+  "name": "埃及风格服饰",
+  "positive": "egyptian_clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "化妆",
+  "positive": "applying makeup"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "洗澡",
+  "positive": "bathing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "入浴",
+  "positive": "bathing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "咬",
+  "positive": "biting"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "鞠躬",
+  "positive": "bowing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "刷牙",
+  "positive": "brushing teeth"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "吹泡泡",
+  "positive": "bubble blowing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "追逐",
+  "positive": "chasing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "打扫",
+  "positive": "cleaning"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "攀爬",
+  "positive": "climbing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "烹饪",
+  "positive": "cooking"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "哭",
+  "positive": "crying"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "拥抱",
+  "positive": "cuddling"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "跳舞",
+  "positive": "dancing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "潜水",
+  "positive": "diving"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "拉弓",
+  "positive": "drawing bow"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "喝",
+  "positive": "drinking"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "驾驶",
+  "positive": "driving"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "(意外)掉落",
+  "positive": "dropping"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "弄干(浴后)",
+  "positive": "drying"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "双持",
+  "positive": "dual wielding"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "吃饭",
+  "positive": "eating"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "做运动",
+  "positive": "exercise"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "战斗姿态|摆着架势的",
+  "positive": "fighting stance"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "射击",
+  "positive": "firing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "钓鱼",
+  "positive": "fishing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "秀肌肉",
+  "positive": "flexing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "飞踢",
+  "positive": "flying kick"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "梳头",
+  "positive": "hair brushing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "撩头发",
+  "positive": "hair tucking"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "吊起来的",
+  "positive": "hanging"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "击打",
+  "positive": "hitting"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "在想象的",
+  "positive": "imagining"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "跳跃",
+  "positive": "jumping"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "踢",
+  "positive": "kicking"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "演奏乐器",
+  "positive": "playing instrument"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "钢管舞",
+  "positive": "pole dancing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "祈祷",
+  "positive": "praying"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "展示",
+  "positive": "presenting"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "挥拳",
+  "positive": "punching"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "推搡",
+  "positive": "pushing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "阅读",
+  "positive": "reading"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "骑",
+  "positive": "riding"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "奔跑",
+  "positive": "running"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "缝纫",
+  "positive": "sewing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "购物",
+  "positive": "shopping"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "淋浴",
+  "positive": "showering"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "唱歌",
+  "positive": "sing"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "扑克牌",
+  "positive": "playing card"
+ },
+ {
+  "group": "人物类",
+  "category": "情景",
+  "name": "打游戏",
+  "positive": "playing games"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "行走",
+  "positive": "Walking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "转身",
+  "positive": "Turning"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "摆动",
+  "positive": "Swinging"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "弯腰",
+  "positive": "Bending"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "高抬腿",
+  "positive": "High leg lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "拉伸",
+  "positive": "Stretching"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "手势",
+  "positive": "Gestures"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "双手放腰",
+  "positive": "Hands on waist"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "站立",
+  "positive": "standing"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "躺",
+  "positive": "on back"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "趴",
+  "positive": "on stomach"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "跪",
+  "positive": "kneeling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "侧卧",
+  "positive": "on side"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "靠在物体上",
+  "positive": "leaning on object"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "躺着的",
+  "positive": "lying"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 单人姿态",
+  "name": "胎儿姿势(躺)",
+  "positive": "fetal position"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "胸部互碰|胸顶着胸",
+  "positive": "asymmetrical docking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "背对背",
+  "positive": "back-to-back"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "眼对眼（对视）",
+  "positive": "eye contact"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "二人面对面(脸贴得很近)",
+  "positive": "facing another"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "喂食",
+  "positive": "feeding"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "口内手指",
+  "positive": "finger in another's mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "牵手",
+  "positive": "holding hands"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "拥抱",
+  "positive": "hug"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "即将接吻",
+  "positive": "imminent kiss"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "递食物",
+  "positive": "incoming food"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "递礼物",
+  "positive": "incoming gift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "等待接吻|献吻",
+  "positive": "incoming kiss"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "壁咚",
+  "positive": "Kabedon"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "膝枕",
+  "positive": "lap pillow"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "掏耳勺",
+  "positive": "mimikaki"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "公主抱",
+  "positive": "princess carry"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "舌头",
+  "positive": "tongue"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "吐舌头",
+  "positive": "tongue out"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "小舌头|口盖垂|悬雍垂",
+  "positive": "uvula"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 多人互动",
+  "name": "咬耳朵",
+  "positive": "ear biting"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手放在嘴边",
+  "positive": "hand to mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "爪手势",
+  "positive": "claw pose"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "招财猫手势(下弯手腕)",
+  "positive": "paw pose"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "狐狸手势",
+  "positive": "fox shadow puppet"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手指枪手势",
+  "positive": "finger gun"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "胜利手势",
+  "positive": "v"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "双 v",
+  "positive": "double v"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "翘大拇指",
+  "positive": "thumbs up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "食指抬起",
+  "positive": "index finger raised"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "国际友好手势",
+  "positive": "middle finger"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "用手指做出笑脸",
+  "positive": "fingersmile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "擦眼泪",
+  "positive": "wiping tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "OK手势",
+  "positive": "ok sign"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "遮阳手势",
+  "positive": "shading eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "嘘(手势)",
+  "positive": "shushing"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手指伸进嘴里",
+  "positive": "finger in mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手指卷着头发",
+  "positive": "hair twirling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "双手手指交叉|双手紧握",
+  "positive": "hands clasped"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "握着头发|手指绕着头发",
+  "positive": "holding hair"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "扶眼镜",
+  "positive": "adjusting eyewear"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "拨弄手套",
+  "positive": "adjusting gloves"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "理头发",
+  "positive": "adjusting hair"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "整理帽子",
+  "positive": "adjusting hat"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "掀起自己的衣物",
+  "positive": "lifted by self"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "拉起掀起卷起衬衫",
+  "positive": "shirt lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "指掀起裙子时形成的篮子形状",
+  "positive": "skirt basket"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "剥下裙子胸口的部分",
+  "positive": "dress pull"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "往上剥开的比基尼",
+  "positive": "bikini lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "将裙子掀上去",
+  "positive": "skirt lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "往上掰衣物的吊带",
+  "positive": "strap lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "起风效果|上升气流",
+  "positive": "wind lift"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "拉着口罩",
+  "positive": "mask pull"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "拉着裤子",
+  "positive": "pants pull"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手抓裆部",
+  "positive": "crotch grab"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "用手遮住胸部",
+  "positive": "covering chest by hand"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "捏脸颊",
+  "positive": "cheek pinching"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "戳脸颊",
+  "positive": "cheek poking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "摸下巴",
+  "positive": "chin stroking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "展现魅力的姿势",
+  "positive": "curvy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 手部",
+  "name": "手持辫子",
+  "positive": "bunching hair"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "张腿",
+  "positive": "spread legs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "两腿并拢",
+  "positive": "legs together"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "二郎腿",
+  "positive": "crossed legs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "I字摆腿",
+  "positive": "standing split leg up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "屈膝礼（女仆行礼）",
+  "positive": "curtsy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "双腿之间的手",
+  "positive": "hand between legs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "稍息",
+  "positive": "open stance"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "挡住关键部位的腿",
+  "positive": "convenient leg"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "V字张腿",
+  "positive": "spread legs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "用双腿夹住",
+  "positive": "leg lock"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "双腿抬起",
+  "positive": "legs up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "双腿交叉站姿",
+  "positive": "watson cross"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "膝盖合并，两脚分开",
+  "positive": "knees together feet apart"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "膝盖上有动物",
+  "positive": "animal on lap"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "手放在自己的膝盖上",
+  "positive": "hand on own knee"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "顶起膝盖",
+  "positive": "knee up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "膝盖蜷到胸前",
+  "positive": "knees on chest"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "膝盖顶到胸部",
+  "positive": "knees to chest"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "鸭子坐",
+  "positive": "wariza"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "正坐",
+  "positive": "seiza"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "跨坐",
+  "positive": "straddling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "侧身坐",
+  "positive": "yokozuwari"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "蹲下，张开双腿",
+  "positive": "squatting, open legs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "一只膝盖",
+  "positive": "one knee"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "下跪",
+  "positive": "kneeling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "四肢着地",
+  "positive": "all fours"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "凹版姿势",
+  "positive": "gravure pose"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "高踢",
+  "positive": "high kick"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 腿部",
+  "name": "泡脚",
+  "positive": "soaking feet"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "面向镜头",
+  "positive": "facing_viewer"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "看向镜头",
+  "positive": "looking_at_viewer"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "眼神接触",
+  "positive": "eye-contact"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "盯着看",
+  "positive": "eyeball"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "凝视",
+  "positive": "staring"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "回眸",
+  "positive": "looking_back"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "人物倾斜",
+  "positive": "gradient"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "人物视角向下看↘",
+  "positive": "looking_down"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "人物视角抬头看↗",
+  "positive": "looking_up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "面向别处",
+  "positive": "facing_away"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "看向侧面",
+  "positive": "looking_to_the_side"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "看着别处",
+  "positive": "looking_away"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "遥望",
+  "positive": "looking_afar"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "向外看",
+  "positive": "looking_outside"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "歪头",
+  "positive": "head_tilt"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "低头",
+  "positive": "head_down"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 眼神",
+  "name": "照镜子",
+  "positive": "looking_at_mirror"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "微笑",
+  "positive": "smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "善良的微笑",
+  "positive": "kind smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "大笑",
+  "positive": "laughing"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "开心",
+  "positive": "happy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "露齿咧嘴笑",
+  "positive": "grin"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "咧嘴傻笑",
+  "positive": "teasing smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "魅惑的微笑",
+  "positive": "seductive smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "自鸣得意的笑",
+  "positive": "smirk"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "咯咯傻笑",
+  "positive": "giggling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "洋洋得意",
+  "positive": "smug"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "调皮的脸",
+  "positive": "naughty face"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "邪恶笑",
+  "positive": "evil smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "疯狂的笑",
+  "positive": "crazy smile"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "快乐|幸福",
+  "positive": "happy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "生日快乐",
+  "positive": "happy birthday"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "万圣节快乐",
+  "positive": "happy halloween"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "新年快乐",
+  "positive": "happy new year"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "开心的眼泪",
+  "positive": "happy tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 正面情绪",
+  "name": "情人节快乐",
+  "positive": "happy valentine"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "阿黑颜",
+  "positive": "ahegao"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "忍耐的表情",
+  "positive": "endured face"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "忍耐",
+  "positive": "restrained"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "黑化的",
+  "positive": "dark persona"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "疯狂的",
+  "positive": "crazy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "筋疲力尽的",
+  "positive": "exhausted"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "傲娇",
+  "positive": "Tsundere"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "病娇",
+  "positive": "yandere"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "多重人格",
+  "positive": "multiple persona"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "颤抖",
+  "positive": "trembling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "翻白眼(高潮眼）",
+  "positive": "rolling eyes"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "嫉妒",
+  "positive": "envy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "绝顶",
+  "positive": "female orgasm"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "重呼吸",
+  "positive": "heavy breathing"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "淘气",
+  "positive": "naughty"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "呻吟",
+  "positive": "moaning"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "嫌弃的眼神",
+  "positive": "scowl"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "轻蔑",
+  "positive": "disdain"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "蔑视",
+  "positive": "contempt"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "脸上有阴影，配合蔑视",
+  "positive": "shaded face"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "鄙夷的眼神",
+  "positive": "jitome"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "皱眉/蹙额",
+  "positive": "wince"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "眉头紧锁",
+  "positive": "furrowed brow"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "害怕侧目",
+  "positive": "fear kubrick"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "扬起眉毛",
+  "positive": "raised eyebrows"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "邪恶的",
+  "positive": "evil"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "生闷气",
+  "positive": "sulking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "尖叫",
+  "positive": "screaming"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "喊叫",
+  "positive": "shouting"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "生气的",
+  "positive": "angry"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "惹恼",
+  "positive": "annoy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "怒目而视",
+  "positive": "glaring"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "严肃的",
+  "positive": "serious"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "侧头瞪着你",
+  "positive": "kubrick stare"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "伤心",
+  "positive": "sad"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "啜泣",
+  "positive": "tear"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "大哭",
+  "positive": "crying"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "泪如雨下",
+  "positive": "streaming tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "睁着眼睛哭",
+  "positive": "crying with eyes open"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "流泪",
+  "positive": "streaming tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "泪珠",
+  "positive": "teardrop"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "撕破衣服",
+  "positive": "tearing clothes"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "要哭的表情",
+  "positive": "tearing up"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "眼泪",
+  "positive": "tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "擦眼泪",
+  "positive": "wiping tears"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "心情不好",
+  "positive": "badmood"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "不开心的",
+  "positive": "unamused"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "沮丧",
+  "positive": "frustrated"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "沮丧的眉头",
+  "positive": "frustrated brow"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "苦恼的",
+  "positive": "annoyed"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "苦闷",
+  "positive": "anguish"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "叹气",
+  "positive": "sigh"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "忧郁的",
+  "positive": "gloom"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "失望的",
+  "positive": "disappointed"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "绝望",
+  "positive": "despair"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 负面情绪",
+  "name": "疼痛",
+  "positive": "pain"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "面无表情",
+  "positive": "embarrass"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "困乏的",
+  "positive": "sleepy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "喝醉的",
+  "positive": "drunk"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "无聊的",
+  "positive": "bored"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "使困惑",
+  "positive": "confused"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "思考",
+  "positive": "thinking"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "孤独",
+  "positive": "lonely"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "决心的，坚定的",
+  "positive": "determined"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "阴沉脸",
+  "positive": "shaded"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "阴影",
+  "positive": "shadow"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "凝视|盯",
+  "positive": "staring"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "咬紧牙关",
+  "positive": "clenched teeth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "露出虎牙|露出尖牙",
+  "positive": "fang out"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "尖牙",
+  "positive": "fangs"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "鲨鱼牙|锯齿牙",
+  "positive": "sharp teeth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "慌张的",
+  "positive": "flustered"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "流汗",
+  "positive": "sweat"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "害怕的",
+  "positive": "scared"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "轻微脸红",
+  "positive": "light  blush"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "脸红",
+  "positive": "blush"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "害羞的",
+  "positive": "shy"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "害羞的(尴尬的)",
+  "positive": "embarrass"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "紧张的",
+  "positive": "nervous"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 其他",
+  "name": "捂脸",
+  "positive": "facepalm"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "张嘴",
+  "positive": "open mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "喘气（张大嘴）",
+  "positive": "gasping"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘴巴微微张开",
+  "positive": "Slightly open mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "波浪嘴",
+  "positive": "wavy mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "闭嘴",
+  "positive": "close mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "点嘴",
+  "positive": "dot mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "堵嘴",
+  "positive": "gag"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "啃",
+  "positive": "gnaw"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "努嘴",
+  "positive": "pout"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘴唇张开",
+  "positive": "parted lips"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "吃惊",
+  "positive": "surprised"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "勒住嘴",
+  "positive": "bit gag"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "栗子嘴",
+  "positive": "chestnut mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "被封住嘴",
+  "positive": "cleave gag"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "闭着的嘴",
+  "positive": "closed mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "蒙住的嘴",
+  "positive": "covered mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘴里有头发",
+  "positive": "hair in mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘟嘴|抿嘴",
+  "positive": "homu"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "用嘴叼着",
+  "positive": "mouth hold"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "张开的嘴唇",
+  "positive": "parted lips"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "撅起的嘴唇",
+  "positive": "puckered lips"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "把嘴画在侧脸",
+  "positive": "sideways mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘴里含着勺子",
+  "positive": "spoon in mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "三角嘴",
+  "positive": "triangle mouth"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "唾液",
+  "positive": "saliva"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "流口水",
+  "positive": "drooling"
+ },
+ {
+  "group": "人物类",
+  "category": "动作/表情 / 表情 / 嘴型",
+  "name": "嘴角画着口水滴形状的缺口",
+  "positive": "mouth drool"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "翅膀",
+  "positive": "wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "蝙蝠翅膀",
+  "positive": "bat wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "天使翅膀",
+  "positive": "feathered wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "恶魔翅膀",
+  "positive": "demon wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "蝴蝶翅膀",
+  "positive": "butterfly wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "冰纹理翅膀",
+  "positive": "ice crystal texture wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "龙翅膀",
+  "positive": "dragon wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "妖精翅膀",
+  "positive": "fairy wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "假翅膀",
+  "positive": "fake wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "头上翅膀",
+  "positive": "head wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "低位翅膀",
+  "positive": "low wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "迷你翅膀",
+  "positive": "mini wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 翅膀",
+  "name": "分离的翅膀",
+  "positive": "detached wings"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "尾巴",
+  "positive": "tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "兔尾",
+  "positive": "bunny tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "猫尾",
+  "positive": "cat tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "狗尾",
+  "positive": "dog tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "鼠尾",
+  "positive": "mouse tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "狐狸尾",
+  "positive": "fox tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "老虎尾",
+  "positive": "tiger tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "松鼠尾",
+  "positive": "squirrel tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "狼尾",
+  "positive": "wolf tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "龙尾",
+  "positive": "dragon tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "马尾巴",
+  "positive": "horse tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "浣熊尾",
+  "positive": "raccoon tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "牛尾",
+  "positive": "cow tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 尾巴",
+  "name": "恶魔尾巴",
+  "positive": "demon tail"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "兽耳",
+  "positive": "animal ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "蝙蝠耳",
+  "positive": "bat ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "猫耳",
+  "positive": "cat ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "狗耳",
+  "positive": "dog ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "狐耳",
+  "positive": "fox ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "兔耳",
+  "positive": "bunny ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "浣熊耳",
+  "positive": "raccoon ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "老鼠耳",
+  "positive": "mouse ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "松鼠耳",
+  "positive": "squirrel ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "熊耳",
+  "positive": "bear ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "虎耳",
+  "positive": "tiger ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "狼耳",
+  "positive": "wolf ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "马耳",
+  "positive": "horse ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "牛耳",
+  "positive": "cow ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "羊耳",
+  "positive": "sheep ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "山羊耳",
+  "positive": "goat ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "狮耳",
+  "positive": "lion ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "熊猫耳",
+  "positive": "panda ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "鹿耳",
+  "positive": "deer ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "猴耳",
+  "positive": "monkey ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "猪耳",
+  "positive": "pig ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "鼬耳",
+  "positive": "ferret ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "羊驼耳",
+  "positive": "alpaca ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "尖耳",
+  "positive": "pointy ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "长尖耳",
+  "positive": "long pointy ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 耳朵",
+  "name": "垂耳",
+  "positive": "floppy ears"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "山羊角",
+  "positive": "goat horns"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "羊角",
+  "positive": "sheep horns"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "机械角",
+  "positive": "mechanical horns"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "奶牛角",
+  "positive": "cow horns"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "恶魔之角",
+  "positive": "demon horns"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "断角",
+  "positive": "broken horn"
+ },
+ {
+  "group": "人物类",
+  "category": "道具 / 角",
+  "name": "龙之角",
+  "positive": "dragon horns"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "大海",
+  "positive": "ocean"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "海滩",
+  "positive": "beach"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "湖泊",
+  "positive": "lake"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "瀑布",
+  "positive": "waterfall"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "夜空",
+  "positive": "night_sky"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "星空",
+  "positive": "starry_sky"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "星云",
+  "positive": "nebula"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "超级银河",
+  "positive": "hyper_galaxy"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "星星轨迹",
+  "positive": "star_trail"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "落日",
+  "positive": "sunset"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "月亮",
+  "positive": "moon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "月牙",
+  "positive": "crescent"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "新月",
+  "positive": "crescent_moon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "满月",
+  "positive": "full_moon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "月光",
+  "positive": "moonlight"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "猩红月亮",
+  "positive": "scarlet_moon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "宇宙",
+  "positive": "universe"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "太空",
+  "positive": "space"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "星球",
+  "positive": "planet"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "地平线",
+  "positive": "horizon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "多山的地平线",
+  "positive": "mountainous horizon"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "牧场",
+  "positive": "pasture"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "高原",
+  "positive": "plateau"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "花园",
+  "positive": "garden"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "田园",
+  "positive": "fields"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "浮岛",
+  "positive": "floating_island"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "森林",
+  "positive": "forest"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "草原",
+  "positive": "grasslands"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "花田",
+  "positive": "flower field"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "花海",
+  "positive": "flower ocean"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "火山",
+  "positive": "volcano"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "悬崖",
+  "positive": "cliff"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "雪山",
+  "positive": "snowy mountain"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "春",
+  "positive": "spring"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "秋",
+  "positive": "autumn"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "冬",
+  "positive": "winter"
+ },
+ {
+  "group": "场景",
+  "category": "自然",
+  "name": "夏",
+  "positive": "summer"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "公园",
+  "positive": "park"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "吊架；秋千",
+  "positive": "Trapeze"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "面包店",
+  "positive": "bakery"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "咖啡厅",
+  "positive": "cafe"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "植物园",
+  "positive": "greenhouse"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "城堡",
+  "positive": "castle"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "竞技场",
+  "positive": "arena"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "礼堂",
+  "positive": "Auditorium"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "音乐会",
+  "positive": "concert"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "书店",
+  "positive": "bookstore"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "日本旅馆",
+  "positive": "Japanese_hotel"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "监狱酒吧",
+  "positive": "jail_bars"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "在电影院里",
+  "positive": "in_the_movie_theatre"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "舞台",
+  "positive": "stage"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "港口",
+  "positive": "harbor"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "赌场",
+  "positive": "casino"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "台球桌",
+  "positive": "billiard"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "地牢",
+  "positive": "dungeon"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "坟墓",
+  "positive": "grave"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "泰姬陵",
+  "positive": "Taj_Mahal"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "马丘比丘",
+  "positive": "Machu_Picchu"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "明石海峡大桥",
+  "positive": "Akashi_Kaikyo_Bridge"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "东京天空树",
+  "positive": "Skytree"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "富士山",
+  "positive": "Fuji_Mountain"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "东京塔",
+  "positive": "Tokyo_Tower"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "伏见稻荷",
+  "positive": "fushimi_inari"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "大峡谷",
+  "positive": "grand_canyon"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "长城",
+  "positive": "great_wall_of_china"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "希腊_圣托里尼",
+  "positive": "santorini"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "意大利_威尼斯",
+  "positive": "venice"
+ },
+ {
+  "group": "场景",
+  "category": "室外",
+  "name": "铁路",
+  "positive": "railway"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "天际线",
+  "positive": "city"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "城市风景",
+  "positive": "cityscape"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "街道",
+  "positive": "street"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "市中心",
+  "positive": "downtown"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "人群",
+  "positive": "crowd"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "小巷",
+  "positive": "alleyway"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "大道",
+  "positive": "in_main_street"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路口",
+  "positive": "Intersection"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "草坪",
+  "positive": "lawn"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路径",
+  "positive": "path"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路面",
+  "positive": "pavement"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路标",
+  "positive": "road_sign"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路障",
+  "positive": "traffic_cone"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "路灯",
+  "positive": "lamppost"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "灯柱",
+  "positive": "lamppost"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "电线杆和电线",
+  "positive": "power_lines"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "长凳",
+  "positive": "bench"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "自动贩卖机",
+  "positive": "vending_machine"
+ },
+ {
+  "group": "场景",
+  "category": "城市",
+  "name": "摩天楼",
+  "positive": "Skyscraper"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "建筑",
+  "positive": "magnificent_architecture"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "摩天楼",
+  "positive": "Skyscraper"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "东亚建筑",
+  "positive": "east_asian_architecture"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "鸟居/牌坊",
+  "positive": "torii"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "大教堂",
+  "positive": "cathedral"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "中式阁楼",
+  "positive": "chinese_style_loft"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "传统中式客房",
+  "positive": "traditional_chinese_room"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "城堡",
+  "positive": "castle"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "塔楼",
+  "positive": "turret"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "清真寺",
+  "positive": "mosque"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "水库",
+  "positive": "reservoir"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "铁路",
+  "positive": "railway"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "桥",
+  "positive": "bridge"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "桥下",
+  "positive": "under_bridge"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "遗迹",
+  "positive": "ruins"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "废墟堆",
+  "positive": "remains"
+ },
+ {
+  "group": "场景",
+  "category": "建筑",
+  "name": "建筑废墟",
+  "positive": "rubble_ruins"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "室内泳池",
+  "positive": "indoor pool"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "混合控制台",
+  "positive": "mixing_console"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "汽车驾驶室内",
+  "positive": "car_seat,_seatbelt"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "更衣室",
+  "positive": "locker_room"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在泳池边",
+  "positive": "poolside"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "洗衣店",
+  "positive": "on laundry"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在房间内",
+  "positive": "in the room"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "研究所",
+  "positive": "on laboratory"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "灯笼环境",
+  "positive": "lantern_floating"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "豪华房间内",
+  "positive": "mansion"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "厕所里",
+  "positive": "on toilet"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在床上",
+  "positive": "on_bed"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在沙发上",
+  "positive": "on_couch"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在桌子上",
+  "positive": "on_desk"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "在巴士内",
+  "positive": "on_the_bus"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "电车内",
+  "positive": "on_the_train"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "咖啡厅",
+  "positive": "cafe"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "居酒屋",
+  "positive": "Izakaya"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "宴会",
+  "positive": "banquet"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "木质地板",
+  "positive": "tile_floor"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "榻榻米",
+  "positive": "tatami"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "床",
+  "positive": "bed"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "沙发",
+  "positive": "safa"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "被炉",
+  "positive": "kotatsu"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "壁炉",
+  "positive": "fireplace"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "窗",
+  "positive": "window"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "窗帘",
+  "positive": "curtains"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "门",
+  "positive": "door"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "推拉门",
+  "positive": "sliding_doors"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "衣架",
+  "positive": "clothes_rack"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "空调",
+  "positive": "air_conditioner"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "床单",
+  "positive": "bed_sheet"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "床垫",
+  "positive": "futon"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "坐垫",
+  "positive": "cushion"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "抱枕",
+  "positive": "pillow_hug"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "毛绒兔子",
+  "positive": "stuffed_bunny"
+ },
+ {
+  "group": "场景",
+  "category": "室内装饰",
+  "name": "小熊",
+  "positive": "koakuma"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "单色背景",
+  "positive": "monochrome_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "简单的背景",
+  "positive": "simple_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "无背景|平铺的背景",
+  "positive": "flats"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "黑色背景",
+  "positive": "black_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "白色背景",
+  "positive": "white_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "透明背景",
+  "positive": "transparent_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "米色背景",
+  "positive": "beige_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "棕色背景",
+  "positive": "brown_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "棕褐色背景",
+  "positive": "tan_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "灰色背景",
+  "positive": "grey_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "双色调背景",
+  "positive": "two-tone_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "渐变的背景",
+  "positive": "gradient_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "多彩的背景",
+  "positive": "multicolored_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "彩虹背景",
+  "positive": "rainbow_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "抽象背景",
+  "positive": "abstract_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "菱形背景",
+  "positive": "argyle_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "方格背景",
+  "positive": "checkered_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "花朵点缀的背景",
+  "positive": "floral_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "网点图背景",
+  "positive": "halftone_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "桃色背景",
+  "positive": "heart_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "蜂窝风格背景",
+  "positive": "honeycomb_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "格子呢背景",
+  "positive": "plaid_background"
+ },
+ {
+  "group": "场景",
+  "category": "背景",
+  "name": "圆斑背景",
+  "positive": "striped_background"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "黄石国家公园",
+  "positive": "yellowstone national park"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "大峡谷",
+  "positive": "grand canyon"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "珠穆朗玛峰",
+  "positive": "mount everest"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "大堡礁",
+  "positive": "great barrier reef"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "撒哈拉沙漠",
+  "positive": "sahara desert"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "亚马逊雨林",
+  "positive": "amazon rainforest"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "伊瓜苏大瀑布",
+  "positive": "iguazu falls"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "维多利亚瀑布",
+  "positive": "victoria falls"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "死海",
+  "positive": "dead sea"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "科莫多国家公园",
+  "positive": "komodo national park"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "加拉帕戈斯群岛",
+  "positive": "galapagos islands"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "乞力马扎罗山",
+  "positive": "mount kilimanjaro"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "诺罗威国家公园",
+  "positive": "norwegian fjords"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "巴厘岛",
+  "positive": "bali"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "安第斯山脉",
+  "positive": "andes"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "摩洛哥蓝色小镇",
+  "positive": "chefchaouen"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "澳大利亚珊瑚海",
+  "positive": "coral sea"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "阿尔卑斯山",
+  "positive": "alps"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "巴塔哥尼亚",
+  "positive": "patagonia"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "哈里森湖洞穴",
+  "positive": "harrison's cave"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "泰姬陵",
+  "positive": "taj mahal"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "尼亚加拉大瀑布",
+  "positive": "niagara falls"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "极光",
+  "positive": "aurora borealis"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "喜马拉雅山脉",
+  "positive": "himalayas"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "乌鲁鲁",
+  "positive": "uluru"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "黄金海岸",
+  "positive": "gold coast"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "马尔代夫",
+  "positive": "maldives"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "马丘比丘",
+  "positive": "machu picchu"
+ },
+ {
+  "group": "场景",
+  "category": "自然景观",
+  "name": "塞尔维亚的德里纳河",
+  "positive": "drina river"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "万里长城",
+  "positive": "great wall of china"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "自由女神像",
+  "positive": "statue of liberty"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "埃菲尔铁塔",
+  "positive": "eiffel tower"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "大本钟",
+  "positive": "big ben"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "白金汉宫",
+  "positive": "buckingham palace"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "圣彼得大教堂",
+  "positive": "st. peter's basilica"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "金门桥",
+  "positive": "golden gate bridge"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "古罗马斗兽场",
+  "positive": "colosseum"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "悉尼歌剧院",
+  "positive": "sydney opera house"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "伦敦眼",
+  "positive": "london eye"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "克里姆林宫",
+  "positive": "kremlin"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "红场",
+  "positive": "red square"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "莫斯科圣瓦西里大教堂",
+  "positive": "saint basil's cathedral"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "比萨斜塔",
+  "positive": "leaning tower of pisa"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "卢浮宫",
+  "positive": "louvre"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "凡尔赛宫",
+  "positive": "palace of versailles"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "尼斯湖",
+  "positive": "loch ness"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "圣保罗大教堂",
+  "positive": "st. paul's cathedral"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "埃德蒙顿购物中心",
+  "positive": "west edmonton mall"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "布拉格城堡",
+  "positive": "prague castle"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "新天鹅堡",
+  "positive": "neuschwanstein castle"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "泰姬陵",
+  "positive": "taj mahal"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "马丘比丘",
+  "positive": "machu picchu"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "克里斯特救世像",
+  "positive": "christ the redeemer"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "巴比伦空中花园",
+  "positive": "hanging gardens of babylon"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "亚历山大灯塔",
+  "positive": "lighthouse of alexandria"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "宙斯神庙",
+  "positive": "temple of artemis"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "摩洛哥蓝色小镇",
+  "positive": "chefchaouen"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "阿尔罕布拉宫",
+  "positive": "alhambra"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "佩特拉古城",
+  "positive": "petra"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "布拉格天文钟",
+  "positive": "prague astronomical clock"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "春秋战国时期的秦始皇兵马俑",
+  "positive": "terracotta army"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "埃及金字塔",
+  "positive": "egyptian pyramids"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "吉萨大金字塔",
+  "positive": "great pyramid of giza"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "斯芬克斯",
+  "positive": "sphinx"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "巴黎圣母院",
+  "positive": "notre-dame de paris"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "威尼斯水城",
+  "positive": "venice"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "阿姆斯特丹运河",
+  "positive": "amsterdam canals"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "巴塞罗那圣家堂",
+  "positive": "sagrada familia"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "米兰大教堂",
+  "positive": "milan cathedral"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "维也纳国家歌剧院",
+  "positive": "vienna state opera"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "比利时布鲁日的布鲁日广场",
+  "positive": "markt square bruges"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "荷兰风车",
+  "positive": "dutch windmills"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "巴塞罗那哥特区",
+  "positive": "gothic quarter barcelona"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "佛罗伦萨大教堂",
+  "positive": "florence cathedral"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "慕尼黑啤酒节",
+  "positive": "oktoberfest munich"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "巴拿马运河",
+  "positive": "panama canal"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "好莱坞标志",
+  "positive": "hollywood sign"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "帝国大厦",
+  "positive": "empire state building"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "自然历史博物馆",
+  "positive": "natural history museum"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "史密森尼博物馆",
+  "positive": "smithsonian museum"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "卢浮宫金字塔",
+  "positive": "louvre pyramid"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "迪士尼乐园",
+  "positive": "disneyland"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "百老汇",
+  "positive": "broadway"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "时代广场",
+  "positive": "times square"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "拉斯维加斯大道",
+  "positive": "las vegas strip"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "旧金山唐人街",
+  "positive": "chinatown san francisco"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "尼亚加拉瀑布",
+  "positive": "niagara falls"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "肯辛顿宫",
+  "positive": "kensington palace"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "伦敦塔桥",
+  "positive": "tower bridge"
+ },
+ {
+  "group": "场景",
+  "category": "人造景观",
+  "name": "圣马可广场",
+  "positive": "st. mark's square"
+ }
+]

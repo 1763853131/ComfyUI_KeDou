@@ -6,8 +6,15 @@
 - frontmatter 存稳定 id（文件名只是显示用，改标题不换 id）；正文按 `# Positive`
   `# Negative` `# Description` `# Use` `# Avoid` `# Related` 一级标题切段。
 - 文件安全：原子写（tmp + os.replace）；每日整库 zip 备份留 BACKUP_KEEP 份；删除进 .trash。
-- 去重：正文 SHA256 前 16 位；历史条目按 hash 去重、HISTORY_CAP 条封顶。
+- 去重：正文 SHA256 前 16 位。
 - 无第三方依赖（有 PyYAML 就用，缺失时退手写解析）。
+
+两套并存的数据（都放在库目录的 .kedou/ 里，不往 Obsidian 的笔记堆里塞）
+- 语库 = 上面的 .md 条目，只放用户主动保存的长提示词。
+- 历史 = .kedou/history.json，出图自动记录，按 hash 去重、HISTORY_CAP 条封顶。
+  历史不再写 .md；旧版本留下的 type=历史 笔记会在首次访问时迁进 JSON 并移到 .trash。
+- 词库 = .kedou/phrases.json，短词/标签，首次使用从 phrases_seed.json 播种。
+  词库只有用户主动新建/编辑时才写盘。
 
 库位置怎么定（resolve_vault，按优先级）
 1. 环境变量 KEDOU_PROMPT_VAULT
@@ -31,7 +38,9 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
+import uuid
 import zipfile
 
 try:
@@ -44,9 +53,15 @@ SETTING_KEY = "Kedou.PromptVault"
 DEFAULT_SUBDIR = "kedou_prompts"
 CONFIG_NAME = "kedou_prompt_vault.txt"             # 非 ComfyUI 调用方（脚本/启动器）的备用配置
 SEED_MARKER = ".kedou_seeded"
-HISTORY_DIR = "00_History"
+HISTORY_DIR = "00_History"                         # 旧版本历史笔记所在目录，仅用于迁移
 HISTORY_CAP = 50
 BACKUP_KEEP = 7
+STORE_DIR = ".kedou"                               # 历史 / 词库的 JSON 都放这里（不污染笔记）
+HISTORY_FILE = "history.json"
+PHRASES_FILE = "phrases.json"
+PHRASES_SEED = "phrases_seed.json"
+PHRASE_GROUP_FALLBACK = "我的词"
+PHRASE_CAT_FALLBACK = "未分类"
 
 _FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n?", re.S)
 _SECTION_RE = re.compile(r"^# ([A-Za-z_ ]+)\s*$", re.M)
@@ -118,7 +133,9 @@ def _unique_path(directory, stem) -> str:
 # 解析缓存：{路径: (mtime_ns, size, entry)} —— 文件没变不重复解析
 _cache = {}
 # 库位置相关的进程内状态：一次解析出来就复用，出错也记住，免得每次请求都重跑一遍磁盘
-_state = {"seed_checked": False, "backups": set(), "created": set()}
+_state = {"seed_checked": False, "backups": set(), "created": set(), "migrated": set()}
+# 历史 / 词库是整文件读改写，多个请求同时保存会互相覆盖，改动必须串行
+_store_lock = threading.RLock()
 
 SAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample")
 
@@ -245,6 +262,11 @@ def vault_dir():
                                          "config": CONFIG_NAME, "default": "默认位置"}[source], e))
             return None
     _seed_examples(path, path in _state["created"], source == "default")
+    try:
+        _migrate_history(path)
+    except Exception as e:                              # noqa: BLE001
+        # 迁移失败不能把整个词库卡成不可用；旧历史最多还是留在语库里
+        print("[kedou词库] 旧历史迁移失败（不影响使用）：%s" % e)
     return path
 
 
@@ -263,6 +285,7 @@ def _reset_state():
     """改了库位置之后必须忘掉旧的解析结果，否则还是读老目录。"""
     _state["seed_checked"] = False
     _state["created"] = set()
+    _state["migrated"] = set()
     _cache.clear()
 
 
@@ -312,6 +335,239 @@ def _backup_dir(vault):
 
 def _trash_dir(vault):
     return os.path.join(vault, ".trash")
+
+
+# ─────────────────────────── 词库内部 JSON 存储 ───────────────────────────
+# 历史与短词都是「整份读、整份写」的小数据，单文件比几百个 .md 更适合：
+# 不会在 Obsidian 里刷屏，也不会因为一次出图写 5 个文件而拖慢列表。
+
+def _store_path(vault, name):
+    return os.path.join(vault, STORE_DIR, name)
+
+
+def _read_store(vault, name, default):
+    """坏文件不能让接口 500：改名留档后按空数据继续。"""
+    path = _store_path(vault, name)
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return data
+    except FileNotFoundError:
+        return default
+    except (OSError, ValueError) as e:
+        try:
+            os.replace(path, path + ".bad-" + time.strftime("%Y%m%d-%H%M%S"))
+            print("[kedou词库] %s 解析失败，已留档：%s" % (name, e))
+        except OSError:
+            pass
+        return default
+
+
+def _write_store(vault, name, data):
+    _atomic_write(_store_path(vault, name), json.dumps(data, ensure_ascii=False, indent=1))
+
+
+def _now():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _hash16(text):
+    return hashlib.sha256(str(text or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _usage_list(usage):
+    """usage 可能是单值、list 或 None（旧客户端两种都发过），统一成字符串列表。"""
+    if isinstance(usage, (list, tuple)):
+        return [str(x).strip() for x in usage if str(x).strip()]
+    s = str(usage or "").strip()
+    return [s] if s else []
+
+
+def _history_items(vault):
+    data = _read_store(vault, HISTORY_FILE, {"version": 1, "items": []})
+    raw = data.get("items") if isinstance(data, dict) else data
+    out = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        pos = str(it.get("positive") or "").strip()
+        if len(pos) < 4:
+            continue
+        uses = _to_int(it.get("uses"))
+        usage = it.get("use_for")
+        if isinstance(usage, str):
+            usage = [usage]
+        out.append({
+            "id": str(it.get("id") or ("h." + _hash16(pos)[:10])),
+            "name": str(it.get("name") or pos[:20]),
+            "type": "历史",
+            "positive": pos,
+            "negative": "",
+            "use_for": [str(x) for x in (usage or []) if str(x)] or ["文生图"],
+            "uses": uses,
+            "created": str(it.get("created") or ""),
+            "updated": str(it.get("updated") or ""),
+            "hash": str(it.get("hash") or _hash16(pos)),
+            "kind": "history",
+        })
+    out.sort(key=lambda e: e.get("updated") or "", reverse=True)
+    return out
+
+
+def _write_history(vault, items):
+    _write_store(vault, HISTORY_FILE, {"version": 1, "items": items[:HISTORY_CAP]})
+
+
+def _phrase_items(vault):
+    """首次调用时从随包的 phrases_seed.json 播种（只在 phrases.json 不存在时做）。"""
+    path = _store_path(vault, PHRASES_FILE)
+    if not os.path.exists(path):
+        with _store_lock:
+            # 两个请求同时第一次打开词库：只让一个播种，另一个直接读结果
+            if not os.path.exists(path):
+                seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), PHRASES_SEED)
+                seed = []
+                try:
+                    with open(seed_path, encoding="utf-8") as f:
+                        seed = json.load(f)
+                except (OSError, ValueError):
+                    seed = []
+                items = []
+                seen = set()
+                now = _now()
+                for row in seed if isinstance(seed, list) else []:
+                    if not isinstance(row, dict):
+                        continue
+                    pos = str(row.get("positive") or "").strip()
+                    if not pos:
+                        continue
+                    name = str(row.get("name") or pos).strip() or pos
+                    group = str(row.get("group") or PHRASE_GROUP_FALLBACK).strip() or PHRASE_GROUP_FALLBACK
+                    cat = str(row.get("category") or "").strip() or PHRASE_CAT_FALLBACK
+                    base = "p." + _hash16("%s|%s|%s" % (group, cat, pos))[:10]
+                    pid, n = base, 2
+                    while pid in seen:
+                        pid = "%s_%d" % (base, n)
+                        n += 1
+                    seen.add(pid)
+                    items.append({
+                        "id": pid, "name": name, "positive": pos, "type": "词条",
+                        "group": group, "category": cat, "pinned": False, "uses": 0,
+                        "created": now, "updated": now, "hash": _hash16(pos),
+                    })
+                if items:
+                    try:
+                        _write_store(vault, PHRASES_FILE, {"version": 1, "items": items})
+                    except OSError as e:
+                        print("[kedou词库] 短词库初始化失败（不影响长语库）：%s" % e)
+                return items
+
+    data = _read_store(vault, PHRASES_FILE, {"version": 1, "items": []})
+    raw = data.get("items") if isinstance(data, dict) else data
+    out = []
+    for it in raw if isinstance(raw, list) else []:
+        if not isinstance(it, dict):
+            continue
+        pos = str(it.get("positive") or "").strip()
+        if not pos:
+            continue
+        name = str(it.get("name") or pos).strip() or pos
+        group = str(it.get("group") or "").strip() or PHRASE_GROUP_FALLBACK
+        cat = str(it.get("category") or "").strip() or PHRASE_CAT_FALLBACK
+        if cat == PHRASE_CAT_FALLBACK:
+            group = PHRASE_GROUP_FALLBACK
+        out.append({
+            "id": str(it.get("id") or ("p." + _hash16(pos)[:10])),
+            "name": name, "positive": pos, "type": "词条",
+            "group": group,
+            "category": cat,
+            "pinned": bool(it.get("pinned")),
+            "uses": _to_int(it.get("uses")),
+            "created": str(it.get("created") or ""),
+            "updated": str(it.get("updated") or ""),
+            "hash": str(it.get("hash") or _hash16(pos)),
+            "kind": "phrase",
+        })
+    return out
+
+
+def _write_phrases(vault, items):
+    _write_store(vault, PHRASES_FILE, {"version": 1, "items": items})
+
+
+def _history_to_trash(vault, files):
+    """旧历史笔记迁走后放进 .trash（可找回），不留在 Obsidian 的笔记树里。"""
+    tdir = _trash_dir(vault)
+    try:
+        os.makedirs(tdir, exist_ok=True)
+    except OSError:
+        return
+    for full in files:
+        try:
+            stem = os.path.splitext(os.path.basename(full))[0]
+            dest = os.path.join(tdir, os.path.basename(full))
+            n = 2
+            while os.path.exists(dest):
+                dest = os.path.join(tdir, "%s_%d.md" % (stem, n))
+                n += 1
+            shutil.move(full, dest)
+        except OSError as e:
+            print("[kedou词库] 旧历史笔记移动失败：%s（%s）" % (full, e))
+            return
+
+
+def _migrate_history(vault):
+    """把旧版本 `type=历史` 的 .md 迁进 history.json，再把笔记移到 .trash。
+
+    迁移后语库里不会再出现历史条目；重复调用只做一次（进程内按库路径记）。
+    """
+    key = os.path.normcase(os.path.abspath(vault))
+    if key in _state["migrated"]:
+        return
+    _state["migrated"].add(key)
+    old = []
+    for e in _walk(vault):
+        rel = str(e.get("file") or "")
+        first = rel.split("/")[0] if rel else ""
+        if e.get("type") == "历史" or first == HISTORY_DIR:
+            old.append(e)
+    if not old:
+        try:
+            hd = os.path.join(vault, HISTORY_DIR)
+            if os.path.isdir(hd) and not os.listdir(hd):
+                os.rmdir(hd)
+        except OSError:
+            pass
+        return
+    with _store_lock:
+        items = _history_items(vault)
+        known = {it["hash"] for it in items}
+        now = _now()
+        for e in old:
+            if e["hash"] not in known:
+                known.add(e["hash"])
+                items.append({
+                    "id": "h." + e["hash"][:10],
+                    "name": e.get("name") or (e.get("positive") or "")[:20],
+                    "type": "历史",
+                    "positive": e.get("positive") or "",
+                    "negative": "",
+                    "use_for": e.get("use_for") or ["文生图"],
+                    "uses": _to_int(e.get("uses")),
+                    "created": e.get("created") or now,
+                    "updated": e.get("updated") or now,
+                    "hash": e["hash"],
+                })
+        items.sort(key=lambda x: x.get("updated") or "", reverse=True)
+        _write_history(vault, items)
+    _history_to_trash(vault, [os.path.join(vault, *str(e["file"]).split("/")) for e in old])
+    try:
+        hd = os.path.join(vault, HISTORY_DIR)
+        if os.path.isdir(hd) and not os.listdir(hd):
+            os.rmdir(hd)                            # 空的旧历史目录也收走，Obsidian 里不再多一个空文件夹
+    except OSError:
+        pass
+    print("[kedou词库] 已迁移 %d 条旧历史到 %s" % (len(old), HISTORY_FILE))
 
 
 # ─────────────────────────── 解析 / 序列化 ───────────────────────────
@@ -498,6 +754,11 @@ def _backup_daily(vault):
                         if fn.lower().endswith(".md"):
                             full = os.path.join(root, fn)
                             z.write(full, os.path.relpath(full, vault))
+                # .kedou 是隐藏目录，上面的 walk 不会进去；词库/历史是用户数据，单独补进备份
+                for extra in (PHRASES_FILE, HISTORY_FILE):
+                    full = _store_path(vault, extra)
+                    if os.path.isfile(full):
+                        z.write(full, os.path.join(STORE_DIR, extra))
             olds = sorted(f for f in os.listdir(bdir) if f.startswith("prompts_") and f.endswith(".zip"))
             for old in olds[:-BACKUP_KEEP]:
                 os.remove(os.path.join(bdir, old))
@@ -512,12 +773,20 @@ def list_prompts(q_type="", q_dir="", tag="", model="", q="", use=""):
     if not vault:
         return dict({"ok": False, "error": last_error() or "词库目录不可用", "items": [],
                      "dirs": [], "types": [], "count": 0}, **vault_info())
+    # 兼容旧调用方：显式要 type=历史 时只返回历史（从 JSON 读），默认列表里永远没有历史
+    if q_type == "历史":
+        items = _history_items(vault)
+        if use:
+            items = [e for e in items if use in e["use_for"]]
+        if q:
+            ql = q.lower()
+            items = [e for e in items if ql in e["name"].lower() or ql in e["positive"].lower()]
+        return dict({"ok": True, "items": items, "dirs": [], "types": ["历史"],
+                     "count": len(items)}, **vault_info())
     _backup_daily(vault)
-    items = _walk(vault)
+    items = [e for e in _walk(vault) if e["type"] != "历史"]
     if use:
         items = [e for e in items if use in e["use_for"]]
-    if q_type:
-        items = [e for e in items if e["type"] == q_type]
     if q_dir:
         items = [e for e in items if e["dir"] == q_dir]
     if tag:
@@ -559,6 +828,9 @@ def save_prompt(body):
     vault = vault_dir()
     if not vault:
         return {"ok": False, "error": last_error() or "词库目录不可用"}
+    # 历史只进 JSON，不再生成 .md。旧版 PS 面板仍按 type=历史 调这个接口，这里做一次转发。
+    if str(body.get("type") or "") == "历史":
+        return save_history(str(body.get("positive") or ""), _usage_list(body.get("usage")))
     pid = str(body.get("id") or "").strip()
     now = time.strftime("%Y-%m-%d")
     if pid:
@@ -610,6 +882,8 @@ def save_prompt(body):
     # 去重：正文 hash 撞了直接返回已有条目（同时把新用途并进去）
     h = hashlib.sha256(positive.encode("utf-8")).hexdigest()[:16]
     for e in _walk(vault):
+        if e["type"] == "历史":
+            continue
         if e["hash"] == h:
             if "usage" in body:
                 add = [str(x) for x in (body.get("usage") or []) if str(x).strip()]
@@ -624,8 +898,7 @@ def save_prompt(body):
             return {"ok": True, "item": e, "deduped": True}
     etype = str(body.get("type") or "精选")
     raw_dir = str(body.get("dir") or "").strip()
-    base_dir = (_safe_subdir(raw_dir) if raw_dir
-                else (HISTORY_DIR if etype == "历史" else "99_未分类"))
+    base_dir = _safe_subdir(raw_dir) if raw_dir else "99_未分类"
     if base_dir is None:
         return {"ok": False, "error": "目录不合法（不能是绝对路径或包含 ..）"}
     stem = _slug(name)
@@ -650,51 +923,219 @@ def save_prompt(body):
 
 
 def save_history(positive, usage=None):
-    """自动历史：hash 去重（撞了 uses+1），HISTORY_CAP 条封顶（超出删最旧）。"""
+    """自动历史：只写 .kedou/history.json，绝不生成 .md。
+
+    同一条提示词按正文 hash 去重（撞了 uses+1、并用途），HISTORY_CAP 条封顶。
+    """
     vault = vault_dir()
     if not vault:
         return {"ok": False, "error": last_error() or "词库目录不可用"}
     positive = (positive or "").strip()
     if len(positive) < 4:
         return {"ok": False, "error": "太短，不存历史"}
-    h = hashlib.sha256(positive.encode("utf-8")).hexdigest()[:16]
-    hist = [e for e in _walk(vault) if e["type"] == "历史"]
-    for e in hist:
-        if e["hash"] == h:
-            path, old = _find_path(vault, e["id"])
-            if old:
-                old["uses"] += 1
-                old["updated"] = time.strftime("%Y-%m-%d")
-                if usage:
-                    merged = list(dict.fromkeys((old.get("use_for") or []) + [str(usage)]))
-                    old["use_for"] = merged
-                _atomic_write(path, _serialize(old))
-                _cache.pop(path, None)
-            return {"ok": True, "item": e, "deduped": True}
-    name = " ".join((positive[:20] + ("…" if len(positive) > 20 else "")).splitlines()).strip()
-    body = {"name": name, "type": "历史", "positive": positive}
-    if usage:
-        body["usage"] = [str(usage)]
-    r = save_prompt(body)
-    if r.get("ok") and not r.get("deduped"):
-        hist = [e for e in _walk(vault) if e["type"] == "历史"]
-        if len(hist) > HISTORY_CAP:
-            # updated 只有日期精度，同一天会全部相等；用文件 mtime 作为次序兜底，
-            # 否则「删最旧」实际删的是文件系统遍历顺序里的随机一条。
-            def _old_key(e):
-                path, _ = _find_path(vault, e["id"])
-                try:
-                    mt = os.stat(path).st_mtime_ns if path else 0
-                except OSError:
-                    mt = 0
-                return (e.get("updated") or "", mt)
-            hist.sort(key=_old_key)
-            for old in hist[: len(hist) - HISTORY_CAP]:
-                path, _ = _find_path(vault, old["id"])
-                if path:
-                    os.remove(path)
-                    _cache.pop(path, None)
-    return r
+    usages = _usage_list(usage)
+    h = _hash16(positive)
+    now = _now()
+    with _store_lock:
+        items = _history_items(vault)
+        for it in items:
+            if it["hash"] == h:
+                it["uses"] = _to_int(it.get("uses")) + 1
+                it["updated"] = now
+                if usages:
+                    it["use_for"] = list(dict.fromkeys((it.get("use_for") or []) + usages))
+                items.sort(key=lambda x: x.get("updated") or "", reverse=True)
+                _write_history(vault, items)
+                return {"ok": True, "item": it, "deduped": True}
+        name = " ".join((positive[:20] + ("…" if len(positive) > 20 else "")).splitlines()).strip()
+        it = {
+            "id": "h." + h[:10], "name": name, "type": "历史", "positive": positive,
+            "negative": "", "use_for": usages or ["文生图"],
+            "uses": 1, "created": now, "updated": now, "hash": h,
+        }
+        items.insert(0, it)
+        items.sort(key=lambda x: x.get("updated") or "", reverse=True)
+        _write_history(vault, items)
+        return {"ok": True, "item": it}
+
+
+def list_history(use="", q=""):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用", "items": [], "count": 0}
+    items = _history_items(vault)
+    if use:
+        items = [e for e in items if use in e["use_for"]]
+    if q:
+        ql = q.lower()
+        items = [e for e in items if ql in e["name"].lower() or ql in e["positive"].lower()]
+    return dict({"ok": True, "items": items, "count": len(items)}, **vault_info())
+
+
+def delete_history(pid):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    with _store_lock:
+        items = _history_items(vault)
+        keep = [it for it in items if it["id"] != pid]
+        if len(keep) == len(items):
+            return {"ok": False, "error": "条目不存在"}
+        _write_history(vault, keep)
+    return {"ok": True}
+
+
+def clear_history():
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    with _store_lock:
+        _write_history(vault, [])
+    return {"ok": True, "cleared": True}
+
+
+# ─────────────────────────── 词库（短词/标签） ───────────────────────────
+
+def list_phrases(q="", category="", group=""):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用",
+                "items": [], "categories": [], "groups": [], "count": 0}
+    items = _phrase_items(vault)
+    # 置顶优先、再按更新时间：新保存/移入的词（尤其「未分类」）总排在前面，
+    # 不会因为「全部」只渲染前 400 条而找不到。
+    items.sort(key=lambda x: (bool(x.get("pinned")), x.get("updated") or ""),
+               reverse=True)
+    cats, groups = [], []
+    for it in items:
+        if it["group"] not in groups:
+            groups.append(it["group"])
+        key = (it["group"], it["category"])
+        if key not in cats:
+            cats.append(key)
+    # 新建/移入的词默认落在「我的词 · 未分类」，即使当前还是空的也要能选到
+    if PHRASE_GROUP_FALLBACK not in groups:
+        groups.append(PHRASE_GROUP_FALLBACK)
+    if (PHRASE_GROUP_FALLBACK, PHRASE_CAT_FALLBACK) not in cats:
+        cats.append((PHRASE_GROUP_FALLBACK, PHRASE_CAT_FALLBACK))
+    if group:
+        items = [e for e in items if e["group"] == group]
+    if category:
+        items = [e for e in items if e["category"] == category]
+    if q:
+        ql = q.lower()
+        items = [e for e in items
+                 if ql in e["name"].lower() or ql in e["positive"].lower()
+                 or ql in e["category"].lower()]
+    return dict({"ok": True, "items": items,
+                 "categories": [{"group": g, "name": c} for g, c in cats],
+                 "groups": groups, "count": len(items)}, **vault_info())
+
+
+def save_phrase(body):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    pid = str(body.get("id") or "").strip()
+    now = _now()
+    with _store_lock:
+        items = _phrase_items(vault)
+        if pid:
+            for it in items:
+                if it["id"] != pid:
+                    continue
+                # 只改客户端真正带上来的字段：右键「置顶」只传 id + pinned
+                if "positive" in body:
+                    pos = " ".join(str(body.get("positive") or "").splitlines()).strip()
+                    if not pos:
+                        return {"ok": False, "error": "词的内容不能为空"}
+                    it["positive"] = pos[:500]
+                    it["hash"] = _hash16(it["positive"])
+                if "name" in body:
+                    it["name"] = " ".join(str(body.get("name") or "").splitlines()).strip() or it["positive"][:24]
+                if "category" in body:
+                    it["category"] = " ".join(str(body.get("category") or "").splitlines()).strip() or PHRASE_CAT_FALLBACK
+                if "group" in body and str(body.get("group") or "").strip():
+                    it["group"] = str(body["group"]).strip()
+                if "pinned" in body:
+                    it["pinned"] = bool(body["pinned"])
+                # 「未分类」固定归属「我的词」，不跟着旧分组飘
+                if it["category"] == PHRASE_CAT_FALLBACK:
+                    it["group"] = PHRASE_GROUP_FALLBACK
+                # 分类被改到一个已有分类时，沿用那个分类所属的大组，避免分裂
+                if "category" in body and "group" not in body and it["category"] != PHRASE_CAT_FALLBACK:
+                    moved = [x for x in items if x["id"] != pid and x["category"] == it["category"]]
+                    if moved:
+                        it["group"] = moved[0]["group"]
+                it["updated"] = now
+                _write_phrases(vault, items)
+                return {"ok": True, "item": it}
+            return {"ok": False, "error": "词条不存在"}
+        # 新建
+        name = " ".join(str(body.get("name") or "").splitlines()).strip()
+        positive = " ".join(str(body.get("positive") or "").splitlines()).strip()
+        cat_in = " ".join(str(body.get("category") or "").splitlines()).strip() or PHRASE_CAT_FALLBACK
+        if not positive:
+            return {"ok": False, "error": "词的内容不能为空"}
+        positive = positive[:500]
+        if not name:
+            name = positive[:24]
+        # 同组同分类下同一内容直接复用
+        for it in items:
+            if it["positive"] == positive and it["category"] == cat_in:
+                return {"ok": True, "item": it, "deduped": True}
+        group = str(body.get("group") or "").strip()
+        if cat_in == PHRASE_CAT_FALLBACK:
+            group = PHRASE_GROUP_FALLBACK
+        if not group:
+            same = [x for x in items if x["category"] == cat_in and cat_in]
+            group = same[0]["group"] if same else PHRASE_GROUP_FALLBACK
+        it = {
+            "id": "p." + uuid.uuid4().hex[:10],
+            "name": name, "positive": positive, "type": "词条",
+            "group": group, "category": cat_in, "pinned": bool(body.get("pinned")),
+            "uses": 0, "created": now, "updated": now, "hash": _hash16(positive),
+        }
+        items.append(it)
+        _write_phrases(vault, items)
+        return {"ok": True, "item": it}
+
+
+def delete_phrase(pid):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    with _store_lock:
+        items = _phrase_items(vault)
+        gone = [it for it in items if it["id"] == pid]
+        if not gone:
+            return {"ok": False, "error": "词条不存在"}
+        keep = [it for it in items if it["id"] != pid]
+        _write_phrases(vault, keep)
+        # 短词删了也留一份，删错了能翻回来
+        try:
+            tdir = _trash_dir(vault)
+            os.makedirs(tdir, exist_ok=True)
+            with open(os.path.join(tdir, "phrases_deleted.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"deleted": _now(), "item": gone[0]}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+    return {"ok": True}
+
+
+def bump_phrase_use(pid):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    with _store_lock:
+        items = _phrase_items(vault)
+        for it in items:
+            if it["id"] == pid:
+                it["uses"] = _to_int(it.get("uses")) + 1
+                it["updated"] = _now()
+                _write_phrases(vault, items)
+                return {"ok": True, "uses": it["uses"]}
+    return {"ok": False, "error": "词条不存在"}
 
 
 def delete_prompt(pid):
@@ -703,6 +1144,9 @@ def delete_prompt(pid):
         return {"ok": False, "error": last_error() or "词库目录不可用"}
     path, entry = _find_path(vault, pid)
     if path is None:
+        # 旧客户端可能把历史 id 发到这里：历史现在是 JSON，走对应的删除
+        if pid.startswith("h."):
+            return delete_history(pid)
         return {"ok": False, "error": "条目不存在"}
     tdir = _trash_dir(vault)
     os.makedirs(tdir, exist_ok=True)
@@ -723,6 +1167,18 @@ def bump_use(pid):
         return {"ok": False, "error": last_error() or "词库目录不可用"}
     path, entry = _find_path(vault, pid)
     if path is None:
+        # 历史/短词现在不在 .md 里：按 id 前缀兜底，旧前端不用改调用
+        if pid.startswith("h."):
+            with _store_lock:
+                items = _history_items(vault)
+                for it in items:
+                    if it["id"] == pid:
+                        it["uses"] = _to_int(it.get("uses")) + 1
+                        it["updated"] = _now()
+                        _write_history(vault, items)
+                        return {"ok": True, "uses": it["uses"]}
+        elif pid.startswith("p."):
+            return bump_phrase_use(pid)
         return {"ok": False, "error": "条目不存在"}
     entry["uses"] += 1
     _atomic_write(path, _serialize(entry))
@@ -771,6 +1227,49 @@ def register_routes(routes):
             save_history, str(body.get("positive") or ""), body.get("usage"))
         return web.json_response(result)
 
+    @routes.get("/ps/prompts/history")
+    async def _hist_list(request):
+        q = request.query
+        result = await asyncio.to_thread(list_history, q.get("use", ""), q.get("q", ""))
+        return web.json_response(result)
+
+    @routes.post("/ps/prompts/history/delete")
+    async def _hist_del(request):
+        body = await _body(request) or {}
+        return web.json_response(await asyncio.to_thread(
+            delete_history, str(body.get("id") or "")))
+
+    @routes.post("/ps/prompts/history/clear")
+    async def _hist_clear(request):
+        return web.json_response(await asyncio.to_thread(clear_history))
+
+    # ── 词库（短词/标签） ──
+    @routes.get("/ps/prompts/phrases")
+    async def _phrases(request):
+        q = request.query
+        result = await asyncio.to_thread(
+            list_phrases, q.get("q", ""), q.get("category", ""), q.get("group", ""))
+        return web.json_response(result)
+
+    @routes.post("/ps/prompts/phrases/save")
+    async def _phrase_save(request):
+        body = await _body(request)
+        if body is None:
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        return web.json_response(await asyncio.to_thread(save_phrase, body))
+
+    @routes.post("/ps/prompts/phrases/delete")
+    async def _phrase_del(request):
+        body = await _body(request) or {}
+        return web.json_response(await asyncio.to_thread(
+            delete_phrase, str(body.get("id") or "")))
+
+    @routes.post("/ps/prompts/phrases/use")
+    async def _phrase_use(request):
+        body = await _body(request) or {}
+        return web.json_response(await asyncio.to_thread(
+            bump_phrase_use, str(body.get("id") or "")))
+
     @routes.post("/ps/prompts/delete")
     async def _del(request):
         body = await _body(request) or {}
@@ -795,6 +1294,8 @@ def register_routes(routes):
 __all__ = [
     "resolve_vault", "vault_dir", "vault_info", "last_error", "set_vault_config",
     "list_prompts", "save_prompt", "save_history", "delete_prompt", "bump_use",
+    "list_history", "delete_history", "clear_history",
+    "list_phrases", "save_phrase", "delete_phrase", "bump_phrase_use",
     "register_routes",
     "ENV_KEY", "SETTING_KEY", "CONFIG_NAME",
 ]

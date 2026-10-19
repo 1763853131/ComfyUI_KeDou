@@ -1,13 +1,20 @@
-// 蝌蚪提示词库（轻量版 v4）—— 词库完全集成在「蝌蚪提示词输入框」节点上
+// 蝌蚪提示词库（轻量版 v6）—— 语库 / 词库 / 历史 三个入口都在「蝌蚪提示词输入框」节点上
 // 后端：prompt_vault 包（vendored 在 ComfyUI_KeDou/prompt_vault/，上游是 D:\Git\prompt_vault，
 //       改动在那边提交后跑 sync.py 推过来）
-//       GET /ps/prompts?use=…, POST save|delete|use|history|vault
+//       GET /ps/prompts（语库）、/ps/prompts/history（历史）、/ps/prompts/phrases（短词）
+//       POST save|delete|use|history|history/clear|phrases/save|phrases/delete|phrases/use|vault
 //       KedouPromptBox 节点（prompt_state STRING 直通输出 prompt；usage COMBO 记工作流用途）
-// 交互定稿（用户 2026-10-12 拍板）：
-//   1) 词库入口离作用对象要近——不再有右侧抽屉/右下角 pill，词库只活在节点上。
-//   2) 词库按用途分类：文生图/图像编辑/文生视频/图生视频/参考生视频；
-//      节点上选当前工作流用途，词库只显示该用途适用的条目。
-//   3) 选词用下拉列表：每条只显示前几个字，悬停显示更多；列表顶满浏览器上下，可滚动。
+// 交互定稿（用户 2026-10-12 / 2026-10-19 拍板）：
+//   1) 入口离作用对象要近——不再有右侧抽屉/右下角 pill，库只活在节点上。
+//   2) 语库 = 长提示词（.md，只主动保存才写文档）；词库 = 短词/标签（.kedou/phrases.json）；
+//      历史 = 自动记录（.kedou/history.json），不生成文档、不混进语库。
+//   3) 语库按用途分类：文生图/图像编辑/文生视频/图生视频/参考生视频；
+//      节点上选当前工作流用途，语库/历史只显示该用途适用的条目；词库不按用途筛。
+//   4) 语库/词库/历史三个入口都放在节点上，点哪个开哪个，面板内部不再分标签页；
+//      面板贴在提示词输入框正右方（右边放不下翻到左边），不盖住输入框。
+//      节点下方的常用按钮只放「置顶语库」的缩名（最多 4 个字），词库和历史都不进这里。
+//   5) 「保存」先选去处：语库（.md）或词库（我的词·未分类）；右键可在三个库之间
+//      添加/移动（历史→语库/词库是复制，词库↔语库是先建后删的移动）。
 // 主题规矩：随主题变可用 --fg-color --content-bg --interface-panel-surface --interface-stroke --error-text；
 //   恒定深色 --comfy-menu-bg --comfy-input-bg --border-color --descrip-text 禁用（白主题黑块坑）。
 // 动效：只动 transform/opacity；prefers-reduced-motion 只留 fade。
@@ -28,10 +35,7 @@ const USAGE_LABELS = {
   "参考生视频": "Reference to video",
 };
 const usageLabel = (u) => t(USAGE_LABELS[u] || u);
-// type 同理：后端存的是 "精选"/"历史" 中文数据，比较（e.type==="历史"）与提交（type:"精选"）用原值，
-// 仅徽标展示时套用显示标签。
-const TYPE_LABELS = { "精选": "Featured", "历史": "History" };
-const typeLabel = (v) => t(TYPE_LABELS[v] || v);
+// type 同理：后端存的是 "精选" 中文数据，提交时继续用原值。
 
 // ───────── 样式（全主题安全色 + 深色回退） ─────────
 const CSS = `
@@ -65,49 +69,91 @@ const CSS = `
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:border-color .15s,color .15s;}
 .kd-pbox-chip:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}
 .kd-pbox-chip.kd-pin{border-color:var(--p-primary-color,#4a7dff88);color:var(--fg-color,#ddd);}
-.kd-pbox-chip .kd-uses{opacity:.55;margin-left:4px;}
-/* ── 词库下拉列表（顶满浏览器上下） ── */
-.kd-plib{position:fixed;top:0;bottom:0;z-index:99993;width:340px;display:flex;flex-direction:column;
+.kd-pbox-chip.kd-hist{opacity:.86;}
+.kd-pbox-chip.kd-used{border-color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.16);color:var(--p-primary-color,#8fb0ff);}
+.kd-pbox-chip .kd-star{color:#e2b341;margin-right:3px;}
+/* ── 库面板：贴在提示词输入框右侧，点哪个按钮就显示哪一类（不再分内部标签页） ── */
+.kd-plib{position:fixed;z-index:99993;display:flex;flex-direction:column;overflow:hidden;
+  width:min(620px,calc(100vw - 24px));height:min(800px,calc(100vh - 24px));
   background:var(--interface-panel-surface,#232329);color:var(--fg-color,#ddd);
-  border:1px solid var(--interface-stroke,#3a3a44);box-shadow:0 10px 40px rgba(0,0,0,.35);
-  font:12.5px/1.5 system-ui,sans-serif;opacity:0;transform:translateY(8px);
-  transition:opacity .22s ease-out,transform .26s cubic-bezier(.34,1.2,.64,1);}
+  border:1px solid var(--interface-stroke,#3a3a44);border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,.42);font:12.5px/1.5 system-ui,sans-serif;
+  opacity:0;transform:translateY(6px);
+  transition:opacity .16s ease-out,transform .2s cubic-bezier(.34,1.2,.64,1);}
 .kd-plib.kd-in{opacity:1;transform:translateY(0);}
-.kd-plib.kd-out{opacity:0;transform:translateY(8px);transition:opacity .16s ease-in,transform .16s ease-in;}
-.kd-plib-head{display:flex;align-items:center;gap:8px;padding:12px 12px 8px;}
-.kd-plib-title{font-size:13.5px;font-weight:600;flex:1;}
+.kd-plib.kd-out{opacity:0;transform:translateY(6px);
+  transition:opacity .13s ease-in,transform .13s ease-in;}
+.kd-plib-head{display:flex;align-items:center;gap:9px;padding:12px 14px 8px;}
+.kd-plib-title{font-size:14px;font-weight:600;color:var(--fg-color,#e0e0e0);white-space:nowrap;}
 .kd-plib-use{font-size:11px;color:var(--p-primary-color,#6a9bff);border:1px solid var(--p-primary-color,#4a7dff66);
-  border-radius:999px;padding:2px 9px;}
-.kd-plib-x{border:none;background:none;color:var(--fg-color,#999);font-size:17px;cursor:pointer;padding:2px 7px;}
+  border-radius:999px;padding:2px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kd-plib-x{border:none;background:none;color:var(--fg-color,#999);font-size:17px;cursor:pointer;padding:2px 7px;margin-left:auto;}
 .kd-plib-x:hover{color:var(--error-text,#ffb3b3);}
-.kd-plib-q{margin:0 12px 8px;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
+.kd-plib-tools{display:flex;align-items:center;gap:7px;padding:0 14px 8px;}
+.kd-plib-q{flex:1;min-width:0;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
   border-radius:9px;color:var(--fg-color,#ccc);padding:7px 11px;font:inherit;font-size:12.5px;outline:none;}
 .kd-plib-q:focus{border-color:var(--p-primary-color,#4a7dff);}
-.kd-plib-list{flex:1;overflow-y:auto;padding:0 12px 12px;display:flex;flex-direction:column;gap:5px;
+.kd-plib-tools .kd-pbox-btn{white-space:nowrap;}
+.kd-plib-tools [hidden],.kd-plib-cats[hidden],.kd-plib-subcats[hidden]{display:none !important;}
+.kd-plib-cats,.kd-plib-subcats{display:flex;gap:6px;padding:0 14px 8px;overflow-x:auto;
   scrollbar-width:none;-ms-overflow-style:none;}
-.kd-plib-list::-webkit-scrollbar{display:none;}
-.kd-row{border:1px solid var(--interface-stroke,#3a3a44);border-radius:9px;padding:7px 10px;cursor:pointer;
-  opacity:0;transform:translateY(6px);transition:opacity .16s ease-out,transform .2s cubic-bezier(.34,1.3,.64,1),border-color .15s,background .15s;}
-.kd-row.kd-show{opacity:1;transform:translateY(0);}
+.kd-plib-cats::-webkit-scrollbar,.kd-plib-subcats::-webkit-scrollbar{display:none;}
+.kd-plib-cat{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#999);
+  border-radius:999px;padding:3px 11px;font:inherit;font-size:11.5px;cursor:pointer;white-space:nowrap;
+  transition:border-color .15s,color .15s,background .15s;}
+.kd-plib-cat:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#6a9bff);}
+.kd-plib-cat.kd-on{border-color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.14);
+  color:var(--p-primary-color,#8fb0ff);}
+.kd-plib-subcats .kd-plib-cat{font-size:11px;padding:2px 9px;}
+.kd-plib-list{flex:1;overflow-y:auto;padding:0 14px 12px;scrollbar-width:thin;
+  scrollbar-color:var(--interface-stroke,#3a3a44) transparent;}
+.kd-plib-list::-webkit-scrollbar{width:8px;}
+.kd-plib-list::-webkit-scrollbar-thumb{background:var(--interface-stroke,#3a3a44);border-radius:4px;}
+.kd-lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(250px,100%),1fr));gap:7px;}
+.kd-row{border:1px solid var(--interface-stroke,#3a3a44);border-radius:10px;padding:8px 11px;cursor:pointer;
+  background:transparent;transition:border-color .15s,background .15s;}
+.kd-row.kd-used{border-color:var(--p-primary-color,#4a7dff88);background:rgba(74,125,255,.08);}
+.kd-row.kd-used .kd-row-name::after{content:"✓";margin-left:6px;color:var(--p-primary-color,#6a9bff);font-size:11px;}
 .kd-row:hover{border-color:var(--p-primary-color,#4a7dff);background:var(--content-bg,#16161c);}
-.kd-row-name{font-size:12.5px;font-weight:600;color:var(--fg-color,#e0e0e0);display:flex;align-items:baseline;gap:6px;}
-.kd-row-name .kd-badge{font-size:10px;font-weight:400;color:var(--fg-color,#888);border:1px solid var(--interface-stroke,#3a3a44);border-radius:5px;padding:0 5px;margin-left:auto;}
+.kd-row-name{font-size:12.5px;font-weight:600;color:var(--fg-color,#e0e0e0);display:flex;align-items:baseline;gap:6px;min-width:0;}
+.kd-row-name .kd-name-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kd-row-name .kd-badge{font-size:10px;font-weight:400;color:var(--fg-color,#888);border:1px solid var(--interface-stroke,#3a3a44);
+  border-radius:5px;padding:0 5px;margin-left:auto;white-space:nowrap;flex:none;}
 .kd-row-prev{font-size:11.5px;color:var(--fg-color,#9a9a9a);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .kd-row:hover .kd-row-prev{white-space:normal;overflow:visible;}
-.kd-plib-empty{padding:22px 0;text-align:center;color:var(--fg-color,#777);font-size:12.5px;}
-.kd-plib-foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:9px 12px;border-top:1px solid var(--interface-stroke,#3a3a44);font-size:11px;color:var(--fg-color,#888);}
+.kd-star{color:#e2b341;}
+/* 词库：分组标题 + 两行小卡 */
+.kd-tag-group{font-size:11px;font-weight:600;color:var(--fg-color,#8a8a8a);margin:11px 1px 6px;
+  display:flex;align-items:center;gap:6px;}
+.kd-tag-group::after{content:"";flex:1;height:1px;background:var(--interface-stroke,#3a3a44);opacity:.7;}
+.kd-tag-group:first-child{margin-top:2px;}
+.kd-tag-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(158px,100%),1fr));gap:5px;}
+.kd-tag{display:flex;flex-direction:column;align-items:flex-start;gap:0;min-width:0;text-align:left;
+  border:1px solid var(--interface-stroke,#3a3a44);border-radius:9px;background:transparent;
+  padding:5px 9px;cursor:pointer;color:inherit;font:inherit;transition:border-color .15s,background .15s;}
+.kd-tag:hover{border-color:var(--p-primary-color,#4a7dff);background:var(--content-bg,#16161c);}
+.kd-tag.kd-used{border-color:var(--p-primary-color,#4a7dff88);background:rgba(74,125,255,.08);}
+.kd-tag-name{font-size:12px;font-weight:600;color:var(--fg-color,#ddd);max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kd-tag-val{font-size:10.5px;color:var(--fg-color,#8a8a8a);max-width:100%;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.kd-tag.kd-used .kd-tag-name::after{content:"✓";margin-left:5px;color:var(--p-primary-color,#6a9bff);font-size:10px;}
+.kd-plib-empty{padding:26px 8px;text-align:center;color:var(--fg-color,#777);font-size:12.5px;}
+.kd-plib-empty-where{margin-top:7px;font-size:10.5px;color:var(--fg-color,#666);word-break:break-all;}
+.kd-plib-foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 14px;
+  border-top:1px solid var(--interface-stroke,#3a3a44);font-size:11px;color:var(--fg-color,#888);}
+.kd-plib-tip{flex:1;min-width:120px;}
 .kd-plib-foot .kd-pbox-btn{margin-left:0;}
-/* 库位置：后端到底在读哪个目录。分发出去以后最难查的就是"词库看着是空的，其实在读别处"。 */
-.kd-plib-loc{display:flex;gap:6px;align-items:center;width:100%;}
-.kd-plib-vault{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+/* 库位置：后端到底在读哪个目录。分发出去以后最难查的就是"看着是空的，其实在读别处"。 */
+.kd-plib-loc{display:flex;flex-wrap:wrap;gap:6px;align-items:center;max-width:100%;}
+.kd-plib-vault{max-width:min(320px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:10.5px;color:var(--fg-color,#777);border:1px solid var(--interface-stroke,#3a3a44);
   border-radius:6px;padding:2px 6px;}
 .kd-plib-vault i{font-style:normal;opacity:.6;margin-left:5px;}
 .kd-plib-vault.kd-bad{border-color:var(--error-text,#a33);color:var(--error-text,#ffb3b3);}
-.kd-plib-path-in{flex:1;min-width:0;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
+.kd-plib-path-in{width:260px;max-width:50vw;background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);
   border-radius:6px;color:var(--fg-color,#ddd);font:inherit;font-size:11px;padding:3px 7px;outline:none;}
 .kd-plib-path-in:focus{border-color:var(--p-primary-color,#4a7dff);}
-.kd-plib-empty-where{margin-top:7px;font-size:10.5px;color:var(--fg-color,#666);word-break:break-all;}
 /* ── 右键菜单 + 就地编辑 ── */
 .kd-menu{position:fixed;z-index:99995;display:flex;flex-direction:column;gap:2px;min-width:120px;padding:5px;
   background:var(--interface-panel-surface,#232329);border:1px solid var(--interface-stroke,#3a3a44);border-radius:10px;
@@ -117,18 +163,27 @@ const CSS = `
 .kd-menu button{border:none;background:none;text-align:left;color:var(--fg-color,#ccc);font:inherit;font-size:12px;padding:6px 10px;border-radius:7px;cursor:pointer;}
 .kd-menu button:hover{background:var(--content-bg,#16161c);color:var(--p-primary-color,#6a9bff);}
 .kd-menu button.kd-armed{color:var(--error-text,#ffb3b3);background:var(--content-bg,#16161c);}
-.kd-edit{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.kd-menu-title{font-size:10.5px;color:var(--fg-color,#777);padding:3px 10px 5px;margin-bottom:2px;
+  border-bottom:1px solid var(--interface-stroke,#3a3a44);}
+.kd-edit{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:8px;
+  border:1px dashed var(--interface-stroke,#3a3a44);border-radius:9px;background:rgba(0,0,0,.08);}
 .kd-edit input,.kd-edit textarea{background:var(--content-bg,#16161c);border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;color:var(--fg-color,#ddd);padding:6px 9px;font:inherit;font-size:12px;outline:none;scrollbar-width:none;-ms-overflow-style:none;}
 .kd-edit textarea::-webkit-scrollbar,.kd-edit input::-webkit-scrollbar{display:none;}
 .kd-edit textarea{min-height:70px;resize:vertical;}
 .kd-edit input:focus,.kd-edit textarea:focus{border-color:var(--p-primary-color,#4a7dff);}
+.kd-phrase-form{margin:0 0 10px;}
+.kd-form-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
 .kd-use-row{display:flex;flex-wrap:wrap;gap:8px;}
 .kd-use-c{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--fg-color,#aaa);cursor:pointer;}
 .kd-edit-acts{display:flex;align-items:center;gap:6px;}
+@media (max-width:640px){
+  .kd-plib-tools{flex-wrap:wrap;}
+  .kd-form-row{grid-template-columns:1fr;}
+}
 @media (prefers-reduced-motion: reduce){
-  .kd-plib,.kd-row,.kd-menu,.kd-pbox-btn,.kd-pbox-chip{transition:opacity .15s ease-out !important;transform:none !important;}
-  .kd-plib{opacity:1;}
-  .kd-row{opacity:1;}
+  .kd-plib,.kd-menu,.kd-pbox-btn,.kd-pbox-chip,.kd-tag,.kd-row{transition:opacity .15s ease-out !important;}
+  .kd-plib{opacity:1;transform:none !important;}
+  .kd-plib.kd-out{opacity:0;}
 }
 `;
 
@@ -172,8 +227,8 @@ function reducedMotion() {
   return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-// 全局词库缓存（一次拉全量，按用途在前端分桶——节点多也不重复请求）
-let libCache = null;          // { items, dirs }
+// ───────── 三套数据各自缓存：语库是 .md，词库/历史是后端 JSON，互不混 ─────────
+let libCache = null;          // 语库 { items, dirs }
 let libStamp = 0;
 async function lib(force) {
   if (force || !libCache || Date.now() - libStamp > 30000) {
@@ -182,44 +237,104 @@ async function lib(force) {
   }
   return libCache;
 }
-function libInvalidate() { libCache = null; }
+let phraseCache = null;       // 词库（短词/标签）
+let phraseStamp = 0;
+async function phraseLib(force) {
+  if (force || !phraseCache || Date.now() - phraseStamp > 30000) {
+    phraseCache = await api("/phrases");
+    phraseStamp = Date.now();
+  }
+  return phraseCache;
+}
+let histCache = null;         // 自动历史
+let histStamp = 0;
+async function historyLib(force) {
+  if (force || !histCache || Date.now() - histStamp > 30000) {
+    histCache = await api("/history");
+    histStamp = Date.now();
+  }
+  return histCache;
+}
+function libInvalidate() { libCache = phraseCache = histCache = null; }
 
-// ───────── 词库 / 历史下拉列表（顶满浏览器上下，两种模式共用一套面板） ─────────
+// ───────── 库面板：语库 / 词库 / 历史 三个入口都在节点上，面板内部不再分标签页 ─────────
 let libPanel = null;
 let libOwner = null;   // 哪个节点打开的
-let libMode = "lib";   // "lib" = 按用途筛词库，"hist" = 自动历史
-const libState = { editId: null };
+let libTab = "prompts";
+let libSession = 0;    // 关掉再开：旧请求回来不能画到新面板上
+let libReposition = null;   // 窗口尺寸变化时重新贴到节点旁边
+const libState = {
+  editId: null,            // 语库就地编辑
+  phraseEditId: null,      // 词库编辑
+  phraseFormOpen: false,   // 词库新建
+  phraseInit: false,       // 只在第一次拿到数据时选默认分类
+  phraseGroup: "",         // ""=全部 / "__fav"=收藏 / 顶层分组名
+  phraseCat: "",           // 词库二级分类
+  q: { prompts: "", phrases: "", history: "" },
+  clearArmed: 0,
+};
+let libData = { prompts: [], phrases: [], history: [], groups: [], categories: [] };
+let libErrors = { prompts: "", phrases: "", history: "" };
+const USE_URL = { prompt: "/use", history: "/use", phrase: "/phrases/use" };
 
-// 右键菜单（编辑 / 置顶 / 删除两步确认）
+// 存/移进词库的词一律落在「我的词 · 未分类」；下次打开词库直接停在这一格
+function applyPhraseItemState(item) {
+  if (!item) return;
+  libState.phraseInit = true;
+  if (item.group) libState.phraseGroup = item.group;
+  if (item.category) libState.phraseCat = item.category;
+  libState.q.phrases = "";
+}
+function panelUsage() {
+  const pb = libOwner && libOwner.__kdPbox;
+  return (pb && pb.useSel.value) || USAGES[0];
+}
+
+// 右键菜单（编辑 / 置顶 / 跨库添加或移动 / 删除两步确认）
 let menuEl = null;
 function closeMenu() {
   if (!menuEl) return;
   const m = menuEl; menuEl = null;
   m.remove();
 }
-function openRowMenu(x, y, entry, onChanged) {
+function openRowMenu(x, y, entry, kind, onChanged) {
   closeMenu();
+  const isPhrase = kind === "phrase";
+  const isHistory = kind === "history";
   menuEl = document.createElement("div");
   menuEl.className = "kd-menu";
   menuEl.innerHTML = `
-    <button data-a="edit">✎ ${t("Edit")}</button>
-    <button data-a="pin">${entry.pinned ? t("Unpin") : "★ " + t("Pin")}</button>
+    ${isHistory ? "" : `<button data-a="edit">✎ ${t("Edit")}</button>`}
+    ${isHistory ? "" : `<button data-a="pin">${entry.pinned ? t("Unpin") : "★ " + t("Pin")}</button>`}
+    ${isHistory
+      ? `<button data-a="toLib">＋ ${t("Add to prompt library")}</button>
+         <button data-a="toTags">＋ ${t("Add to tag library")}</button>`
+      : isPhrase
+        ? `<button data-a="toLib">→ ${t("Move to prompt library")}</button>`
+        : `<button data-a="toTags">→ ${t("Move to tag library")}</button>`}
     <button data-a="del">🗑 ${t("Delete")}</button>`;
-  menuEl.style.left = Math.min(x, window.innerWidth - 140) + "px";
-  menuEl.style.top = Math.min(y, window.innerHeight - 130) + "px";
+  menuEl.style.left = Math.max(6, Math.min(x, window.innerWidth - 170)) + "px";
+  menuEl.style.top = Math.max(6, Math.min(y, window.innerHeight - (isHistory ? 150 : 185))) + "px";
   document.body.appendChild(menuEl);
   void menuEl.offsetWidth;   // 强制回流提交初始态：rAF 在后台/节流标签页里可能永不触发，入场类不能挂在它上面
   menuEl.classList.add("kd-in");
 
-  menuEl.querySelector("[data-a=edit]").onclick = () => {
+  const editBtn = menuEl.querySelector("[data-a=edit]");
+  if (editBtn) editBtn.onclick = () => {
     closeMenu();
-    libState.editId = entry.id;
+    if (isPhrase) {
+      libState.phraseEditId = entry.id;
+      libState.phraseFormOpen = true;
+    } else {
+      libState.editId = entry.id;
+    }
     if (libRepaint) libRepaint();
   };
-  menuEl.querySelector("[data-a=pin]").onclick = async () => {
+  const pinBtn = menuEl.querySelector("[data-a=pin]");
+  if (pinBtn) pinBtn.onclick = async () => {
     closeMenu();
     try {
-      const r = await api("/save", { id: entry.id, pinned: !entry.pinned });
+      const r = await api(isPhrase ? "/phrases/save" : "/save", { id: entry.id, pinned: !entry.pinned });
       if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
       toast(entry.pinned ? t("Unpinned") : t("Pinned"));
       onChanged();
@@ -227,6 +342,66 @@ function openRowMenu(x, y, entry, onChanged) {
       toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
     }
   };
+
+  // 历史 → 语库/词库：复制一份，历史保留
+  const toLibBtn = menuEl.querySelector("[data-a=toLib]");
+  if (toLibBtn) toLibBtn.onclick = async () => {
+    closeMenu();
+    try {
+      const r = await api("/save", {
+        name: entry.name || String(entry.positive || "").slice(0, 20),
+        type: "精选",
+        positive: entry.positive,
+        usage: (entry.use_for && entry.use_for.length) ? entry.use_for : [panelUsage()],
+      });
+      if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+      if (isHistory) {
+        libState.q.prompts = "";
+        toast(r.deduped ? t("Already in the prompt library") : t("Added to the prompt library"));
+      } else {
+        // 词库 → 语库：先建长提示词，成功后再删短词（移动）
+        const d = await api("/phrases/delete", { id: entry.id });
+        if (!d.ok) {
+          toast(t("Copied, but the source could not be removed: {error}", { error: serverError(d.error) }), true);
+          onChanged();
+          return;
+        }
+        libState.phraseEditId = null;
+        toast(t("Moved to the prompt library"));
+      }
+      onChanged();
+    } catch (e) {
+      toast(t("Move failed: {error}", { error: serverError(e.message) }), true);
+    }
+  };
+  const toTagsBtn = menuEl.querySelector("[data-a=toTags]");
+  if (toTagsBtn) toTagsBtn.onclick = async () => {
+    closeMenu();
+    try {
+      const r = await api("/phrases/save", {
+        name: entry.name || "", positive: entry.positive, category: "",
+      });
+      if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+      applyPhraseItemState(r.item);
+      if (isHistory) {
+        toast(r.deduped ? t("Already in the tag library") : t("Added to the tag library"));
+      } else {
+        // 语库 → 词库：先建短词，成功后再删 .md（移动）
+        const d = await api("/delete", { id: entry.id });
+        if (!d.ok) {
+          toast(t("Copied, but the source could not be removed: {error}", { error: serverError(d.error) }), true);
+          onChanged();
+          return;
+        }
+        libState.editId = null;
+        toast(t("Moved to the tag library"));
+      }
+      onChanged();
+    } catch (e) {
+      toast(t("Move failed: {error}", { error: serverError(e.message) }), true);
+    }
+  };
+
   const delBtn = menuEl.querySelector("[data-a=del]");
   delBtn.onclick = async () => {
     if (!delBtn.classList.contains("kd-armed")) {
@@ -235,11 +410,13 @@ function openRowMenu(x, y, entry, onChanged) {
       return;
     }
     closeMenu();
+    const path = isPhrase ? "/phrases/delete" : isHistory ? "/history/delete" : "/delete";
     try {
-      const r = await api("/delete", { id: entry.id });
-      toast(r.ok ? t("Deleted (recoverable from .trash)") : t("Delete failed"), !r.ok);
+      const r = await api(path, { id: entry.id });
+      toast(r.ok ? (isPhrase || isHistory ? t("Deleted") : t("Deleted (recoverable from .trash)")) : t("Delete failed"), !r.ok);
       if (r.ok && libState.editId === entry.id) libState.editId = null;
-      onChanged();
+      if (r.ok && libState.phraseEditId === entry.id) libState.phraseEditId = null;
+      if (r.ok) onChanged();
     } catch (e) {
       toast(t("Delete failed") + ": " + serverError(e.message), true);
     }
@@ -296,81 +473,256 @@ function renderRowEdit(row, entry, onSaved) {
   box.querySelector("[data-f=name]").focus();
 }
 
-let libRepaint = null;   // paint() 的引用，供菜单触发重绘
-let libRefresh = null;   // refresh() 的引用：节点上「存为预设」/自动历史写入后要立刻把面板拉新
+// 词库新建/编辑：短名 + 词内容 + 分类，一行就够
+function renderPhraseForm(entry, onSaved) {
+  const box = document.createElement("div");
+  box.className = "kd-edit kd-phrase-form";
+  const cat = entry ? entry.category : "";
+  box.innerHTML = `
+    <div class="kd-form-row">
+      <input data-f="name" value="${esc(entry ? entry.name : "")}" placeholder="${t("Short name (optional)")}">
+      <input data-f="category" value="${esc(cat || "")}" placeholder="${t("Category (leave blank for Uncategorized)")}">
+    </div>
+    <textarea data-f="positive" placeholder="${t("Tag text…")}">${esc(entry ? entry.positive : "")}</textarea>
+    <div class="kd-edit-acts">
+      <button class="kd-pbox-btn kd-main" data-a="save">${t("Save")}</button>
+      <button class="kd-pbox-btn" data-a="cancel">${t("Cancel")}</button>
+    </div>`;
+  box.addEventListener("pointerdown", (e) => e.stopPropagation());
+  box.addEventListener("click", (e) => e.stopPropagation());
+  const cancel = () => {
+    libState.phraseFormOpen = false;
+    libState.phraseEditId = null;
+    if (libRepaint) libRepaint();
+  };
+  box.querySelector("[data-a=cancel]").onclick = cancel;
+  box.querySelector("[data-a=save]").onclick = async () => {
+    const g = (f) => box.querySelector(`[data-f=${f}]`);
+    const positive = g("positive").value.trim();
+    if (!positive) { toast(t("Tag text cannot be empty"), true); return; }
+    const body = {
+      name: g("name").value.trim(),
+      positive,
+      category: g("category").value.trim(),
+    };
+    if (entry) {
+      body.id = entry.id;
+      body.group = entry.group;
+    }
+    try {
+      const r = await api("/phrases/save", body);
+      if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+      toast(t("Saved"));
+      libState.phraseFormOpen = false;
+      libState.phraseEditId = null;
+      libState.q.phrases = "";        // 清掉搜索，保证刚保存的词立刻看得见
+      if (r.item) {
+        if (r.item.group) libState.phraseGroup = r.item.group;
+        if (r.item.category) libState.phraseCat = r.item.category;
+      }
+      onSaved();
+    } catch (e) {
+      toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+    }
+  };
+  rowFocus(box, entry ? "[data-f=name]" : "[data-f=positive]");
+  return box;
+}
+function rowFocus(box, sel) {
+  setTimeout(() => {
+    const el = box.querySelector(sel);
+    if (el) { try { el.focus(); } catch (_) { /* ignore */ } }
+  }, 0);
+}
+
+let libRepaint = null;   // paint() 的引用，供菜单/语言切换触发重绘
+let libRefresh = null;   // reload() 的引用：节点上「保存」/自动历史写入后要立刻把面板拉新
 let libTouchT = null;
 function libTouch() {    // 一次出图会写好几条历史，合并成一次刷新
   libInvalidate();
   clearTimeout(libTouchT);
   libTouchT = setTimeout(() => {
     if (libRefresh) libRefresh();
-    (app.graph && app.graph._nodes ? app.graph._nodes : []).forEach((n) => {
-      if (n.__kdPbox && n.__kdPbox.paintChips) n.__kdPbox.paintChips();   // chips 里的「最近历史」也一起跟上
-    });
+    refreshAllPbox();   // chips 里的置顶/最近历史也一起跟上
   }, 300);
 }
 
-// 面板开着的时候让对应按钮亮住（mode 传 null 即熄灭）
-function markPboxBtns(node, mode) {
+// ───────── 词条插入/移除：点一下插到光标处，再点同一条移除 ─────────
+// 目标就是「无脑」：不让人选追加还是替换、不管光标在哪、不手动补逗号。
+// 每个 textarea 记住自己插过哪些条目（id -> 实际插入的文本），
+// 再点时精确删掉那一段；用户手动改过、找不到原文就当作重新插入。
+function insStore(ta) {
+  if (!ta.__kdIns) ta.__kdIns = new Map();
+  return ta.__kdIns;
+}
+function insRec(ta, entry) {
+  const r = insStore(ta).get(String(entry.id));
+  return (r && ta.value.indexOf(r.t) !== -1) ? r : null;
+}
+function insText(ta, entry) {
+  const r = insRec(ta, entry);
+  return r ? r.t : "";
+}
+function isSepChar(ch) {
+  return /[\s,，、;；:：.!?。！？)\]）】]/.test(ch || "");
+}
+function toggleEntry(ta, sync, entry) {
+  const body = String(entry.positive || entry.negative || "");
+  if (!body) return "";
+  const store = insStore(ta);
+  const prev = insRec(ta, entry);
+  if (prev) {
+    const at = ta.value.indexOf(prev.t);
+    ta.value = ta.value.slice(0, at) + prev.r + ta.value.slice(at + prev.t.length);
+    store.delete(String(entry.id));
+    const pos = Math.min(at + prev.r.length, ta.value.length);
+    try { ta.setSelectionRange(pos, pos); ta.focus(); } catch (_) { /* ignore */ }
+    sync();
+    return "removed";
+  }
+  const st = typeof ta.selectionStart === "number" ? ta.selectionStart : ta.value.length;
+  const en = typeof ta.selectionEnd === "number" ? ta.selectionEnd : st;
+  const before = ta.value.slice(0, st);
+  const after = ta.value.slice(en);
+  const replaced = ta.value.slice(st, en);   // 选中被替换的内容，再点移除时原样还回去
+  // 只在需要时补分隔符：前/后已经是空白或标点就不加，避免 ",," 和双空格
+  const prefix = (before && !isSepChar(before.slice(-1))) ? ", " : "";
+  const suffix = (after && !isSepChar(after[0])) ? ", " : "";
+  const text = prefix + body + suffix;
+  if (typeof ta.setRangeText === "function") {
+    ta.setRangeText(text, st, en, "end");
+  } else {
+    ta.value = before + text + after;
+    try { ta.setSelectionRange(st + text.length, st + text.length); } catch (_) { /* ignore */ }
+  }
+  store.set(String(entry.id), { t: text, r: replaced });
+  try { ta.focus(); } catch (_) { /* ignore */ }
+  sync();
+  return "inserted";
+}
+
+// 面板优先贴节点正右方；右边放不下翻左边，两边都挤就放到节点下方/上方，尽量不盖住输入框
+function placePanel(node) {
+  const vw = window.innerWidth || 1280;
+  const vh = window.innerHeight || 800;
+  const m = 10;
+  const maxW = Math.min(620, vw - m * 2);
+  const maxH = Math.min(800, vh - m * 2);
+  let r = null;
+  try { r = node && node._kdCard && node._kdCard.getBoundingClientRect(); } catch (_) { /* ignore */ }
+  if (!r || (!r.width && !r.height)) {
+    return { left: Math.max(m, vw - maxW - m), top: 72, w: maxW, h: Math.min(maxH, vh - 72 - m) };
+  }
+  const sideTop = () => {
+    const h = maxH;
+    return Math.max(m, Math.min(r.top, vh - h - m));
+  };
+  // 1) 正右方
+  const rightSpace = vw - r.right - m * 2;
+  if (rightSpace >= 240) {
+    const w = Math.min(maxW, rightSpace);
+    const top = sideTop();
+    return { left: r.right + m, top, w, h: Math.min(maxH, vh - top - m) };
+  }
+  // 2) 左侧
+  const leftSpace = r.left - m * 2;
+  if (leftSpace >= 240) {
+    const w = Math.min(maxW, leftSpace);
+    const top = sideTop();
+    return { left: r.left - w - m, top, w, h: Math.min(maxH, vh - top - m) };
+  }
+  // 3) 下方
+  let top = r.bottom + m;
+  let h = Math.min(maxH, vh - top - m);
+  if (h < 260) {
+    // 4) 上方
+    const above = Math.min(maxH, r.top - m * 2);
+    if (above >= 260) { h = above; top = r.top - h - m; }
+    else { top = m; h = maxH; }
+  }
+  const left = Math.max(m, Math.min(r.left, vw - maxW - m));
+  return { left, top: Math.max(m, top), w: maxW, h: Math.max(220, h) };
+}
+
+// 面板开着的时候让对应按钮亮住（tab 传 null 即熄灭）
+function markPboxBtns(node, tab) {
   const pb = node && node.__kdPbox;
   if (!pb) return;
-  [pb.libBtn, pb.histBtn].forEach((b) => { if (b) b.classList.remove("kd-on"); });
-  const b = mode === "lib" ? pb.libBtn : mode === "hist" ? pb.histBtn : null;
+  [pb.libBtn, pb.phraseBtn, pb.histBtn].forEach((b) => { if (b) b.classList.remove("kd-on"); });
+  const b = tab === "phrases" ? pb.phraseBtn : tab === "history" ? pb.histBtn : tab ? pb.libBtn : null;
   if (b) b.classList.add("kd-on");
 }
 
-function openLib(node, mode) {
+function openLib(node, tab) {
   closeLib(true);
-  libOwner = node;
-  libMode = mode === "hist" ? "hist" : "lib";
-  const hist = libMode === "hist";
-  const pb = node.__kdPbox;
+  const pb = node && node.__kdPbox;
   if (!pb) return;
-  const use = pb.useSel.value;
+  libOwner = node;
+  const session = ++libSession;
+  libTab = tab === "phrases" ? "phrases" : tab === "history" ? "history" : "prompts";
+  libState.editId = null;
+  libState.phraseEditId = null;
+  libState.phraseFormOpen = false;
+  libState.clearArmed = 0;
 
   libPanel = document.createElement("div");
   libPanel.className = "kd-plib";
-
-  // 贴在节点旁边：节点在屏幕右半 → 面板放节点左侧；否则放右侧
-  try {
-    const r = node._kdCard && node._kdCard.getBoundingClientRect();
-    const vw = window.innerWidth;
-    if (r && r.right + 350 < vw) {
-      libPanel.style.left = Math.min(r.right + 8, vw - 348) + "px";
-    } else if (r && r.left > 356) {
-      libPanel.style.left = Math.max(8, r.left - 348) + "px";
-    } else {
-      libPanel.style.left = Math.max(8, Math.min(vw - 348, (vw - 340) / 2)) + "px";
-    }
-  } catch (_) {
-    libPanel.style.left = "50%";
-    libPanel.style.transform = "translateX(-50%)";
-  }
-
   libPanel.innerHTML = `
     <div class="kd-plib-head">
-      <span class="kd-plib-title">${hist ? t("History") : t("Library")}</span>
-      <span class="kd-plib-use">${esc(usageLabel(use))}</span>
+      <span class="kd-plib-title"></span>
+      <span class="kd-plib-use">${esc(usageLabel(pb.useSel.value))}</span>
       <button class="kd-plib-x" title="${t("Close")}">✕</button>
     </div>
-    <input class="kd-plib-q" placeholder="${hist ? t("Search history…") : t("Search this usage…")}">
+    <div class="kd-plib-tools">
+      <input class="kd-plib-q" spellcheck="false">
+      <button class="kd-pbox-btn kd-plib-new">＋ ${t("New tag")}</button>
+      <button class="kd-pbox-btn kd-plib-clear">${t("Clear history")}</button>
+    </div>
+    <div class="kd-plib-cats"></div>
+    <div class="kd-plib-subcats"></div>
     <div class="kd-plib-list"></div>
-    <div class="kd-plib-foot"><span>${t("Click to append · hover for more · right-click to edit/delete")}</span>
-      <div class="kd-plib-loc"></div></div>`;
+    <div class="kd-plib-foot">
+      <span class="kd-plib-tip"></span>
+      <div class="kd-plib-loc"></div>
+    </div>`;
 
+  const pos = placePanel(node);
+  libPanel.style.left = pos.left + "px";
+  libPanel.style.top = pos.top + "px";
+  libPanel.style.width = pos.w + "px";
+  libPanel.style.height = pos.h + "px";
   document.body.appendChild(libPanel);
-  void libPanel.offsetWidth;   // 同上：入场动画不依赖 rAF，后台标签页里也不会停在透明态
+  void libPanel.offsetWidth;   // 入场动画不依赖 rAF，后台标签页里也不会停在透明态
   libPanel.classList.add("kd-in");
 
-  const listEl = libPanel.querySelector(".kd-plib-list");
+  libReposition = () => {
+    if (!libPanel) return;
+    const p = placePanel(node);
+    libPanel.style.left = p.left + "px";
+    libPanel.style.top = p.top + "px";
+    libPanel.style.width = p.w + "px";
+    libPanel.style.height = p.h + "px";
+  };
+
+  const titleEl = libPanel.querySelector(".kd-plib-title");
   const qEl = libPanel.querySelector(".kd-plib-q");
+  const catsEl = libPanel.querySelector(".kd-plib-cats");
+  const subcatsEl = libPanel.querySelector(".kd-plib-subcats");
+  const listEl = libPanel.querySelector(".kd-plib-list");
+  const usePill = libPanel.querySelector(".kd-plib-use");
+  const tipEl = libPanel.querySelector(".kd-plib-tip");
+  const newBtn = libPanel.querySelector(".kd-plib-new");
+  const clearBtn = libPanel.querySelector(".kd-plib-clear");
+  const locEl = libPanel.querySelector(".kd-plib-loc");
   libPanel.querySelector(".kd-plib-x").onclick = () => closeLib();
 
-  // ---- 库位置：显示后端实际在读哪个目录，并能就地改 ----
-  const locEl = libPanel.querySelector(".kd-plib-loc");
-  const SRC_LABEL = { env: "env var", config: "panel", setting: "settings file", default: "default" };
+  let loading = true;
+  let reloadSeq = 0;
   let loc = { vault: "", source: "default", error: "" };
   let locEditing = false;
+  const SRC_LABEL = { env: "env var", config: "panel", setting: "settings file", default: "default" };
+
+  // ---- 库位置：显示后端实际在读哪个目录，并能就地改 ----
   function showLoc() {
     locEditing = false;
     locEl.innerHTML = `
@@ -399,7 +751,10 @@ function openLib(node, mode) {
       locEditing = false;        // 成功后必须退出编辑态，否则刷新会一直跳过 showLoc，输入框留在原地
       showLoc();
       libInvalidate();
-      await refresh();
+      libState.phraseInit = false;   // 换了库：分组/分类要按新库重新选
+      libState.phraseGroup = "";
+      libState.phraseCat = "";
+      await reload(true);
       toast(v ? t("Library folder changed") : t("Back to the default folder"));
     };
     btns[0].onclick = commit;
@@ -410,92 +765,420 @@ function openLib(node, mode) {
     };
   }
 
-  let all = [];
-  async function refresh() {           // 重新拉全量再重绘（libInvalidate 只清缓存，必须重新 fetch 才有新数据）
+  // ---- 标题 / 搜索 / 工具栏 ----
+  function applyLabels() {
+    titleEl.textContent = libTab === "phrases" ? t("Tags")
+      : libTab === "history" ? t("History") : t("Prompts");
+    usePill.textContent = usageLabel(pb.useSel.value);
+    newBtn.textContent = "＋ " + t("New tag");
+    clearBtn.textContent = t("Clear history");
+    clearBtn.style.color = "";
+    newBtn.hidden = libTab !== "phrases";
+    clearBtn.hidden = libTab !== "history";
+    qEl.placeholder = libTab === "phrases" ? t("Search tags…")
+      : libTab === "history" ? t("Search history…") : t("Search prompts…");
+    if (qEl.value !== (libState.q[libTab] || "")) qEl.value = libState.q[libTab] || "";
+  }
+
+  qEl.oninput = () => {
+    libState.q[libTab] = qEl.value;
+    clearTimeout(qEl._t);
+    qEl._t = setTimeout(() => paint(), 140);
+  };
+  qEl.onkeydown = (e) => { if (e.key !== "Escape") e.stopPropagation(); };
+
+  newBtn.onclick = () => {
+    libState.phraseFormOpen = true;
+    libState.phraseEditId = null;
+    paintBody();
+  };
+  clearBtn.onclick = async () => {
+    if (Date.now() - libState.clearArmed > 2500) {
+      libState.clearArmed = Date.now();
+      clearBtn.textContent = t("Confirm clear history?");
+      clearBtn.style.color = "var(--error-text,#ff6b6b)";
+      setTimeout(() => {
+        if (Date.now() - libState.clearArmed >= 2500) {
+          clearBtn.textContent = t("Clear history");
+          clearBtn.style.color = "";
+        }
+      }, 2600);
+      return;
+    }
+    libState.clearArmed = 0;
+    clearBtn.textContent = t("Clear history");
+    clearBtn.style.color = "";
     try {
-      const d = await lib(true);
-      all = d.items || [];
-      loc = { vault: d.vault || "", source: d.vault_source || "default", error: d.error || "" };
-      if (!locEditing) showLoc();
-    } catch (_) { /* 保留旧数据重绘 */ }
-    paint(qEl.value.trim());
+      const r = await api("/history/clear", {});
+      toast(r.ok ? t("History cleared") : t("Delete failed"), !r.ok);
+      if (r.ok) reload(true);
+    } catch (e) {
+      toast(t("Delete failed") + ": " + serverError(e.message), true);
+    }
+  };
+
+  // ---- 数据 ----
+  async function reload(force) {
+    const seq = ++reloadSeq;
+    const reads = [
+      (async () => {
+        try {
+          const d = await lib(force);
+          libData.prompts = d.items || [];
+          if (d.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
+          libErrors.prompts = "";
+        } catch (e) {
+          libErrors.prompts = serverError(e.message);
+          loc.error = libErrors.prompts;
+        }
+      })(),
+      (async () => {
+        try {
+          const d = await phraseLib(force);
+          libData.phrases = d.items || [];
+          libData.groups = d.groups || [];
+          libData.categories = d.categories || [];
+          if (d.vault && !loc.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
+          libErrors.phrases = "";
+          if (!libState.phraseInit && libData.groups.length) {
+            libState.phraseInit = true;   // 只在第一次选默认分类；之后记住用户的选择
+            libState.phraseGroup = libData.groups[0];
+            const cats = libData.categories.filter((c) => c.group === libState.phraseGroup);
+            libState.phraseCat = cats.length ? cats[0].name : "";
+          }
+        } catch (e) {
+          libErrors.phrases = serverError(e.message);
+        }
+      })(),
+      (async () => {
+        try {
+          const d = await historyLib(force);
+          libData.history = d.items || [];
+          if (d.vault && !loc.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
+          libErrors.history = "";
+        } catch (e) {
+          libErrors.history = serverError(e.message);
+        }
+      })(),
+    ];
+    await Promise.all(reads);
+    if (seq !== reloadSeq || session !== libSession || !libPanel) return;
+    loading = false;
+    if (!locEditing) showLoc();
+    paint();
     pb.paintChips();
   }
-  function paint(q) {
-    const ql = (q || "").toLowerCase();
-    // 历史模式：同样按当前用途筛（记录时带的是当时的用途），只是不再要求 type=精选
-    const pool = hist ? all.filter((e) => e.type === "历史") : all;
-    const rows = pool.filter((e) =>
-      e.use_for.indexOf(use) !== -1 &&
-      (!ql || e.name.toLowerCase().indexOf(ql) !== -1 || (e.positive || "").toLowerCase().indexOf(ql) !== -1));
-    // 空状态分两种：这一类本来就空（引导 + 显示在读哪个目录），还是只是被筛选条件筛干了
-    const bare = pool.length === 0;
-    listEl.innerHTML = rows.length ? rows.map((e) => `
-      <div class="kd-row" data-id="${esc(e.id)}">
-        <div class="kd-row-name">${e.pinned ? "★ " : ""}${esc(e.name)}<span class="kd-badge">${esc(hist ? (e.updated || t("History")) : typeLabel(e.type))} · ${t("{n} uses", { n: e.uses })}</span></div>
-        <div class="kd-row-prev">${esc((e.positive || e.negative || "").slice(0, 40)) || t("(Body is in the Negative field)")}</div>
-      </div>`).join("") : `<div class="kd-plib-empty">${bare
-        ? t(hist ? "No history for this usage yet — prompts you run land here automatically" : 'No prompts here yet — write one and hit "Save as preset"')
-        : t("Nothing matches this filter")}${bare ? `<div class="kd-plib-empty-where">${esc(loc.error || loc.vault)}</div>` : ""}</div>`;
-    listEl.querySelectorAll(".kd-row").forEach((row, i) => {
-      const e = rows[i];
+  async function refresh() { await reload(true); }
+
+  // ---- 渲染 ----
+  function currentItems() {
+    return libTab === "phrases" ? libData.phrases
+      : libTab === "history" ? libData.history : libData.prompts;
+  }
+  function match(e, q) {
+    if (!q) return true;
+    return String(e.name || "").toLowerCase().includes(q)
+      || String(e.positive || "").toLowerCase().includes(q)
+      || String(e.negative || "").toLowerCase().includes(q)
+      || String(e.category || "").toLowerCase().includes(q)
+      || String(e.group || "").toLowerCase().includes(q);
+  }
+  function empty(msg, withWhere) {
+    const d = document.createElement("div");
+    d.className = "kd-plib-empty";
+    d.textContent = msg;
+    if (withWhere) {
+      const w = document.createElement("div");
+      w.className = "kd-plib-empty-where";
+      w.textContent = loc.error || loc.vault;
+      d.appendChild(w);
+    }
+    listEl.appendChild(d);
+  }
+  function bindToggle(el, e, kind) {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      if (kind === "prompt" && libState.editId === e.id) return;      // 编辑态不触发插入
+      if (kind === "phrase" && libState.phraseEditId === e.id) return;
+      const res = toggleEntry(pb.ta, pb.sync, e);
+      if (!res) return;
+      const label = e.name || String(e.positive || "").slice(0, 12);
+      if (res === "inserted") {
+        api(USE_URL[kind], { id: e.id }).catch(() => { /* 静默 */ });
+        e.uses = (e.uses || 0) + 1;
+        toast(t('Inserted "{name}"', { name: label }));
+      } else {
+        toast(t('Removed "{name}"', { name: label }));
+      }
+      // 只更新被点的那一项：整页重绘会把正在填的词库表单一起清掉
+      el.classList.toggle("kd-used", res === "inserted");
+      const badge = el.querySelector(".kd-badge");
+      if (badge && kind !== "phrase") badge.textContent = t("{n} uses", { n: e.uses || 0 });
+      pb.paintChips();
+    };
+  }
+
+  function paint() {
+    if (!libPanel) return;
+    applyLabels();
+    if (libTab === "phrases") paintCats();
+    else { catsEl.hidden = true; subcatsEl.hidden = true; }
+    paintBody();
+    tipEl.textContent = libTab === "phrases"
+      ? t("Click a tag to insert · click again to remove · right-click to edit")
+      : libTab === "history"
+        ? t("Prompts you run land here automatically · right-click to delete")
+        : t("Click to insert · click again to remove · right-click for more");
+  }
+
+  function paintCats() {
+    catsEl.innerHTML = "";
+    subcatsEl.innerHTML = "";
+    if ((libState.q.phrases || "").trim()) {
+      catsEl.hidden = true;
+      subcatsEl.hidden = true;
+      return;
+    }
+    catsEl.hidden = false;
+    const add = (label, active, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-plib-cat" + (active ? " kd-on" : "");
+      b.textContent = label;
+      b.onclick = onClick;
+      catsEl.appendChild(b);
+    };
+    add(t("All"), libState.phraseGroup === "", () => {
+      libState.phraseGroup = ""; libState.phraseCat = ""; paint();
+    });
+    add(t("Favorites"), libState.phraseGroup === "__fav", () => {
+      libState.phraseGroup = "__fav"; libState.phraseCat = ""; paint();
+    });
+    (libData.groups || []).forEach((g) => add(g, libState.phraseGroup === g, () => {
+      libState.phraseGroup = g;
+      const cats = libData.categories.filter((c) => c.group === g);
+      libState.phraseCat = cats.length ? cats[0].name : "";
+      paint();
+    }));
+
+    const cats = libState.phraseGroup && libState.phraseGroup !== "__fav"
+      ? libData.categories.filter((c) => c.group === libState.phraseGroup).map((c) => c.name)
+      : [];
+    subcatsEl.hidden = cats.length < 2;
+    if (cats.length < 2) return;
+    const addSub = (label, active, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-plib-cat" + (active ? " kd-on" : "");
+      b.textContent = label;
+      b.onclick = onClick;
+      subcatsEl.appendChild(b);
+    };
+    addSub(t("All categories"), !libState.phraseCat, () => {
+      libState.phraseCat = ""; paint();
+    });
+    cats.forEach((c) => addSub(c, libState.phraseCat === c, () => {
+      libState.phraseCat = c; paint();
+    }));
+  }
+
+  function paintBody() {
+    if (!libPanel) return;
+    listEl.innerHTML = "";
+    if (loading && !currentItems().length) {
+      empty(t("Loading…"));
+      return;
+    }
+    const err = libErrors[libTab];
+    if (err && !currentItems().length) {
+      empty(t("Failed to load: {error}", { error: err }), true);
+      return;
+    }
+    if (libTab === "prompts") paintPrompts();
+    else if (libTab === "phrases") paintPhrases();
+    else paintHistory();
+  }
+
+  function paintPrompts() {
+    const use = pb.useSel.value;
+    const q = (libState.q.prompts || "").trim().toLowerCase();
+    const pool = (libData.prompts || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
+    const rows = pool.filter((e) => match(e, q));
+    if (!pool.length && !q) {
+      empty(t('No prompts for "{usage}" yet — write one and hit "Save"', { usage: usageLabel(use) }), true);
+      return;
+    }
+    if (!rows.length) { empty(t("Nothing matches this filter")); return; }
+    const grid = document.createElement("div");
+    grid.className = "kd-lib-grid";
+    rows.forEach((e) => {
+      const row = document.createElement("div");
+      row.className = "kd-row" + (insText(pb.ta, e) ? " kd-used" : "");
+      row.dataset.id = e.id;
       row.title = (e.positive || e.negative || "").slice(0, 400);
-      row.onclick = () => {
-        if (libState.editId === e.id) return;   // 编辑态不触发追加
-        const add = e.positive || e.negative || "";
-        if (!add) return;
-        const cur = pb.ta.value.trim();
-        pb.ta.value = cur ? cur + ", " + add : add;
-        pb.sync();
-        api("/use", { id: e.id }).catch(() => { /* 静默 */ });
-        e.uses += 1;
-        toast(t("Appended \"{name}\"", { name: e.name }));
-      };
+      row.innerHTML = `
+        <div class="kd-row-name">${e.pinned ? '<span class="kd-star">★</span>' : ""}<span class="kd-name-t">${esc(e.name)}</span>
+          <span class="kd-badge">${t("{n} uses", { n: e.uses || 0 })}</span></div>
+        <div class="kd-row-prev">${esc((e.positive || e.negative || "").slice(0, 80)) || t("(Body is in the Negative field)")}</div>`;
+      bindToggle(row, e, "prompt");
       row.oncontextmenu = (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        openRowMenu(ev.clientX, ev.clientY, e, refresh);
+        openRowMenu(ev.clientX, ev.clientY, e, "prompt", refresh);
       };
       if (libState.editId === e.id) renderRowEdit(row, e, refresh);
-      const rm = reducedMotion();
-      setTimeout(() => row.classList.add("kd-show"), rm ? 0 : 40 + Math.min(i, 10) * 30);
+      grid.appendChild(row);
     });
+    listEl.appendChild(grid);
   }
 
-  lib().then((d) => {
-    all = d.items || [];
-    loc = { vault: d.vault || "", source: d.vault_source || "default", error: d.error || "" };
-    showLoc();
-    paint("");
-  }).catch((e) => {
-    locEl.innerHTML = `<span class="kd-plib-vault kd-bad">${esc(serverError(e.message))}</span>`;
-    listEl.innerHTML = `<div class="kd-plib-empty">${t("Library failed to load: {error}", { error: esc(serverError(e.message)) })}</div>`;
-  });
-  libRepaint = () => paint(qEl.value.trim());
-  libRefresh = refresh;
-  markPboxBtns(node, libMode);
+  function phraseChip(e) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "kd-tag" + (insText(pb.ta, e) ? " kd-used" : "");
+    b.title = e.positive;
+    const showVal = e.name && e.name.toLowerCase() !== e.positive.toLowerCase();
+    b.innerHTML = `<span class="kd-tag-name">${e.pinned ? '<span class="kd-star">★</span>' : ""}${esc(e.name || e.positive)}</span>`
+      + (showVal ? `<span class="kd-tag-val">${esc(e.positive)}</span>` : "");
+    bindToggle(b, e, "phrase");
+    b.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openRowMenu(ev.clientX, ev.clientY, e, "phrase", refresh);
+    };
+    return b;
+  }
 
-  let qt = null;
-  qEl.oninput = () => { clearTimeout(qt); qt = setTimeout(() => paint(qEl.value.trim()), 200); };
+  function paintPhrases() {
+    const q = (libState.q.phrases || "").trim().toLowerCase();
+    if (libState.phraseFormOpen || libState.phraseEditId) {
+      const editing = libState.phraseEditId
+        ? (libData.phrases || []).find((e) => e.id === libState.phraseEditId) : null;
+      listEl.appendChild(renderPhraseForm(editing || null, refresh));
+    }
+    if (!(libData.phrases || []).length) {
+      empty(t('No tags yet — click "New tag" to add one'), true);
+      return;
+    }
+    let pool = libData.phrases || [];
+    if (q) {
+      pool = pool.filter((e) => match(e, q));
+    } else if (libState.phraseGroup === "__fav") {
+      pool = pool.filter((e) => e.pinned);
+    } else if (libState.phraseGroup) {
+      pool = pool.filter((e) => e.group === libState.phraseGroup);
+      if (libState.phraseCat) pool = pool.filter((e) => e.category === libState.phraseCat);
+    }
+    if (!pool.length) {
+      empty(q ? t("Nothing matches this filter")
+        : libState.phraseGroup === "__fav" ? t("No favorites yet — right-click a tag and pin it")
+          : t("No tags in this category yet"));
+      return;
+    }
+    const MAX = 400;
+    const capped = pool.length > MAX;
+    if (capped) pool = pool.slice(0, MAX);
+    const groups = new Map();
+    pool.forEach((e) => {
+      const label = q || !libState.phraseGroup || libState.phraseGroup === "__fav"
+        ? `${e.group || t("My tags")} · ${e.category || t("Uncategorized")}`
+        : (e.category || t("Uncategorized"));
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(e);
+    });
+    groups.forEach((items, label) => {
+      const h = document.createElement("div");
+      h.className = "kd-tag-group";
+      h.textContent = label;
+      const wrap = document.createElement("div");
+      wrap.className = "kd-tag-wrap";
+      items.forEach((e) => wrap.appendChild(phraseChip(e)));
+      listEl.appendChild(h);
+      listEl.appendChild(wrap);
+    });
+    if (capped) {
+      empty(t("Showing first {n} — use search or a category to narrow", { n: MAX }));
+    }
+  }
+
+  function paintHistory() {
+    const use = pb.useSel.value;
+    const q = (libState.q.history || "").trim().toLowerCase();
+    const pool = (libData.history || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
+    const rows = pool.filter((e) => match(e, q));
+    if (!pool.length) {
+      empty(t("No history for this usage yet — prompts you run land here automatically"), true);
+      return;
+    }
+    if (!rows.length) { empty(t("Nothing matches this filter")); return; }
+    const grid = document.createElement("div");
+    grid.className = "kd-lib-grid";
+    rows.forEach((e) => {
+      const row = document.createElement("div");
+      row.className = "kd-row" + (insText(pb.ta, e) ? " kd-used" : "");
+      row.dataset.id = e.id;
+      row.title = (e.positive || "").slice(0, 400);
+      const stamp = String(e.updated || "").slice(0, 16);
+      row.innerHTML = `
+        <div class="kd-row-name"><span class="kd-name-t">${esc(e.name)}</span>
+          <span class="kd-badge">${t("{n} uses", { n: e.uses || 0 })}${stamp ? " · " + esc(stamp) : ""}</span></div>
+        <div class="kd-row-prev">${esc((e.positive || "").slice(0, 80))}</div>`;
+      bindToggle(row, e, "history");
+      row.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openRowMenu(ev.clientX, ev.clientY, e, "history", refresh);
+      };
+      grid.appendChild(row);
+    });
+    listEl.appendChild(grid);
+  }
+
+  libRepaint = () => { if (libPanel) { applyLabels(); paint(); } };
+  libRefresh = refresh;
+
+  paint();
+  markPboxBtns(node, libTab);
+  reload(true);
   qEl.focus();
 }
 
 function closeLib(instant) {
-  if (!libPanel) return;
-  const root = libPanel;
-  markPboxBtns(libOwner, null);
-  libPanel = null; libOwner = null; libMode = "lib";
-  libState.editId = null; libRepaint = null; libRefresh = null;
   closeMenu();
-  if (instant || reducedMotion()) { root.remove(); return; }
-  root.classList.remove("kd-in");
-  root.classList.add("kd-out");
-  setTimeout(() => root.remove(), 200);
+  libSession++;
+  if (!libPanel) return;
+  const panel = libPanel;
+  markPboxBtns(libOwner, null);
+  libPanel = null; libOwner = null;
+  libReposition = null;
+  libState.editId = null;
+  libState.phraseEditId = null;
+  libState.phraseFormOpen = false;
+  libState.clearArmed = 0;
+  libRepaint = null; libRefresh = null;
+  if (instant || reducedMotion()) {
+    if (panel) panel.remove();
+    return;
+  }
+  if (panel) { panel.classList.remove("kd-in"); panel.classList.add("kd-out"); }
+  setTimeout(() => { if (panel) panel.remove(); }, 200);
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && libPanel) closeLib();
+  if (e.key !== "Escape") return;
+  if (menuEl) closeMenu();
+  if (libPanel) closeLib();
 });
+// 点画布别处收掉面板；点节点本身（输入框/用途/按钮）和右键菜单时保持
+document.addEventListener("pointerdown", (e) => {
+  if (!libPanel || !libOwner) return;
+  if (libPanel.contains(e.target)) return;
+  if (menuEl && menuEl.contains(e.target)) return;
+  const card = libOwner._kdCard;
+  if (card && card.contains(e.target)) return;
+  closeLib();
+}, true);
+window.addEventListener("resize", () => { if (libReposition) libReposition(); });
 
 // ───────── KedouPromptBox 节点面板 ─────────
 function buildPromptBox(node) {
@@ -524,93 +1207,174 @@ function buildPromptBox(node) {
     if (uw) uw.value = useSel.value;
     try { node.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }
     paintChips();
+    // 面板开着时换用途：语库/历史立刻按新用途重新筛
+    if (libOwner === node && libRefresh) libRefresh();
   };
   useSel.onpointerdown = (e) => e.stopPropagation();
 
   const libBtn = document.createElement("button");
-  libBtn.type = "button"; libBtn.className = "kd-pbox-btn kd-accent"; libBtn.textContent = t("Library");
-  libBtn.title = t("Open the library list for this usage");
+  libBtn.type = "button"; libBtn.className = "kd-pbox-btn kd-accent"; libBtn.textContent = t("Prompts");
+  libBtn.title = t("Open the prompt library");
+  const phraseBtn = document.createElement("button");
+  phraseBtn.type = "button"; phraseBtn.className = "kd-pbox-btn kd-accent"; phraseBtn.textContent = t("Tags");
+  phraseBtn.title = t("Open the tag library");
   const histBtn = document.createElement("button");
   histBtn.type = "button"; histBtn.className = "kd-pbox-btn kd-accent"; histBtn.textContent = t("History");
   histBtn.title = t("Open the history list for this usage");
   const saveBtn = document.createElement("button");
-  saveBtn.type = "button"; saveBtn.className = "kd-pbox-btn"; saveBtn.textContent = t("Save as preset");
+  saveBtn.type = "button"; saveBtn.className = "kd-pbox-btn"; saveBtn.textContent = t("Save");
   const clearBtn = document.createElement("button");
   clearBtn.type = "button"; clearBtn.className = "kd-pbox-btn"; clearBtn.textContent = t("Clear");
-  clearBtn.style.marginLeft = "auto";   // 组整体靠右：清除 → 存为预设 → 词库 → 历史(最右)
-  top.append(lab, useSel, clearBtn, saveBtn, libBtn, histBtn);
+  clearBtn.style.marginLeft = "auto";   // 组整体靠右：清除 → 保存 → 语库 → 词库 → 历史
+  top.append(lab, useSel, clearBtn, saveBtn, libBtn, phraseBtn, histBtn);
 
   const ta = document.createElement("textarea");
   ta.className = "kd-pbox-ta";
-  ta.placeholder = t('Enter a prompt… ("Library" to append / "Save as preset" to store under the current usage)');
+  ta.placeholder = t('Enter a prompt… open "Prompts" to insert / "Save" to store under the current usage');
   ta.value = String(pw.value || "");
 
   function sync() {
     pw.value = ta.value;
     try { node.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }
   }
-  ta.addEventListener("input", sync);
+  let usedT = null;
+  ta.addEventListener("input", () => {
+    sync();
+    // 手动删掉已插入的文本后，高亮也要跟着灭；不重新请求，只重绘本地状态
+    clearTimeout(usedT);
+    usedT = setTimeout(() => {
+      paintChips();
+      if (libOwner === node && libRepaint) libRepaint();
+    }, 250);
+  });
   ta.addEventListener("pointerdown", (e) => e.stopPropagation());
   ta.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
 
   card.append(top, ta);
 
-  // 快捷 chips：当前用途的 置顶★ + 最近历史
+  // 快捷 chips：只放置顶语库。一个入口点一下就能插，不打开面板。
+  // 词库和历史都不进这里：短词数量大、历史更新频繁，都会把常用区挤满。
   const chips = document.createElement("div");
   chips.className = "kd-pbox-chips";
   card.append(chips);
 
   async function paintChips() {
     try {
-      const d = await lib();
+      const [pd] = await Promise.allSettled([lib()]);
       const use = useSel.value;
-      const items = (d.items || []).filter((e) => (e.use_for || []).indexOf(use) !== -1);
-      const pinned = items.filter((e) => e.pinned).slice(0, 8);
-      const recent = items.filter((e) => e.type === "历史").slice(0, 6);
+      const prompts = pd.status === "fulfilled"
+        ? (pd.value.items || []).filter((e) => (e.use_for || []).indexOf(use) !== -1) : [];
+      const pool = prompts.filter((e) => e.pinned).slice(0, 5)
+        .map((e) => ({ e, kind: "prompt" }));
+      // 同一条内容只出现一次，避免旧数据里的重复条目撑满 chips
+      const seen = new Set();
+      const uniq = pool.filter(({ e }) => {
+        const key = String(e.positive || "");
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
       chips.innerHTML = "";
-      const pool = pinned.concat(recent);
-      if (!pool.length) {
+      if (!uniq.length) {
         const s = document.createElement("span");
         s.className = "kd-pbox-chip"; s.style.opacity = ".5"; s.style.cursor = "default";
-        s.textContent = t('Pinned and history items for "{usage}" will appear here', { usage: usageLabel(use) });
+        s.textContent = t('Pinned prompts for "{usage}" will appear here', { usage: usageLabel(use) });
         chips.appendChild(s);
         return;
       }
-      pool.forEach((e) => {
+      uniq.forEach(({ e, kind }) => {
         const c = document.createElement("button");
         c.type = "button";
-        c.className = "kd-pbox-chip" + (e.pinned ? " kd-pin" : "");
-        c.title = (e.positive || e.negative || "").slice(0, 300);
-        c.innerHTML = esc(e.name) + `<span class="kd-uses">${e.uses}</span>`;
+        c.className = "kd-pbox-chip"
+          + (e.pinned ? " kd-pin" : "")
+          + (insText(ta, e) ? " kd-used" : "");
+        const content = e.positive || e.negative || "";
+        const full = e.name || String(content).slice(0, 20);
+        // 常用按钮只放缩名，最多 4 个字；完整名字/内容看悬停提示或面板
+        const short = Array.from(full).slice(0, 4).join("") || "…";
+        c.title = full + (content ? "\n" + String(content).slice(0, 300) : "");
+        c.innerHTML = esc(short);   // 只放缩名；置顶的靠边框颜色区分
         c.onclick = (ev) => {
           ev.stopPropagation();
-          const add = e.positive || e.negative || "";
-          if (!add) return;
-          const cur = ta.value.trim();
-          ta.value = cur ? cur + ", " + add : add;
-          sync();
-          api("/use", { id: e.id }).catch(() => { /* 静默 */ });
-          toast(t("Appended \"{name}\"", { name: e.name }));
+          const res = toggleEntry(ta, sync, e);
+          if (!res) return;
+          if (res === "inserted") {
+            api(USE_URL[kind], { id: e.id }).catch(() => { /* 静默 */ });
+            e.uses = (e.uses || 0) + 1;
+            toast(t('Inserted "{name}"', { name: full }));
+          } else {
+            toast(t('Removed "{name}"', { name: full }));
+          }
+          paintChips();
+          if (libOwner === node && libRepaint) libRepaint();
         };
         chips.appendChild(c);
       });
     } catch (_) { /* 静默 */ }
   }
 
-  // 同一个面板两种内容：再点一次当前开着的那个就关，点另一个直接切过去
-  function togglePanel(mode) {
-    if (libOwner === node && libPanel && libMode === mode) { closeLib(); return; }
-    openLib(node, mode);
+  // 三个按钮各自打开面板的对应内容：再点当前那个就关，点另一个原地切换
+  function togglePanel(tab) {
+    if (libOwner === node && libPanel) {
+      if (libTab === tab) { closeLib(); return; }
+      libTab = tab;
+      libState.editId = null;
+      libState.phraseEditId = null;
+      libState.phraseFormOpen = false;
+      libState.clearArmed = 0;
+      markPboxBtns(node, tab);
+      if (libRepaint) libRepaint();
+      if (libRefresh) libRefresh();
+      return;
+    }
+    openLib(node, tab);
   }
-  libBtn.onclick = () => togglePanel("lib");
-  histBtn.onclick = () => togglePanel("hist");
-  saveBtn.onclick = async () => {
+  libBtn.onclick = () => togglePanel("prompts");
+  phraseBtn.onclick = () => togglePanel("phrases");
+  histBtn.onclick = () => togglePanel("history");
+  // 「保存」先问去处：语库（长提示词 .md）还是词库（短词，落在「未分类」）
+  async function saveCurrent(to) {
     const text = ta.value.trim();
     if (!text) { toast(t("The input box is empty"), true); return; }
-    const r = await api("/save", { name: text.slice(0, 20), type: "精选", positive: text, usage: [useSel.value] });
-    toast(r.ok ? (r.deduped ? t("Already in the library") : t("Saved as preset ({usage})", { usage: usageLabel(useSel.value) })) : t("Save failed"), !r.ok);
-    if (r.ok) libTouch();
-  };
+    try {
+      if (to === "tags") {
+        const r = await api("/phrases/save", { name: text.slice(0, 20), positive: text, category: "" });
+        if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+        applyPhraseItemState(r.item);
+        toast(r.deduped ? t("Already in the tag library") : t("Saved to the tag library (Uncategorized)"));
+      } else {
+        const r = await api("/save", { name: text.slice(0, 20), type: "精选", positive: text, usage: [useSel.value] });
+        if (!r.ok) { toast(t("Save failed"), true); return; }
+        libState.q.prompts = "";      // 保存后清掉搜索，刚存的那条一定看得见
+        toast(r.deduped ? t("Already in the library")
+          : t("Saved under {usage}", { usage: usageLabel(useSel.value) }));
+      }
+      libTouch();
+    } catch (e) {
+      toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+    }
+  }
+  function openSaveMenu() {
+    if (!ta.value.trim()) { toast(t("The input box is empty"), true); return; }
+    closeMenu();
+    const m = document.createElement("div");
+    m.className = "kd-menu";
+    m.innerHTML = `
+      <div class="kd-menu-title">${t("Save to…")}</div>
+      <button data-a="lib">→ ${t("Save to prompt library")}</button>
+      <button data-a="tags">＋ ${t("Save to tag library")}</button>`;
+    menuEl = m;                       // 复用全局菜单：点别处/Escape 都能收掉
+    const r = saveBtn.getBoundingClientRect();
+    const h = 96;
+    m.style.left = Math.max(6, Math.min(r.left, window.innerWidth - 190)) + "px";
+    m.style.top = (r.bottom + 6 + h <= window.innerHeight ? r.bottom + 6 : Math.max(6, r.top - h - 6)) + "px";
+    document.body.appendChild(m);
+    void m.offsetWidth;
+    m.classList.add("kd-in");
+    m.querySelector("[data-a=lib]").onclick = () => { closeMenu(); saveCurrent("lib"); };
+    m.querySelector("[data-a=tags]").onclick = () => { closeMenu(); saveCurrent("tags"); };
+  }
+  saveBtn.onclick = openSaveMenu;
   let clearArmed = 0;
   clearBtn.onclick = () => {
     if (!ta.value) return;
@@ -637,13 +1401,20 @@ function buildPromptBox(node) {
     const r = typeof prevCfg === "function" ? prevCfg.apply(this, arguments) : undefined;
     setTimeout(() => {
       ta.value = String(pw.value || "");
+      ta.__kdIns = null;          // 工作流切换/重载：旧的插入记录不再可信
       useSel.value = String((uw && uw.value) || USAGES[0]);
       paintChips();
     }, 0);
     return r;
   };
 
-  node.__kdPbox = { ta, sync, pw, useSel, paintChips, libBtn, histBtn };
+  const prevRemoved = node.onRemoved;
+  node.onRemoved = function () {
+    if (libOwner === node) closeLib(true);   // 节点被删了，旁边开着的面板也一起收掉
+    return typeof prevRemoved === "function" ? prevRemoved.apply(this, arguments) : undefined;
+  };
+
+  node.__kdPbox = { ta, sync, pw, useSel, paintChips, libBtn, phraseBtn, histBtn };
   paintChips();
 }
 
@@ -664,7 +1435,8 @@ function refreshAllPbox() {
 //      才发。提示词框返回的是普通元组（STRING 直通），所以这个事件对本节点永远不来；
 //   ② 接收要 `api.addEventListener(type, handler)`（api 是 EventTarget，事件数据在 .detail），
 //      往 api.executed 赋函数在新前端里没人调用。
-// 结论：节点侧的自动历史一条都没写过，00_History 里那批全是 PS 面板那边存进去的。
+// 结论：节点侧的自动历史一条都没写过；旧版本的 00_History 是 PS 面板存进去的，
+// 现在已迁进 .kedou/history.json（不再生成 .md）。
 // 换成 execution_success：整条工作流全部跑成功才发一次，语义正好是「我运行了几次」，
 // 而且带 prompt_id —— 用它挡住同一轮重复记录（老写法每来一个事件就全图扫一遍）。
 function recordRunPrompts(onFail, only) {

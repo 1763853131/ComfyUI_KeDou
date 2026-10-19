@@ -7,5 +7,8 @@ __pycache__/
 *.bak-*
 _newver/
 
+# Hindsight 记忆库开关：本机 opt-in 标记，不随插件分发
+.hindsight.json
+
 # Visual Studio 装的可嵌入 Python 运行时（36MB，与插件无关）
 /Python/

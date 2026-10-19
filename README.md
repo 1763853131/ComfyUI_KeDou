@@ -15,12 +15,28 @@ ComfyUI 本身没有"列出我的工作流和它们的参数"这样的接口，�
 
 ```
 custom_nodes/ComfyUI_KeDou/
-├── __init__.py          # HTTP 路由 + 自定义节点
-├── ui_to_api.py         # 界面格式 → API 格式转换
-├── web/kedou_media.js   # 节点前端扩展（缩略图网格 / 媒体选择器）
-├── pyproject.toml       # 节点元数据（Comfy Registry / Manager）
+├── __init__.py              # 入口：加载内部包、注册路由/钩子、导出节点
+├── kedou_bridge/            # 后端实现（按职责拆分）
+│   ├── paths.py             # 根目录 / 用户目录 / 工作流目录 / 越界检查
+│   ├── common.py            # 应用解析共用常量与纯函数
+│   ├── registry.py          # object_info、控件声明顺序与控件规格
+│   ├── state.py             # sidecar 状态 + 写接口令牌/来源鉴权
+│   ├── apps.py              # 应用发现、规格、回写、UI→API、执行图
+│   ├── pack.py              # 打包候选、kapp 校验/落盘、编辑回写
+│   ├── media.py             # 媒体清单、媒体选取、真缩略图
+│   ├── nodes.py             # 两个自定义节点 + 空槽连线清理
+│   └── routes.py            # /ps/* HTTP 路由注册
+├── ui_to_api.py             # 界面格式 → API 格式转换
+├── kedou_path_fix.py        # 模型裸文件名兜底查找
+├── prompt_vault/            # vendored 提示词库实现
+├── web/                     # 节点前端扩展（加载器 / 提示词框 / 打包面板）
+├── locales/zh/main.json     # 中文文案
+├── pyproject.toml           # 节点元数据（Comfy Registry / Manager）
 └── LICENSE
 ```
+
+> 拆分后入口文件只负责「加载 + 接线」；旧代码里的 `kedou.list_apps` 这类名字仍可用，
+> 会动态转发到对应模块，不会拿到启动时的旧快照。
 
 ---
 
@@ -39,9 +55,15 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256`，webp 落盘缓存（ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡） |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
 | `/ps/pack` | POST | 按已有工作流文件生成 `<stem>.kapp.json` 应用包 |
-| `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘 |
-| `/ps/prompts` | GET | 词库清单，连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
-| `/ps/prompts/save` \| `history` \| `delete` \| `use` | POST | 存条目 / 自动历史（hash 去重）/ 删除（进 `.trash`）/ 计次 |
+| `/ps/pack/apps` | GET | 列出可编辑的 `.kapp.json` 应用包（打包面板「编辑已打包的应用」用） |
+| `/ps/apps/{app_id}/package` | GET | 取原始 kapp 包（`graph` + `params` + `outputs`），供打包面板回填编辑 |
+| `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘；带 `target` 时回写同一个 `.kapp.json` |
+| `/ps/prompts` | GET | **语库**清单（只含主动保存的 `.md`，不含历史），连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
+| `/ps/prompts/save` \| `delete` \| `use` | POST | 存语库条目 / 删除（进 `.trash`）/ 计次 |
+| `/ps/prompts/history` | GET / POST | 自动历史：GET 列表（`?use=&q=`），POST 记录（hash 去重、50 条封顶） |
+| `/ps/prompts/history/delete` \| `history/clear` | POST | 删一条 / 清空历史 |
+| `/ps/prompts/phrases` | GET | **词库**清单（短词/标签，带分组、分类、收藏、计次） |
+| `/ps/prompts/phrases/save` \| `delete` \| `use` | POST | 新建/编辑词、删除、计次 |
 | `/ps/prompts/vault` | POST | 改词库目录（写 `user/default/kedou_prompt_vault.txt`）；传空串回默认 |
 
 ### 二、自定义节点
@@ -49,26 +71,48 @@ custom_nodes/ComfyUI_KeDou/
 | 节点 | 显示名 | 说明 |
 |---|---|---|
 | `KedouImageLoader` | 蝌蚪图片加载器 | 直接在节点上选图（缩略图网格，由 `web/kedou_media.js` 渲染），输出一批图像。 |
-| `KedouPromptBox` | 蝌蚪提示词输入框 | 提示词输入 + 按用途过滤的词库（`web/promptlib.js`），直通输出 prompt。 |
+| `KedouPromptBox` | 蝌蚪提示词输入框 | 提示词输入 + 按用途过滤的语库/词库/历史（`web/promptlib.js`），直通输出 prompt。 |
 
 ---
 
-## 提示词库
+## 两种库 + 历史
 
-数据就是一条条 `.md`，没有数据库，Obsidian 装不装都不影响读写。
+节点上有三个按钮：**语库**（长提示词）、**词库**（短词/标签）、**历史**（自动记录）。
+点哪个就打开哪个列表，面板内部不再分标签页，少一次点击；面板贴在提示词输入框正右方，
+右边放不下会翻到左边，不会盖住输入框。节点下方的常用按钮只放置顶语库
+（只显示缩名，最多 4 个字）；**词库和历史不进常用区**，避免短词和频繁变动的历史把这里挤满。
+
+「保存」会先弹去处：**保存到语库**（写 `.md`）或 **保存到词库**（写 JSON，落在「我的词 · 未分类」）。
+
+- **语库**：一条一个 `.md`，只有点「保存」/ 手动新建时才写文档；Obsidian 装不装都不影响读写。
+- **词库**：短词放 `.kedou/phrases.json`，首次使用从 `prompt_vault/phrases_seed.json` 播种，
+  按「大组 → 分类」浏览，支持收藏、搜索、新建/编辑/删除；新建/移入的词默认进
+  「我的词 · 未分类」，并按更新时间排在前面。短词只有主动增改时才写盘。
+- **历史**：放 `.kedou/history.json`，出图后自动记录，hash 去重、50 条封顶。
+  历史**不会**生成 `.md`，也不会混进语库；旧版本留在 `00_History` 的历史笔记会在首次访问时
+  迁进 JSON，原文件移入 `.trash`（可找回）。
+
+右键还能跨库转换：
+
+- 历史 → **添加到语库** / **添加到词库**（复制一份，历史保留）
+- 词库 → **移动到语库**（先建长提示词，成功后再删短词）
+- 语库 → **移动到词库**（先建短词，成功后再删 `.md`）
 
 词库**逻辑**在 `prompt_vault/` 包里 —— 那是插件自带的一份 vendored 副本（上游是独立仓库，
 改完用它的 `sync.py` 推过来），所以 clone 本插件即可用，不需要额外装什么。
 
-词库**数据**的位置按这个顺序解析，谁装都先长在一个能用的地方，不写死任何人的盘符：
+库位置按这个顺序解析，谁装都先长在一个能用的地方，不写死任何人的盘符：
 
 1. 环境变量 `KEDOU_PROMPT_VAULT`
-2. `user/default/kedou_prompt_vault.txt` 首行 ← 词库面板底部「改路径」写的就是它
+2. `user/default/kedou_prompt_vault.txt` 首行 ← 库面板底部「改路径」写的就是它
 3. ComfyUI 设置项 `Kedou.PromptVault`（手改 `user/default/comfy.settings.json`）
 4. 默认 `user/default/kedou_prompts`（第一次建库会投放 3 条示例讲格式）
 
 面板底部常驻显示当前实际在读的目录和来源，指错了能立刻看出来。
-排查或改逻辑时看 `prompt_vault/`，接口是上面那五个 `/ps/prompts*`。
+排查或改逻辑时看 `prompt_vault/`，接口是上面的 `/ps/prompts*`。
+
+节点上的条目是「点一下插入、再点移除」：插到当前光标处，前后按已有标点自动补 `, `，
+不会重复追加；已插入的条目会高亮。不需要先理解追加/替换之类的模式。
 
 ---
 
@@ -101,6 +145,18 @@ custom_nodes/ComfyUI_KeDou/
 
 > 设计取舍：官方应用模式有三笔"税"——参数靠勾选、`widgets_values` 按位置对位、每次运行都要翻译一遍。
 > 应用包把这三样全部显式化，插件本身保持**纯通道**：声明是什么就是什么，不对任何具体应用做特判。
+
+### 编辑已打包的应用
+
+打包面板顶部的「编辑已打包的应用」下拉会列出工作流目录里所有 `.kapp.json`：
+
+- 选中后，应用里的参数会映射回当前画布的候选行并自动勾选；当前工作流里已经不存在
+  的参数会收进「当前工作流中不存在」分组，仍可改标签 / 控件类型或取消勾选。
+- **默认只改参数声明，原 `graph` 和 `outputs` 原样保留**，不会因为当前画布不同而悄悄换掉应用跑的东西。
+  需要换图时勾选「用当前工作流更新图」，这时才会重新抓 API 图并重算输出节点。
+- 编辑时「应用名」只改包内的显示名，**文件名保持不变**；保存通过 `target` 回写同一个文件。
+- 保留原图时，新勾选的参数必须真的存在于原图里（且不能是连线输入），否则前端直接提示，
+  后端 `_kapp_validate` 仍会再兜一层。
 
 ---
 

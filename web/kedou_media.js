@@ -1173,7 +1173,15 @@ app.registerExtension({
 // 的 output 即 API 格式）与勾选参数 POST 到 /ps/pack/save。不依赖工作流先保存。
 // 这套逻辑与上面的 KedouImageLoader 面板完全独立，互不影响。
 
-const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media"];
+const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media", "prompt"];
+// 下拉里显示的名字：值是落进 kapp 的协议字段，不能翻；只有显示名走 t()。
+// 说明：toggle 在 PS 面板里渲染成真开关（spec.type == BOOLEAN → .sw），所以叫「开关」；
+// prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框。
+const KP_WIDGET_LABEL = {
+  text: "Text", number: "Number", toggle: "Switch",
+  combo: "Dropdown", image: "Image", kedou_media: "Kedou image set",
+  prompt: "Prompt box",
+};
 // 主题适配（2026-09-28）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
 // 实测取自本机 comfyui_frontend_package 的 main-*.css：
 //   随主题变（可用）：--fg-color(黑#fff/白#000) --bg-color --content-bg(#4e4e4e/#e0e0e0)
@@ -1198,7 +1206,11 @@ const KPCSS = [
   ".kp-field label{font-size:11px;color:var(--fg-color,#e7e7ea);opacity:.62;}",
   ".kp-field input,.kp-field textarea{background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);",
   "color:var(--fg-color,#e7e7ea);font:inherit;padding:6px 8px;border-radius:7px;outline:none;width:100%;box-sizing:border-box;}",
-  ".kp-field input:focus,.kp-field textarea:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kp-field select{background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);",
+  "color:var(--fg-color,#e7e7ea);font:inherit;padding:6px 8px;border-radius:7px;outline:none;width:100%;box-sizing:border-box;}",
+  ".kp-field input:focus,.kp-field textarea:focus,.kp-field select:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kp-chk{display:flex;align-items:center;gap:6px;font-size:11.5px;cursor:pointer;user-select:none;opacity:.9;}",
+  ".kp-chk input{width:14px;height:14px;accent-color:var(--p-primary-color,#4a7dff);cursor:pointer;flex:none;}",
   ".kp-toolbar{display:flex;align-items:center;gap:8px;}",
   ".kp-tbtn{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:11px;",
   "padding:4px 10px;border-radius:7px;cursor:pointer;}",
@@ -1317,10 +1329,17 @@ function kpPreview(v, widget) {
   return s.length > 40 ? s.slice(0, 40) + "…" : s;
 }
 
+// 「提示词框」复合控件：提示词主体输入 -> 同节点里承载用途的输入名（没有则空串）。
+// 与 KedouImageLoader / LoadImage 两处品牌特判同性质：只认本家节点，不按应用推断。
+function promptUsageOf(ntype, name) {
+  return (ntype === "KedouPromptBox" && name === "prompt_state") ? "usage" : "";
+}
+
 function suggestWidget(node, w) {
   const ntype = node.type || node.comfyClass || "";
   if (ntype === "KedouImageLoader" && w.name === "media_state") return "kedou_media";
   if (ntype === "LoadImage" && w.name === "image") return "image";
+  if (promptUsageOf(ntype, w.name)) return "prompt";
   if (w.type === "INT" || w.type === "FLOAT") return "number";
   if (w.type === "BOOLEAN") return "toggle";
   if (w.type === "COMBO") return "combo";
@@ -1350,9 +1369,17 @@ function collectCandidates() {
     const ntype = node.type || node.comfyClass || "";
     const title = (node.title || "").trim();
     const widgets = node.widgets || [];
+    // 被「提示词框」吸收的输入不再单独列为候选（否则应用里会出现两个用途下拉）
+    const absorbed = new Set();
+    for (const w of widgets) {
+      const u = promptUsageOf(ntype, w && w.name);
+      if (u) absorbed.add(u);
+    }
     for (const w of widgets) {
       if (w.name === "control_after_generate" || w.type === "control_after_generate") continue;
-      if (w.name === "kedou_media") continue;       // DOM 控件（媒体选择器 UI 本身），不是值
+      if (absorbed.has(w.name)) continue;
+      // DOM 控件是节点自绘的面板 UI 本身（图片选择器 / 提示词输入框），没有值，不能当参数
+      if (w.type === "div" || w.name === "kedou_media" || w.name === "kedou_promptbox") continue;
       if (w.type === "converted-widget" &&
           !(ntype === "KedouImageLoader" && w.name === "media_state")) continue;  // 隐藏格
       // 已转换为输入且连着上游的 widget：值由上游驱动，打包成可调参数会在运行时破坏连线，故不提供勾选
@@ -1369,10 +1396,21 @@ function collectCandidates() {
       if (typeof opt.step === "number") step = opt.step;
       const options = comboValuesOf(w) ? comboValuesOf(w).slice() : null;
       const multiline = !!opt.multiline;
+      // 复合控件的能力项一起存进候选：用户把建议类型改掉再改回来时不丢用途信息
+      const usage = promptUsageOf(ntype, w.name);
+      let usageInput, usageOptions, usageDefault;
+      if (usage) {
+        const uw = widgets.find((x) => x && x.name === usage);
+        usageInput = usage;
+        const uv = uw ? comboValuesOf(uw) : null;
+        if (uv && uv.length) usageOptions = uv.slice();
+        usageDefault = uw ? uw.value : undefined;
+      }
       out.push({
         node: String(node.id), input: w.name, widget, default: w.value,
         node_type: ntype, node_title: title,
         min, max, step, options, multiline,
+        usage_input: usageInput, usage_options: usageOptions, usage_default: usageDefault,
         label: title || w.name,
         valuePreview: kpPreview(w.value, widget),
       });
@@ -1425,6 +1463,14 @@ function openPackPanel(hostEl) {
   const body = document.createElement("div");
   body.className = "kp-body";
 
+  const editField = document.createElement("div");
+  editField.className = "kp-field";
+  const editLab = document.createElement("label");
+  editLab.textContent = t("Edit packaged app");
+  const editSel = document.createElement("select");
+  editSel.appendChild(new Option(t("New app"), ""));
+  editField.append(editLab, editSel);
+
   const nameField = document.createElement("div");
   nameField.className = "kp-field";
   const nameLab = document.createElement("label");
@@ -1440,6 +1486,15 @@ function openPackPanel(hostEl) {
   const descInput = document.createElement("input");
   descInput.placeholder = t("One sentence describing what this app does");
   descField.append(descLab, descInput);
+
+  const graphField = document.createElement("label");
+  graphField.className = "kp-chk";
+  graphField.style.display = "none";
+  const graphCb = document.createElement("input");
+  graphCb.type = "checkbox";
+  const graphSpan = document.createElement("span");
+  graphSpan.textContent = t("Update graph from current workflow");
+  graphField.append(graphCb, graphSpan);
 
   const toolbar = document.createElement("div");
   toolbar.className = "kp-toolbar";
@@ -1475,7 +1530,7 @@ function openPackPanel(hostEl) {
   gen.textContent = t("Generate app package");
   ft.appendChild(gen);
 
-  body.append(nameField, descField, toolbar, rowsWrap, err);
+  body.append(editField, nameField, descField, graphField, toolbar, rowsWrap, err);
   if (sidebar) {
     // 侧栏模式：无标题栏/遮罩/Esc，内容直接挂进页签
     panel.append(body, ft);
@@ -1572,6 +1627,43 @@ function openPackPanel(hostEl) {
     g.caretEl.style.transform = "";
   };
 
+  // 建一行参数（画布候选 / 已打包应用里的孤立参数共用）
+  const addRow = (c, g) => {
+    const row = document.createElement("div");
+    row.className = "kp-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    const box = document.createElement("div");
+    box.className = "kp-box";
+    const lab = document.createElement("input");
+    lab.className = "kp-lab";
+    lab.value = c.label;
+    const sub = document.createElement("div");
+    sub.className = "kp-sub";
+    sub.textContent = "#" + c.node + " · " + c.input;
+    const val = document.createElement("div");
+    val.className = "kp-val";
+    val.textContent = t("Current value: {v}", { v: c.valuePreview });
+    box.append(lab, sub, val);
+    const sel = document.createElement("select");
+    sel.className = "kp-sel";
+    for (const opt of KP_WIDGETS) {
+      const o = document.createElement("option");
+      o.value = opt;
+      o.textContent = t(KP_WIDGET_LABEL[opt] || opt);
+      if (opt === c.widget) o.selected = true;
+      sel.appendChild(o);
+    }
+    if (KP_WIDGETS.indexOf(c.widget) < 0) sel.value = "text";
+    row.append(cb, box, sel);
+    g.bodyEl.appendChild(row);
+    const entry = { cb, lab, sel, c, el: row, valEl: val, existingParam: null };
+    rows.push(entry);
+    g.rows.push(entry);
+    cb.onchange = () => { updateCount(); if (onlySel) applyFilter(); };
+    return entry;
+  };
+
   for (const [nodeId, list] of byNode) {
     const g = { node: nodeId, rows: [], open: false };
     const grp = document.createElement("div");
@@ -1608,44 +1700,181 @@ function openPackPanel(hostEl) {
     rowsWrap.appendChild(grp);
     Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp, ttlEl: ttl });
 
-    for (const c of list) {
-      const row = document.createElement("div");
-      row.className = "kp-row";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      const box = document.createElement("div");
-      box.className = "kp-box";
-      const lab = document.createElement("input");
-      lab.className = "kp-lab";
-      lab.value = c.label;
-      const sub = document.createElement("div");
-      sub.className = "kp-sub";
-      sub.textContent = "#" + c.node + " · " + c.input;
-      const val = document.createElement("div");
-      val.className = "kp-val";
-      val.textContent = t("Current value: {v}", { v: c.valuePreview });
-      box.append(lab, sub, val);
-      const sel = document.createElement("select");
-      sel.className = "kp-sel";
-      for (const opt of KP_WIDGETS) {
-        const o = document.createElement("option");
-        o.value = opt;
-        o.textContent = opt;
-        if (opt === c.widget) o.selected = true;
-        sel.appendChild(o);
-      }
-      row.append(cb, box, sel);
-      bodyEl.appendChild(row);
-      const entry = { cb, lab, sel, c, el: row, valEl: val };
-      rows.push(entry);
-      g.rows.push(entry);
-      cb.onchange = () => { updateCount(); if (onlySel) applyFilter(); };
-    }
+    for (const c of list) addRow(c, g);
     groups.push(g);
   }
   updateCount();
 
-  // 画布点选联动：进入后点画布上的节点，这里自动展开并滚动到该节点分组
+  // ---- 编辑已打包应用 ----
+  // 选一个 .kapp.json 后，把它的参数映射回当前画布的候选行；当前画布不存在的
+  // 参数放进「Not in current workflow」组，仍可改标签/控件或取消勾选。
+  let editing = null;        // {file, kapp}
+  let orphanGroup = null;
+
+  const setPrimaryLabel = () => {
+    gen.textContent = editing ? t("Save changes") : t("Generate app package");
+  };
+  const removeOrphanGroup = () => {
+    if (!orphanGroup) return;
+    const gi = groups.indexOf(orphanGroup);
+    if (gi >= 0) groups.splice(gi, 1);
+    orphanGroup.grpEl.remove();
+    for (const r of orphanGroup.rows) {
+      const ri = rows.indexOf(r);
+      if (ri >= 0) rows.splice(ri, 1);
+    }
+    orphanGroup = null;
+    if (emptyEl) emptyEl.style.display = "";
+  };
+  const resetRows = () => {
+    for (const r of rows) {
+      r.cb.checked = false;
+      r.lab.value = r.c.label;
+      r.sel.value = KP_WIDGETS.indexOf(r.c.widget) >= 0 ? r.c.widget : "text";
+      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, r.sel.value) });
+      r.existingParam = null;
+    }
+  };
+  const ensureOrphanGroup = () => {
+    if (orphanGroup) return orphanGroup;
+    const g = { node: "__orphan__", rows: [], open: true };
+    const grp = document.createElement("div");
+    grp.className = "kp-grp";
+    const head = document.createElement("div");
+    head.className = "kp-ghead";
+    const caret = document.createElement("span");
+    caret.className = "kp-gcaret";
+    caret.textContent = "▶";
+    caret.style.transform = "rotate(90deg)";
+    const ttl = document.createElement("span");
+    ttl.className = "kp-gtitle";
+    ttl.textContent = t("Not in current workflow");
+    const gcnt = document.createElement("span");
+    gcnt.className = "kp-gcnt";
+    const selAll = document.createElement("button");
+    selAll.className = "kp-gsel";
+    selAll.textContent = t("Unselect all");
+    selAll.title = t("Select all / none for this node");
+    selAll.onclick = (e) => {
+      e.stopPropagation();
+      const all = g.rows.length > 0 && g.rows.every((r) => r.cb.checked);
+      g.rows.forEach((r) => { r.cb.checked = !all; });
+      updateCount(); applyFilter();
+    };
+    head.append(caret, ttl, gcnt, selAll);
+    head.onclick = () => { g.open ? closeGroup(g) : openGroup(g, false); };
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "kp-gbody";
+    grp.append(head, bodyEl);
+    rowsWrap.appendChild(grp);
+    Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp, ttlEl: ttl });
+    groups.push(g);
+    orphanGroup = g;
+    if (emptyEl) emptyEl.style.display = "none";
+    return g;
+  };
+  const applyEditing = (file, kapp) => {
+    editing = { file, kapp: kapp || {} };
+    removeOrphanGroup();
+    resetRows();
+    nameInput.value = String(editing.kapp.name || "");
+    nameInput.title = t("For an existing app, this only changes the display name; the file name stays.");
+    descInput.value = String(editing.kapp.desc || "");
+    graphCb.checked = false;
+    graphField.style.display = "";
+    const params = Array.isArray(editing.kapp.params) ? editing.kapp.params : [];
+    for (const p of params) {
+      if (!p || typeof p !== "object") continue;
+      const nodeId = String(p.node == null ? "" : p.node);
+      const input = String(p.input == null ? "" : p.input);
+      const widget = KP_WIDGETS.indexOf(p.widget) >= 0 ? p.widget : "text";
+      let r = rows.find((x) => x.c.node === nodeId && x.c.input === input);
+      if (!r) {
+        r = addRow({
+          node: nodeId, input, widget,
+          default: p.default,
+          node_type: p.node_type || "", node_title: p.node_title || "",
+          label: p.label || input,
+          valuePreview: kpPreview(p.default, widget),
+          min: p.min, max: p.max, step: p.step,
+          options: Array.isArray(p.options) ? p.options : null,
+          multiline: !!p.multiline,
+          usage_input: p.usage_input,
+          usage_options: p.usage_options,
+          usage_default: p.usage_default,
+        }, ensureOrphanGroup());
+      }
+      r.cb.checked = true;
+      r.lab.value = String(p.label || input);
+      r.sel.value = widget;
+      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(p.default, widget) });
+      r.existingParam = p;
+    }
+    updateCount();
+    applyFilter();
+    setPrimaryLabel();
+    for (const g of groups) if (g.rows.some((r) => r.cb.checked)) openGroup(g, false);
+    err.textContent = "";
+  };
+  const resetEditor = () => {
+    editing = null;
+    removeOrphanGroup();
+    resetRows();
+    nameInput.value = defaultAppName();
+    nameInput.title = "";
+    descInput.value = "";
+    graphCb.checked = false;
+    graphField.style.display = "none";
+    updateCount();
+    applyFilter();
+    setPrimaryLabel();
+    err.textContent = "";
+  };
+
+  const loadApps = async () => {
+    try {
+      const r = await fetch("/ps/pack/apps");
+      let j = null;
+      try { j = await r.json(); } catch (_) { /* ignore */ }
+      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+      const cur = editSel.value;
+      while (editSel.options.length > 1) editSel.remove(1);
+      for (const a of (j.apps || [])) {
+        if (!a || a.error || !a.id) continue;
+        const o = document.createElement("option");
+        o.value = a.id;
+        o.textContent = String(a.name || a.id) + (a.param_count ? " · " + a.param_count : "");
+        editSel.appendChild(o);
+      }
+      if (cur) editSel.value = cur;
+    } catch (e) {
+      console.warn("[kedou] 打包应用列表加载失败", e);
+    }
+  };
+  loadApps();
+
+  let editReq = 0;            // 快速切换下拉时，丢弃过期的读取结果
+  editSel.onchange = async () => {
+    const id = editSel.value;
+    const seq = ++editReq;
+    if (!id) { resetEditor(); return; }
+    err.textContent = "";
+    try {
+      const r = await fetch("/ps/apps/" + encodeURIComponent(id) + "/package");
+      let j = null;
+      try { j = await r.json(); } catch (_) { /* ignore */ }
+      if (seq !== editReq) return;
+      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+      // target 相对工作流目录，回写时原样传回；file 只是展示路径（相对 ComfyUI 根）
+      applyEditing(j.target || j.file, j.kapp);
+    } catch (e) {
+      if (seq !== editReq) return;
+      const msg = serverError(e && e.message ? e.message : String(e));
+      editSel.value = "";
+      resetEditor();
+      err.textContent = t("Failed to load app: {msg}", { msg });
+    }
+  };
   let syncOn = false, lastSel = null;
   syncBtn.onclick = () => {
     syncOn = !syncOn;
@@ -1689,31 +1918,51 @@ function openPackPanel(hostEl) {
   };
 
   // ---- 语言切换重绘：面板内的固定文案整体再 paint 一次（浮层关闭时注销订阅） ----
+  // 行下方的「当前值」：编辑已有应用且不更新图时，以应用里存的 default 为准，
+  // 否则显示画布上的值。控件类型被改过时按改后的类型预览。
+  const rowPreview = (r) => {
+    const src = (r.existingParam && !graphCb.checked) ? r.existingParam : null;
+    const v = (src && Object.prototype.hasOwnProperty.call(src, "default")) ? src.default : r.c.default;
+    return kpPreview(v, r.sel.value);
+  };
+
+  // 切「用当前工作流更新图」时，值预览的来源跟着切换（应用里存的 default ↔ 画布当前值）
+  graphCb.onchange = () => {
+    for (const r of rows) r.valEl.textContent = t("Current value: {v}", { v: rowPreview(r) });
+  };
+
   const repaint = () => {
     titleEl.textContent = t("Pack app");
+    editLab.textContent = t("Edit packaged app");
+    editSel.options[0].textContent = t("New app");
     nameLab.textContent = t("App name");
     descLab.textContent = t("Description (optional)");
     descInput.placeholder = t("One sentence describing what this app does");
+    nameInput.title = editing ? t("For an existing app, this only changes the display name; the file name stays.") : "";
+    graphSpan.textContent = t("Update graph from current workflow");
     allBtn.title = t("Check all / uncheck all");
     syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
     syncBtn.title = t("When active, clicking a node on the canvas expands its parameters here");
     selOnlyBtn.textContent = t("Selected only");
     selOnlyBtn.title = t("Show only checked parameters");
-    if (!gen.disabled) gen.textContent = t("Generate app package");
+    if (!gen.disabled) setPrimaryLabel();
     for (const g of groups) {
-      g.ttlEl.textContent = groupNames[g.node];
+      g.ttlEl.textContent = (g === orphanGroup) ? t("Not in current workflow") : groupNames[g.node];
       g.ttlEl.title = g.ttlEl.textContent;
       g.selAllEl.title = t("Select all / none for this node");
     }
     for (const r of rows) {
-      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, r.c.widget) });
+      r.valEl.textContent = t("Current value: {v}", { v: rowPreview(r) });
     }
     if (emptyEl) emptyEl.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
     updateCount();   // 计数与「全选/取消全选」两态文案随之刷新
   };
   kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
 
-  gen.onclick = () => doGenerate({ nameInput, descInput, rows, err, gen });
+  gen.onclick = () => doGenerate({
+    nameInput, descInput, rows, err, gen, graphCb,
+    editing: () => editing,
+  });
 
   if (sidebar) {
     // 侧栏页签只挂载一次；用户切工作流后候选会全部指向旧节点 id。
@@ -1767,78 +2016,133 @@ async function doGenerate(ctx) {
     ctx.err.textContent = t("Workflow changed; reopen the pack panel and try again.");
     return;
   }
+  const editing = typeof ctx.editing === "function" ? ctx.editing() : null;
+  // 编辑已有应用时默认保留原 graph / outputs，只改参数声明；
+  // 勾了「用当前工作流更新图」才重新抓图（参数也得能在新图里找到）。
+  const updateGraph = !editing || !!(ctx.graphCb && ctx.graphCb.checked);
+  const primary = () => editing ? t("Save changes") : t("Generate app package");
   const checked = ctx.rows.filter((r) => r.cb.checked);
   if (!checked.length) {
     ctx.err.textContent = t("Select at least one parameter");
     return;
   }
   ctx.gen.disabled = true;
-  ctx.gen.textContent = t("Generating…");
+  ctx.gen.textContent = editing ? t("Saving…") : t("Generating…");
   ctx.err.textContent = "";
   let output;
-  try {
-    const pr = await app.graphToPrompt();
-    output = (pr && pr.output) || {};
-  } catch (e) {
-    ctx.err.textContent = t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
-    ctx.gen.disabled = false;
-    ctx.gen.textContent = t("Generate app package");
-    return;
+  if (updateGraph) {
+    try {
+      const pr = await app.graphToPrompt();
+      output = (pr && pr.output) || {};
+    } catch (e) {
+      ctx.err.textContent = t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
+      ctx.gen.disabled = false;
+      ctx.gen.textContent = primary();
+      return;
+    }
+  } else {
+    output = editing.kapp.graph || {};
   }
   const params = checked.map((r) => {
     const c = r.c;
-    const p = {
-      node: c.node, input: c.input,
-      label: r.lab.value.trim() || c.label,
-      widget: r.sel.value,
-      default: c.default,
-      node_type: c.node_type,
-      node_title: c.node_title,
-    };
+    // 保留原声明里的 default / 能力项等，只覆盖面板上能改的字段；
+    // 更新图时以画布当前值为准（图换了，旧默认值可能已无意义）。
+    const p = updateGraph ? {} : Object.assign({}, r.existingParam || {});
+    p.node = c.node;
+    p.input = c.input;
+    p.label = r.lab.value.trim() || c.label || p.label || c.input;
+    p.widget = r.sel.value;
+    if (updateGraph || !Object.prototype.hasOwnProperty.call(p, "default")) p.default = c.default;
+    if (updateGraph || !p.node_type) p.node_type = c.node_type || "";
+    if (updateGraph || !p.node_title) p.node_title = c.node_title || "";
     if (p.widget === "number") {
-      if (c.min != null) p.min = c.min;
-      if (c.max != null) p.max = c.max;
-      if (c.step != null) p.step = c.step;
+      if (updateGraph || p.min == null) { if (c.min != null) p.min = c.min; }
+      if (updateGraph || p.max == null) { if (c.max != null) p.max = c.max; }
+      if (updateGraph || p.step == null) { if (c.step != null) p.step = c.step; }
     }
-    if (p.widget === "combo" && c.options) p.options = c.options;
+    if (p.widget === "combo" && (!p.options || !p.options.length) && c.options) p.options = c.options;
     if (p.widget === "text" && c.multiline) p.multiline = true;
+    if (p.widget === "prompt") {
+      if (!p.usage_input && c.usage_input) p.usage_input = c.usage_input;
+      if (!p.usage_options && c.usage_options) p.usage_options = c.usage_options;
+      if (p.usage_default === undefined && c.usage_default !== undefined) p.usage_default = c.usage_default;
+    }
     return p;
   });
-  const outputs = [];
-  for (const id of Object.keys(output)) {
-    const ct = output[id] && output[id].class_type;
-    if (String(ct || "").toLowerCase().includes("save")) outputs.push(id);
+  // 保留原图时，新勾的参数必须真的存在于那张图里（后端也会拦，这里先给可读的提示）
+  if (!updateGraph) {
+    for (const p of params) {
+      const node = output[p.node];
+      const val = node && node.inputs ? node.inputs[p.input] : undefined;
+      if (!node) {
+        ctx.err.textContent = t("Parameter \"{label}\" points to node {node}, which is not in this app's graph. Uncheck it or update the graph from the current workflow.", { label: p.label, node: p.node });
+        ctx.gen.disabled = false;
+        ctx.gen.textContent = primary();
+        return;
+      }
+      if (val === undefined) {
+        ctx.err.textContent = t("Parameter \"{label}\" ({node}:{input}) does not exist in this app's graph. Uncheck it or update the graph from the current workflow.", { label: p.label, node: p.node, input: p.input });
+        ctx.gen.disabled = false;
+        ctx.gen.textContent = primary();
+        return;
+      }
+      if (Array.isArray(val) && val.length === 2) {
+        ctx.err.textContent = t("Parameter \"{label}\" ({node}:{input}) is a linked input in this app's graph and cannot be edited.", { label: p.label, node: p.node, input: p.input });
+        ctx.gen.disabled = false;
+        ctx.gen.textContent = primary();
+        return;
+      }
+    }
   }
-  const kapp = {
+  let outputs;
+  if (updateGraph) {
+    outputs = [];
+    for (const id of Object.keys(output)) {
+      const ct = output[id] && output[id].class_type;
+      if (String(ct || "").toLowerCase().includes("save")) outputs.push(id);
+    }
+  } else if (Array.isArray(editing.kapp.outputs)) {
+    outputs = editing.kapp.outputs;
+  } else {
+    // 老包没声明 outputs：从保留的图里按 Save 节点补齐，别越存越空
+    outputs = [];
+    for (const id of Object.keys(output)) {
+      const ct = output[id] && output[id].class_type;
+      if (String(ct || "").toLowerCase().includes("save")) outputs.push(id);
+    }
+  }
+  const kapp = Object.assign({}, editing ? editing.kapp : {}, {
     kedou_app: 1,
-    name: ctx.nameInput.value.trim() || defaultAppName(),
+    name: ctx.nameInput.value.trim() || (editing && editing.kapp.name) || defaultAppName(),
     desc: ctx.descInput.value.trim(),
     graph: output,
     params,
     outputs,
-  };
+  });
+  const payload = { name: kapp.name, desc: kapp.desc, kapp };
+  if (editing) payload.target = editing.file;
   try {
     const resp = await fetch("/ps/pack/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: kapp.name, desc: kapp.desc, kapp }),
+      body: JSON.stringify(payload),
     });
     let j = null;
     try { j = await resp.json(); } catch (_) { /* ignore */ }
     if (!resp.ok || !j || !j.ok) {
       const msg = serverError((j && j.error) ? j.error : ("HTTP " + resp.status));
-      ctx.err.textContent = t("Generation failed: {msg}", { msg });
-      kpToast(t("Generation failed: {msg}", { msg }), true);
+      ctx.err.textContent = t(editing ? "Saving failed: {msg}" : "Generation failed: {msg}", { msg });
+      kpToast(t(editing ? "Saving failed: {msg}" : "Generation failed: {msg}", { msg }), true);
     } else {
       const warns = (j.warnings && j.warnings.length) ? j.warnings : [];
       if (warns.length) {
         // 有提醒（如缺输入但不影响打包）时留着面板，用户看完错误行再手动关
         ctx.err.style.color = "";
         const list = warns.slice(0, 4).join(t("; ")) + (warns.length > 4 ? "…" : "");
-        ctx.err.textContent = t("Generated {file}, {w} warnings: {list}", { file: j.file || "", w: warns.length, list });
-        kpToast(t("Generated with {w} warnings — see details in the panel", { w: warns.length }), true);
+        ctx.err.textContent = t(editing ? "Saved {file} with {w} warnings: {list}" : "Generated {file}, {w} warnings: {list}", { file: j.file || "", w: warns.length, list });
+        kpToast(t(editing ? "Saved with {w} warnings — see details in the panel" : "Generated with {w} warnings — see details in the panel", { w: warns.length }), true);
       } else {
-        kpToast(t("Generated {file}; refresh the launcher to see it", { file: j.file || kapp.name }));
+        kpToast(t(editing ? "Saved changes to {file}" : "Generated {file}; refresh the launcher to see it", { file: j.file || kapp.name }));
         closePackPanel();
       }
     }
@@ -1848,7 +2152,7 @@ async function doGenerate(ctx) {
     kpToast(t("Request failed: {msg}", { msg }), true);
   } finally {
     ctx.gen.disabled = false;
-    ctx.gen.textContent = t("Generate app package");
+    ctx.gen.textContent = primary();
   }
 }
 
