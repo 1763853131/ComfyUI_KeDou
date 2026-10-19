@@ -20,6 +20,8 @@ ComfyUI_KeDou —— 修图工坊 · ComfyUI 桥接（v2：直接对接原生「
       POST /ps/apps/{app_id}/values    -> 把面板上的编辑写回工作流文件
       POST /ps/apps/{app_id}/graph     -> 界面格式转 API 格式（可直接 POST /prompt）
       GET  /ps/media                   -> {ok,items:[{name,subfolder,kind,tab,size,mtime,url}]}
+      POST /ps/media/pick              -> {ok,filename,copied}（输出目录的图先复制进输入目录，LoadImage 才认）
+      GET  /ps/thumb                   -> image/webp 真缩略图（?filename=&subfolder=&type=&w=）
       GET  /ps/pack/candidates         -> {ok,source,candidates:[{node,input,label,node_type,widget,default}]}
       POST /ps/pack                    -> {ok,file,param_count,node_count,outputs}（生成 .kapp.json）
       GET  /ps/prompts · POST /ps/prompts/{save,history,delete,use,vault}
@@ -241,7 +243,7 @@ def _split_ref(ref: str):
 
 # ---------------------------------------------------------------- 应用解析
 def is_app_workflow(data: dict, filename: str = "") -> bool:
-    if filename.lower().endswith("app.json"):
+    if filename.lower().endswith(".app.json"):
         return True
     extra = data.get("extra") or {}
     return bool(extra.get("linearMode"))
@@ -255,7 +257,7 @@ def find_app_files(root: str = None) -> list:
             if fn.startswith(".") or not fn.lower().endswith(".json"):
                 continue
             low = fn.lower()
-            if low.endswith(".kapp.json") or low.endswith("app.json"):
+            if low.endswith(".kapp.json") or low.endswith(".app.json"):
                 out.append(os.path.join(r, fn))
     # 同 stem 同时有 .kapp.json 与 .app.json：kapp 优先（自研格式遮蔽官方格式）
     by_stem = {}
@@ -293,6 +295,33 @@ def build_object_info(types) -> dict:
                             "optional": it.get("optional", {}) or {}},
                   "output": rt}
     return out
+
+
+# 只在前端存在的节点：API 图里没有它们，也不该报成「缺节点」
+_FRONT_ONLY = {"PrimitiveNode", "Reroute", "Note", "MarkdownNote", "__Reroute"}
+
+
+def _unknown_types(types, extra_ok=()) -> dict:
+    """本机节点注册表里查不到的类型 → {type: 出现次数}。注册表还没就绪时返回 {}（不误报）。"""
+    if not _NODE_MAP:
+        return {}
+    ok = _FRONT_ONLY | set(str(x) for x in extra_ok)
+    unk = {}
+    for t in types:
+        t = str(t)
+        if t in ok or t in _NODE_MAP:
+            continue
+        unk[t] = unk.get(t, 0) + 1
+    return unk
+
+
+def _unknown_in_ui(wf: dict) -> dict:
+    """UI 格式工作流：跳过静音/旁路节点与子图本身。"""
+    nodes = wf.get("nodes") or []
+    sub_ids = set(str(s.get("id")) for s in
+                  ((wf.get("definitions") or {}).get("subgraphs") or []))
+    return _unknown_types([str(n.get("type")) for n in nodes
+                           if int(n.get("mode", 0)) == 0], sub_ids)
 
 
 def _stem(filename: str) -> str:
@@ -342,10 +371,13 @@ def build_spec(path: str, object_info: dict = None) -> dict:
         node = by_id.get(str(node_id))
         if node is None:
             continue
-        wv = _widget_values(node)
-        default = wv[0] if wv else None
-        kind = _kind_of(node, widget, default)
         node_type = str(node.get("type") or "")
+        wv = _widget_values(node)
+        # 默认值必须按控件在 widgets_values 里的真实下标取；wv[0] 会把 seed 当成 steps
+        _vi = _widget_index(object_info, node_type, widget) if object_info else None
+        default = (wv[_vi] if (_vi is not None and _vi < len(wv))
+                   else (wv[0] if len(wv) == 1 else None))
+        kind = _kind_of(node, widget, default)
         item = {
             "node": str(node_id),
             "input": widget,
@@ -401,6 +433,7 @@ def build_spec(path: str, object_info: dict = None) -> dict:
         "has_subgraph": bool((wf.get("definitions") or {}).get("subgraphs")),
         "linear_mode": bool(meta.get("linearMode")),
         "filename": os.path.basename(path),
+        "unknown_types": _unknown_in_ui(wf),     # 本机没装的节点：面板载入时就提示，不等运行失败
     }
 
 
@@ -426,14 +459,30 @@ def list_apps() -> list:
     return apps
 
 
+def _find_app_path(app_id: str):
+    """按 id（去后缀的文件名）或完整文件名找应用；先精确匹配，再大小写不敏感兜底。"""
+    files = find_app_files()
+    want = str(app_id or "")
+    for p in files:
+        base = os.path.basename(p)
+        if _stem(base) == want or base == want:
+            return p
+    low = want.lower()
+    if low:
+        for p in files:
+            base = os.path.basename(p)
+            if _stem(base).lower() == low or base.lower() == low:
+                return p
+    return None
+
+
 def get_app(app_id: str, object_info: dict = None):
     if not _safe_id(app_id):
         return None
-    for p in find_app_files():
-        base = os.path.basename(p)
-        if _stem(base) == app_id or base == app_id:
-            return build_spec(p, object_info)
-    return None
+    p = _find_app_path(app_id)
+    if p is None:
+        return None
+    return build_spec(p, object_info)
 
 
 # ---------------------------------------------------------------- 控件下标
@@ -560,67 +609,134 @@ def widget_spec(object_info: dict, class_type: str, name: str) -> dict:
 
 # ---------------------------------------------------------------- 回写工作流
 def _find_path(app_id: str):
-    for p in find_app_files():
-        if _stem(os.path.basename(p)) == app_id or os.path.basename(p) == app_id:
-            return p
-    return None
+    return _find_app_path(app_id)
+
+
+def _dump_json_atomic(path: str, data, indent: int = 2) -> None:
+    """同目录临时文件 + os.replace：写到一半崩了也不会留下半截 JSON。"""
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, ensure_ascii=False, indent=indent)
+            f.write("\n")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
     """
     把 {“<节点id>:<控件名>”: 值} 写回工作流文件（方案 A：提示词库住在工作流里）。
-    第一次写之前会留一份 .bak 备份。
+    第一次写之前留一份 .bak（原始文件字节，不是改完之后的）。
+    同时支持 UI 格式（nodes/widgets_values）与 kapp（graph/inputs）。
     """
     path = _find_path(app_id)
     if path is None:
         return {"ok": False, "error": "app not found: %s" % app_id}
-
-    with open(path, "r", encoding="utf-8") as f:
-        wf = json.load(f)
-    by_id = {str(n.get("id")): n for n in (wf.get("nodes") or [])}
-    if object_info is None and _NODE_MAP:
-        object_info = build_object_info(sorted(set(str(n.get("type")) for n in wf.get("nodes") or [])))
+    try:
+        with open(path, "rb") as f:
+            original = f.read()
+        wf = json.loads(original.decode("utf-8-sig"))
+    except Exception as e:                           # noqa: BLE001
+        return {"ok": False, "error": "读取工作流失败：%s: %s" % (type(e).__name__, e)}
+    if not isinstance(wf, dict):
+        return {"ok": False, "error": "工作流文件不是 JSON 对象"}
 
     changed, failed = [], []
-    for key, val in (values or {}).items():
-        nid, _, widget = str(key).partition(":")
-        node = by_id.get(str(nid))
-        if node is None:
-            failed.append({"key": key, "why": "no such node"})
-            continue
-        ntype = str(node.get("type") or "")
-        idx = _widget_index(object_info, ntype, widget) if object_info else None
-        wv = node.get("widgets_values")
-        if idx is None:
-            # 没有 object_info 或名字对不上：退一步，若只有一个值就直接写
-            if isinstance(wv, list) and len(wv) == 1:
-                idx = 0
-            elif not isinstance(wv, list):
-                node["widgets_values"] = [val]
-                changed.append(key)
+    graph = wf.get("graph")
+    is_kapp = isinstance(graph, dict) and not isinstance(wf.get("nodes"), list)
+
+    if is_kapp:
+        # kapp（首推格式）：参数值直接住在 API 图的 inputs 里。
+        # 旧版只认 nodes，导致 kapp 的每一次回写都报 no such node。
+        params_by_key = {}
+        for p in (wf.get("params") or []):
+            if isinstance(p, dict):
+                params_by_key[(str(p.get("node")), str(p.get("input")))] = p
+        for key, val in (values or {}).items():
+            nid, _, widget = str(key).partition(":")
+            node = graph.get(str(nid))
+            if not isinstance(node, dict):
+                failed.append({"key": key, "why": "no such node"})
                 continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict) or widget not in inputs:
+                failed.append({"key": key, "why": "input 不存在"})
+                continue
+            cur = inputs.get(widget)
+            if (isinstance(cur, (list, tuple)) and len(cur) == 2
+                    and isinstance(cur[0], (str, int)) and not isinstance(cur[0], bool)):
+                failed.append({"key": key, "why": "该输入是连线，不能作为可调参数回写"})
+                continue
+            inputs[widget] = val
+            p = params_by_key.get((str(nid), widget))
+            if p is not None:
+                p["default"] = val
+            changed.append(key)
+    else:
+        nodes = wf.get("nodes") or []
+        by_id = {str(n.get("id")): n for n in nodes if isinstance(n, dict)}
+        if object_info is None and _NODE_MAP:
+            object_info = build_object_info(
+                sorted({str(n.get("type")) for n in nodes if isinstance(n, dict)}))
+
+        for key, val in (values or {}).items():
+            nid, _, widget = str(key).partition(":")
+            node = by_id.get(str(nid))
+            if node is None:
+                failed.append({"key": key, "why": "no such node"})
+                continue
+            ntype = str(node.get("type") or "")
+            idx = _widget_index(object_info, ntype, widget) if object_info else None
+            wv = node.get("widgets_values")
+            named = node.get("widgets_values_named")
+            wrote = False
+
+            # 新版前端可能同时写 widgets_values_named；有就一起更新
+            if isinstance(named, dict) and widget in named:
+                named[widget] = val
+                wrote = True
+
+            if isinstance(wv, dict):
+                # 关键：绝不能把整个 dict 替换成 [val]（会把其它控件全清空）
+                if widget in wv or idx is not None:
+                    wv[widget] = val
+                    wrote = True
+            elif isinstance(wv, list):
+                if idx is None and len(wv) == 1:
+                    idx = 0
+                if idx is not None:
+                    while len(wv) <= idx:
+                        wv.append(None)
+                    wv[idx] = val
+                    wrote = True
+            elif wv is None and idx is not None:
+                arr = [None] * (idx + 1)
+                arr[idx] = val
+                node["widgets_values"] = arr
+                wrote = True
+
+            if wrote:
+                changed.append(key)
             else:
                 failed.append({"key": key, "why": "cannot locate widget index"})
-                continue
-        if not isinstance(wv, list):
-            node["widgets_values"] = [val]
-            changed.append(key)
-            continue
-        while len(wv) <= idx:
-            wv.append(None)
-        wv[idx] = val
-        changed.append(key)
 
     if changed:
-        bak = path + ".bak"
-        if not os.path.exists(bak):
-            try:
-                with open(bak, "w", encoding="utf-8") as f:
-                    json.dump(wf, f, ensure_ascii=False, indent=2)
-            except Exception:                        # noqa: BLE001
-                pass
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(wf, f, ensure_ascii=False, indent=2)
+        try:
+            bak = path + ".bak"
+            if not os.path.exists(bak):
+                # 备份必须是修改前的原始字节
+                with open(bak, "wb") as f:
+                    f.write(original)
+            _dump_json_atomic(path, wf)
+        except Exception as e:                       # noqa: BLE001
+            return {"ok": False, "error": "写入失败：%s: %s" % (type(e).__name__, e),
+                    "changed": [], "failed": failed, "path": _rel(path)}
 
     return {"ok": not failed, "changed": changed, "failed": failed, "path": _rel(path)}
 
@@ -714,16 +830,7 @@ def build_graph(app_id: str, values: dict = None, object_info: dict = None) -> d
     applied, skipped, failed = _inject_values(graph, values)
 
     # 如实报出"被溶解掉的未知节点"，不静默（这类多半是未安装的自定义节点）
-    sub_ids = set(str(s.get("id")) for s in
-                  ((wf.get("definitions") or {}).get("subgraphs") or []))
-    front_ok = {"PrimitiveNode", "Reroute", "Note", "MarkdownNote", "__Reroute"}
-    unknown = {}
-    for n in nodes:
-        t = str(n.get("type"))
-        if int(n.get("mode", 0)) != 0 or t in sub_ids or t in front_ok:
-            continue
-        if object_info and t not in object_info:
-            unknown[t] = unknown.get(t, 0) + 1
+    unknown = _unknown_in_ui(wf)
 
     return {
         "ok": not failed,
@@ -860,6 +967,7 @@ def build_kapp_spec(path: str, object_info: dict = None) -> dict:
         "linear_mode": False,
         "format": "kapp",
         "filename": os.path.basename(path),
+        "unknown_types": _unknown_types([v.get("class_type") for v in graph.values()]),
     }
 
 
@@ -870,11 +978,6 @@ def _build_graph_kapp(path: str, values: dict, object_info: dict) -> dict:
     if object_info is None and _NODE_MAP:
         object_info = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()}))
     applied, skipped, failed = _inject_values(graph, values)
-    unknown = {}
-    for node in graph.values():
-        t = str(node.get("class_type"))
-        if object_info and t not in object_info:
-            unknown[t] = unknown.get(t, 0) + 1
     return {
         "ok": not failed,
         "graph": graph,
@@ -883,7 +986,7 @@ def _build_graph_kapp(path: str, values: dict, object_info: dict) -> dict:
         "skipped": skipped,
         "failed": failed,
         "float_notes": [],
-        "unknown_types": unknown,
+        "unknown_types": _unknown_types([v.get("class_type") for v in graph.values()]),
         "path": _rel(path),
     }
 
@@ -985,6 +1088,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
     except Exception as e:                       # noqa: BLE001
         return {"ok": False, "error": "UI→API 转换失败：%s: %s" % (type(e).__name__, e)}
     # 完整性校验（与 save_kapp 同一标准）：转换后的图 + 勾选参数一起验，坏包不落盘
+    warns = []
     vinfo = object_info or build_object_info(sorted({str(v.get("class_type")) for v in graph.values()}))
     if vinfo:
         errs, warns = _kapp_validate(graph, decls, vinfo)
@@ -1041,8 +1145,10 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         "outputs": outputs,
     }
     out_path = os.path.join(os.path.dirname(path), stem + ".kapp.json")
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(kapp, f, ensure_ascii=False, indent=1)
+    try:
+        _dump_json_atomic(out_path, kapp, indent=1)
+    except Exception as e:                       # noqa: BLE001
+        return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": _rel(out_path), "param_count": len(kparams),
             "node_count": len(graph), "outputs": outputs, "warnings": warns}
 
@@ -1113,8 +1219,9 @@ def _kapp_validate(graph: dict, params: list, object_info: dict):
         if node is None:
             errs.append("参数「%s」指向的节点 %s 不在打包图里" % (shown, nid))
             continue
-        val = (node.get("inputs") or {}).get(wname)
-        if val is None:
+        node_inputs = node.get("inputs") or {}
+        val = node_inputs.get(wname)
+        if wname not in node_inputs:
             errs.append("参数「%s」（%s:%s）不在打包图里 —— 画布上该输入是悬空连线，回画布修复后重新打包"
                         % (shown, nid, wname))
         elif isinstance(val, (list, tuple)) and len(val) == 2:
@@ -1138,7 +1245,11 @@ def save_kapp(name: str, desc, kapp) -> dict:
     """
     if not isinstance(kapp, dict):
         return {"ok": False, "error": "kapp 必须是对象（需含 kedou_app / graph / params）"}
-    if int(kapp.get("kedou_app") or 0) != 1:
+    try:
+        _ver = int(kapp.get("kedou_app") or 0)
+    except (TypeError, ValueError):
+        _ver = 0
+    if _ver != 1:
         return {"ok": False, "error": "kedou_app 必须为 1（不是合法的 kapp 包）"}
     graph = kapp.get("graph")
     if not isinstance(graph, dict) or not graph:
@@ -1183,8 +1294,7 @@ def save_kapp(name: str, desc, kapp) -> dict:
     if not _under(out_dir, out_path):              # 落盘前按真实路径复核，绝不出工作流目录
         return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
     try:
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(kapp, f, ensure_ascii=False, indent=1)
+        _dump_json_atomic(out_path, kapp, indent=1)
     except Exception as e:                        # noqa: BLE001
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": _rel(out_path), "param_count": len(params),
@@ -1214,20 +1324,28 @@ if _HAS_COMFY:
         return resp
 
     try:
-        PromptServer.instance.app.middlewares.append(_ps_cors_middleware)
+        # aiohttp 按列表顺序把第一个中间件包在最外层。ComfyUI 自带 origin_only
+        # 注册在前面，直接 append 的话我们永远轮不到；插到最前面才能真正回 CORS 头。
+        # 跨站请求仍会被后面的 origin_only 拦掉（我们只给它的 403 补头，不绕过它）。
+        PromptServer.instance.app.middlewares.insert(0, _ps_cors_middleware)
     except Exception as _e:                          # noqa: BLE001
-        print("[KeDou] CORS 中间件注册失败（插件可能仍能用，但跨域可能被拦）:", _e)
+        try:
+            PromptServer.instance.app.middlewares.append(_ps_cors_middleware)
+        except Exception:                            # noqa: BLE001
+            print("[KeDou] CORS 中间件注册失败（插件可能仍能用，但跨域可能被拦）:", _e)
 
     @PromptServer.instance.routes.get("/ps/apps")
     async def ps_apps_list(request):
-        return web.json_response({"apps": list_apps(), "root": WORKFLOW_DIR})
+        # 目录遍历 + 逐个解析工作流可能很慢，放线程池，别卡住 ComfyUI 的事件循环
+        return web.json_response({"apps": await asyncio.to_thread(list_apps),
+                                  "root": WORKFLOW_DIR})
 
     @PromptServer.instance.routes.get("/ps/apps/{app_id}")
     async def ps_apps_get(request):
         app_id = request.match_info.get("app_id", "")
         if not _safe_id(app_id):
             return web.json_response({"error": "bad id"}, status=400)
-        spec = get_app(app_id)
+        spec = await asyncio.to_thread(get_app, app_id)
         if spec is None:
             return web.json_response({"error": "app not found"}, status=404)
         return web.json_response(spec)
@@ -1246,7 +1364,7 @@ if _HAS_COMFY:
         if not isinstance(values, dict):
             return web.json_response(
                 {"error": 'body must be {"values": {"<node>:<widget>": value}}'}, status=400)
-        result = update_values(app_id, values)
+        result = await asyncio.to_thread(update_values, app_id, values)
         return web.json_response(result, status=200 if result.get("ok") else 400)
 
     @PromptServer.instance.routes.post("/ps/apps/{app_id}/graph")
@@ -1260,7 +1378,7 @@ if _HAS_COMFY:
         except Exception:                            # noqa: BLE001
             body = {}
         values = (body or {}).get("values") if isinstance(body, dict) else None
-        result = build_graph(app_id, values or {})
+        result = await asyncio.to_thread(build_graph, app_id, values or {})
         return web.json_response(result, status=200 if result.get("ok") else 400)
 
 
@@ -1279,9 +1397,10 @@ if _HAS_COMFY:
 #
 # 输出：选几张就几路 IMAGE，上限 IMG_SLOTS 路（2026-09-28 从 10 提到 50 —— 用户要「不再限制数量」）。
 # ComfyUI 的 RETURN_TYPES 必须静态声明，所以「不限制」只能体现为给一个足够大的上限；
-# 实际露出几个由前端 syncOutputs 按需控制（初始 1 个、连一个露一个），上限调大不影响界面。
-# 注意 load() 里不足的槽是复用最后一个 tensor 的**引用**，不额外占显存。
-# 空槽给 None，不抛异常 —— ComfyUI 会把所有输出都算一遍哪怕没接线。
+# 实际露出几个由前端 syncOutputs 按实际输出图片数控制；已连线的槽保留（连线不因临时
+# 删图而断），空槽的连线由 /prompt 入口钩子剔除，避免 None 打挂 Batch Images 这类下游。
+# 不足的槽一律输出 None（不再复用最后一张），下游多图节点会忽略该路；
+# 空槽给 None 不抛异常 —— ComfyUI 会把所有输出都算一遍哪怕没接线。
 
 IMG_SLOTS = 50
 IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
@@ -1373,6 +1492,64 @@ def _media_state_json(value) -> str:
     return json.dumps(_media_state_value(value), ensure_ascii=True, separators=(",", ":"))
 
 
+def _prune_stale_loader_links(prompt_graph: dict) -> int:
+    """执行前丢掉指向图片加载器「空槽」的连线。
+
+    前端 syncOutputs 会按实际张数收槽，但旧工作流、浏览器里缓存的旧前端、
+    以及启动器/PS 面板用陈旧工作流文件直接提交的 API 图，仍可能保留这些连线。
+    空槽在后端只能输出 None，Batch Images 这类不做空值容错的下游会直接
+    AttributeError（'NoneType' has no attribute 'shape'），所以入口处再兜一层。
+    返回被忽略的连线数。
+    """
+    removed = 0
+    for nid, node in (prompt_graph or {}).items():
+        if not isinstance(node, dict) or node.get("class_type") != "KedouImageLoader":
+            continue
+        state = _media_state_value((node.get("inputs") or {}).get("media_state", ""))
+        imgs = state["images"]
+        if state.get("select") and state.get("picked"):
+            by_name = {e["filename"]: e for e in imgs}
+            picked = [by_name[f] for f in state["picked"] if f in by_name]
+            if picked:
+                imgs = picked
+        out_n = 1 if (state.get("batch") and imgs) else len(imgs)
+        if out_n <= 0:
+            continue                       # 真没图时让加载器自己报「无图」，信息更准确
+        for other in prompt_graph.values():
+            inputs = other.get("inputs") if isinstance(other, dict) else None
+            if not isinstance(inputs, dict):
+                continue
+            for key, val in list(inputs.items()):
+                if (isinstance(val, (list, tuple)) and len(val) == 2
+                        and str(val[0]) == str(nid)
+                        and isinstance(val[1], int) and not isinstance(val[1], bool)
+                        and val[1] >= out_n):
+                    inputs.pop(key, None)
+                    removed += 1
+    return removed
+
+
+def _on_prompt_prune_empty_slots(json_data):
+    """PromptServer.add_on_prompt_handler 回调：返回（可能已修改的）请求体。"""
+    try:
+        graph = json_data.get("prompt") if isinstance(json_data, dict) else None
+        if isinstance(graph, dict):
+            n = _prune_stale_loader_links(graph)
+            if n:
+                print("[KeDou] 图片加载器空槽连线已忽略：%d 条"
+                      "（旧工作流/旧前端仍把线连到了没有图片的槽）" % n)
+    except Exception:                                  # noqa: BLE001
+        pass                                           # 兜底失败绝不拦运行
+    return json_data
+
+
+if _HAS_COMFY:
+    try:
+        PromptServer.instance.add_on_prompt_handler(_on_prompt_prune_empty_slots)
+    except Exception as e:                             # noqa: BLE001
+        print("[KeDou] 空槽连线清理钩子注册失败（不影响其它功能）:", e)
+
+
 def _load_image(filename: str):
     """单图 -> (1,H,W,3) float32 张量，与官方 LoadImage 的输出形状一致。"""
     import numpy as np                                  # noqa: PLC0415
@@ -1442,8 +1619,6 @@ class KedouImageLoader:
 
     def load(self, media_state=""):
         state = _media_state_value(media_state)
-        # 临时诊断（定位批次 cursor 丢失用，查完删）：打印每次执行实际收到的 media_state
-        print("[kedou] load 收到 media_state：", str(media_state or "")[:260])
         # 槽位语义（2026-09-28 六修）：**启用槽 = 面板上的实际照片数**。
         # 多余的槽输出 None —— 下游多图节点（如 TextEncodeQwenImageEdit21 固定 21 个图输入）
         # 对 None 容错并忽略该路参考图。旧版「复用最后一张填满」会让下游收到 N 份相同
@@ -1465,8 +1640,11 @@ class KedouImageLoader:
                                  "loader node or in the app panel first")
             cur = max(0, min(int(state.get("cursor") or 0), len(imgs) - 1))
             entry = imgs[cur]
-            pick = _load_image(entry["filename"])
-            print("[kedou] 批次 %d/%d：%s" % (cur + 1, len(imgs), entry["filename"]))
+            try:
+                pick = _load_image(entry["filename"])
+            except (OSError, ValueError) as e:
+                raise ValueError("Kedou Image Loader: cannot read batch image %d/%d (%s): %s"
+                                 % (cur + 1, len(imgs), entry["filename"], e))
             out = [pick]
         else:
             out = []
@@ -1481,8 +1659,9 @@ class KedouImageLoader:
                 raise ValueError("Kedou Image Loader: none of the selected images could be read "
                                  "- check the files still exist in input / output")
             ok = sum(1 for x in out if x is not None)
-            print("[kedou] 图片加载器：%d/%d 张有效；未启用槽输出 None（下游多图节点会忽略）"
-                  % (ok, IMG_SLOTS))
+            if ok < len(out):
+                print("[kedou] 图片加载器：%d/%d 张有效；其余槽输出 None（下游多图节点会忽略）"
+                      % (ok, len(out)))
         # 填充到 IMG_SLOTS：未启用的槽一律 None
         while len(out) < IMG_SLOTS:
             out.append(None)
@@ -1510,8 +1689,11 @@ class KedouPromptBox:
     CATEGORY = "kedou"
 
     def run(self, prompt_state="", usage="文生图"):
-        # 值就是提示词字符串本身；usage 只用于前端词库过滤，不参与输出
-        return ((prompt_state or "",),)
+        # 值就是提示词字符串本身；usage 只用于前端词库过滤，不参与输出。
+        # 注意：一个输出 = 一层元组（"文本",），不能写成 (("文本",),)，
+        # 否则下游拿到的是元组，TextGenerate 等按字符串处理的节点会报
+        # 'tuple' object has no attribute 'startswith'。
+        return (prompt_state or "",)
 
 
 KedouPromptBox.DESCRIPTION = (
@@ -1594,6 +1776,39 @@ def list_media(mtype="image", tab="all", q="", cap=MEDIA_CAP):
     return items[:cap]
 
 
+def pick_media(name, sub="", tab="input") -> dict:
+    """把「库里选中的一张」变成图像输入能直接用的文件名。
+
+    input 里的原样返回；output 里的先复制进 input —— 官方 LoadImage 只认 input 目录，
+    不复制的话面板选了输出图、跑起来必然报「文件不存在」。
+    """
+    src = _media_file(name, sub, "output" if tab == "output" else "input")
+    if src is None:
+        return {"ok": False, "error": "文件不存在，或不在输入/输出目录内"}
+    in_dir, _out_dir = _media_dirs()
+    if tab != "output":
+        rel = os.path.relpath(src, in_dir).replace("\\", "/")
+        return {"ok": True, "filename": rel, "copied": False}
+    import filecmp                                          # noqa: PLC0415
+    import shutil                                           # noqa: PLC0415
+    os.makedirs(in_dir, exist_ok=True)
+    stem, ext = os.path.splitext(os.path.basename(src))
+    dst = os.path.join(in_dir, stem + ext)
+    if os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False):
+        return {"ok": True, "filename": stem + ext, "copied": False}   # 内容相同：不重复拷
+    i = 1
+    while os.path.exists(dst):
+        dst = os.path.join(in_dir, "%s_库%d%s" % (stem, i, ext))
+        i += 1
+    if not _under(in_dir, dst):
+        return {"ok": False, "error": "目标路径越界"}
+    try:
+        shutil.copy2(src, dst)
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": "复制到输入目录失败：%s" % e}
+    return {"ok": True, "filename": os.path.basename(dst), "copied": True}
+
+
 # ---------------------------------------------------------------- 真缩略图
 # ComfyUI 自带的 /view?preview= 只重编码、不缩尺寸（server.py 里那句 preview 分支没有
 # 任何 resize），5120x8192 的图照样回 8.7MB，而且全图解码同步跑在 async 处理函数里，
@@ -1631,8 +1846,10 @@ def _make_thumb(src, dst, w):
             pass                                            # 非 JPEG（PNG/webp）不支持，照常全解
         im = ImageOps.exif_transpose(im)                    # 手机图的 EXIF 方向，不转就躺倒
         im.thumbnail((w, w))
-        if im.mode not in ("RGB", "RGBA", "L", "LA"):
-            im = im.convert("RGBA" if "A" in im.getbands() or "transparency" in im.info else "RGB")
+        # UXP 不显示灰度图（官方 known-issues 原文：images with grayscale will not be displayed），
+        # 灰度文档/深度图选完在面板里就是一片空白 → 有 alpha 走 RGBA，没有走 RGB
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGBA" if ("A" in im.getbands() or "transparency" in im.info) else "RGB")
         fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=".webp")
         os.close(fd)
         try:
@@ -1690,8 +1907,21 @@ if _HAS_COMFY:
     async def ps_media(request):
         """GET /ps/media?type=image|video|audio&tab=all|input|output&q=关键词"""
         qq = request.query
-        return web.json_response({"ok": True, "items": list_media(
-            qq.get("type", "image"), qq.get("tab", "all"), qq.get("q", ""))})
+        items = await asyncio.to_thread(list_media, qq.get("type", "image"),
+                                        qq.get("tab", "all"), qq.get("q", ""))
+        return web.json_response({"ok": True, "items": items})
+
+    @PromptServer.instance.routes.post("/ps/media/pick")
+    async def ps_media_pick(request):
+        """POST /ps/media/pick {name, subfolder, tab} -> {ok, filename, copied}"""
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(pick_media, body.get("name"),
+                                         body.get("subfolder"), body.get("tab"))
+        return web.json_response(result, status=200 if result.get("ok") else 400)
 
     @PromptServer.instance.routes.get("/ps/thumb")
     async def ps_thumb(request):
@@ -1731,7 +1961,8 @@ if _HAS_COMFY:
     @PromptServer.instance.routes.get("/ps/pack/candidates")
     async def ps_pack_candidates(request):
         """GET /ps/pack/candidates?source=<工作流文件名> —— 打包前的控件候选清单"""
-        return web.json_response(pack_candidates(request.query.get("source", "")))
+        return web.json_response(await asyncio.to_thread(
+            pack_candidates, request.query.get("source", "")))
 
     @PromptServer.instance.routes.post("/ps/pack")
     async def ps_pack(request):
@@ -1743,9 +1974,9 @@ if _HAS_COMFY:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
         if not isinstance(body, dict):
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(pack_app(
-            str(body.get("source") or ""), body.get("params") or [],
-            name=body.get("name"), desc=body.get("desc")))
+        return web.json_response(await asyncio.to_thread(
+            pack_app, str(body.get("source") or ""), body.get("params") or [],
+            body.get("name"), str(body.get("desc") or "")))
 
     @PromptServer.instance.routes.post("/ps/pack/save")
     async def ps_pack_save(request):
@@ -1758,7 +1989,8 @@ if _HAS_COMFY:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
         if not isinstance(body, dict):
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        result = save_kapp(body.get("name"), body.get("desc"), body.get("kapp"))
+        result = await asyncio.to_thread(save_kapp, body.get("name"),
+                                         body.get("desc"), body.get("kapp"))
         return web.json_response(result, status=200 if result.get("ok") else 400)
 
 

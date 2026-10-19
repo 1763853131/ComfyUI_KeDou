@@ -7,7 +7,7 @@
 // media_state(JSON)，媒体清单由本文件的自绘面板管理。
 //
 // 面板：图片 N + 上传图片 / 从库里选 + 图片缩略图网格（序号 + × 移除）；
-//       点缩略图放大预览；底部输出槽按「选了几张」由前端重建（后端声明满 10 个）。
+//       点缩略图放大预览；底部输出槽按实际会出图的张数重建（后端声明满 50 个）。
 //
 // 注意：media_state 是位置型控件，只能隐藏、不可删除（computeSize = () => [0, -4]），
 //    否则节点上的其它控件值会整体错位。
@@ -17,8 +17,9 @@ import { t, initI18n, onLocaleChange, serverError } from "./i18n.js";
 
 const NODE_CLASS = "KedouImageLoader";
 // 输出槽上限。ComfyUI 的 RETURN_TYPES 必须静态声明，所以「不限制数量」只能体现为
-// 给一个足够大的上限（原来是 10，2026-09-28 提到 50）。实际露出几个由 syncOutputs 按需控制：
-// 初始 1 个，连到第 n 个才露出第 n+1 个 —— 所以上限调大不会让节点界面变长。
+// 给一个足够大的上限（原来是 10，2026-09-28 提到 50）。实际露出几个由 syncOutputs 控制：
+// 槽数随实际会出图的张数增长（选择模式按 picked，批次模式 1 个），已连线的槽始终保留。
+// 空槽运行时由后端在 /prompt 入口剔除，既不用重连，也不会把 None 送进下游。
 const IMG_SLOTS = 50;
 const IMG_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
 const VID_EXTS = [".mp4", ".mov", ".webm", ".avi", ".mkv"];
@@ -398,17 +399,35 @@ function fitCard(node, quick) {
 
 function syncOutputs(node) {
   if (!node.outputs) node.outputs = [];
+  // 槽数 = 实际会出图的张数（选择模式 = picked；批次模式固定 1 张；至少 1 个），
+  // 但**已连线的槽一律保留**：连线是用户的接线资产，不能因为临时删图就断掉。
+  // 空槽真正执行时由后端钩子剔除（/prompt 入口），下游不会收到 None，
+  // 所以保留连线既不用重连，也不会再打挂 Batch Images。
+  const state = readState(node);
+  const effN = effectiveImages(state).length;
+  const outN = state.batch ? (effN ? 1 : 0) : effN;
   let hi = -1;
   node.outputs.forEach((o, i) => {
-    if (o && o.links && o.links.length) hi = i;
+    if (linksOf(node, i).length) hi = i;   // .links 之外也认旧版/适配器的 .link
   });
-  // 输出只随连线增长：连到第 hi 槽就露出 hi+1（下一个空位），初始 1 个，上限 10。
-  const n = Math.max(1, Math.min(IMG_SLOTS, hi + 2));
+  let n = Math.max(1, Math.min(IMG_SLOTS, Math.max(outN, hi + 1)));
+  // 工作流配置期间连线/控件可能还没恢复：只增不删，等下一次同步再收槽。
+  if (node.__kdGrowOnly || app.configuringGraph) n = Math.max(n, node.outputs.length);
   let changed = false;
   while (node.outputs.length > n) {
-    const last = node.outputs[node.outputs.length - 1];
-    if (last && last.links && last.links.length) break; // 有连线的一律不删
-    node.outputs.pop();
+    const idx = node.outputs.length - 1;
+    // 正常不会删到有连线的槽（n 已覆盖最高连线）；适配器若漏报连线，先断开更安全。
+    try {
+      if (typeof node.disconnectOutput === "function" && linksOf(node, idx).length) {
+        node.disconnectOutput(idx);
+      }
+    } catch (_) { /* 删槽入口还会再处理 */ }
+    try {
+      if (typeof node.removeOutput === "function") node.removeOutput(idx);
+      else node.outputs.pop();
+    } catch (_) {
+      node.outputs.pop();   // 极端适配器下保住渲染，不让一次收槽把整个面板打断
+    }
     changed = true;
   }
   while (node.outputs.length < n) {
@@ -547,6 +566,7 @@ function openLibrary(onPick) {
   // 滚到底部再增量追加 —— 追加而不是重建，已渲染的格子不会重新加载图片。
   const BATCH = 80;
   let curItems = [], shown = 0, gridEl = null;
+  let renderSeq = 0;    // 搜索请求序号：晚到的旧响应直接丢掉
   let anchorIdx = -1;   // Shift 范围多选的锚点（上一次点击的格子序号）
 
   // 批量重画选中描边：点击单格只动一处，Shift/框选会改一整片，统一刷一遍
@@ -632,10 +652,14 @@ function openLibrary(onPick) {
   }
 
   function render() {
+    const seq = ++renderSeq;           // 搜索防抖后仍可能乱序返回，只认最后一次
+    kdZoomHide();
     syncFoot();
     body.style.color = "";
     body.textContent = t("Loading…");
+    body.onscroll = null;
     fetchLibrary("image", search.value, curTab).then((items) => {
+      if (seq !== renderSeq) return;   // 过期响应：别把旧结果盖到新搜索上
       body.innerHTML = "";
       if (items === null) {
         body.textContent = t("Bridge plugin not loaded: restart ComfyUI once (/ps/media unavailable).");
@@ -663,12 +687,14 @@ function openLibrary(onPick) {
 
 async function uploadFiles(files) {
   const added = [];
+  let failed = 0;
   for (const f of files) {
     const low = String(f.name).toLowerCase();
     if (!IMG_EXTS.some((e) => low.endsWith(e))) continue;
     const fd = new FormData();
     fd.append("image", f);
     fd.append("overwrite", "true");
+    let ok = false;
     for (const p of ["/upload/image", "/api/upload/image"]) {
       try {
         const r = await fetch(p, { method: "POST", body: fd });
@@ -676,22 +702,25 @@ async function uploadFiles(files) {
         const j = await r.json();
         if (j && j.name) {
           added.push({ filename: (j.subfolder ? j.subfolder + "/" : "") + j.name });
+          ok = true;
           break;
         }
       } catch (e) {
         /* 试下一个前缀 */
       }
     }
+    if (!ok) failed += 1;
   }
-  return added;
+  return { added, failed };
 }
 
 // ---------------------------------------------------------------- 面板
 function renderPanel(node) {
   const ui = node._kdUI;
   if (!ui) return;
+  kdZoomHide();        // 重绘会销毁当前格子的 mouseleave 宿主，悬浮层必须一起收掉
   const state = readState(node);
-  syncOutputs(node);   // 输出槽只随连线增长（初始 1 个，连一个长一个）
+  syncOutputs(node);   // 输出槽按实际张数增长；已连线的槽保留，空槽由后端在运行时剔除
   ui.count.textContent = String(state.images.length);
   // 两个开关与按钮的状态跟随（赋值 checked 不会触发 onchange，安全）
   if (ui.swBatchCb) ui.swBatchCb.checked = !!state.batch;
@@ -804,12 +833,26 @@ function renderPanel(node) {
 
 async function uploadFilesWrapper(node, files) {
   uiSetBusy(node, true);
-  const added = await uploadFiles(files);
+  let res;
+  try {
+    res = await uploadFiles(files);
+  } finally {
+    uiSetBusy(node, false);
+  }
+  const { added, failed } = res || { added: [], failed: 0 };
   const state = readState(node);
-  state.images = state.images.concat(added).slice(0, IMG_SLOTS);
+  const have = new Set(state.images.map((it) => it.filename));
+  for (const it of added) {
+    // overwrite=true 下重传同名文件很常见；后端按文件名去重，
+    // 面板这里不去重就会出现“面板 N 张、实际输出 M 张”的槽位错位。
+    if (have.has(it.filename)) continue;
+    have.add(it.filename);
+    state.images.push(it);
+  }
+  state.images = state.images.slice(0, IMG_SLOTS);
   writeState(node, state);
-  uiSetBusy(node, false);
   renderPanel(node);
+  if (failed) kpToast(t("Upload failed: {n} file(s)", { n: failed }), true);
 }
 
 // 当前「生效」的图片列表：选择模式开且有选中 → 选中的（按选择顺序）；否则全部照片。
@@ -1054,6 +1097,11 @@ function build(node) {
     serialize: false,
   });
 
+  // 语言切换时面板文案要即时跟着变（库弹窗是临时 DOM，下次打开自然用新语言）
+  node.__kdLocaleUnsub = onLocaleChange(() => {
+    try { renderPanel(node); } catch (_) { /* 单个面板重绘失败不牵连其它 */ }
+  });
+
   upBtn.onclick = () => fileEl.click();
   fileEl.onchange = () => {
     const files = [...(fileEl.files || [])];
@@ -1081,13 +1129,20 @@ function build(node) {
   const onCfg = node.onConfigure;
   node.onConfigure = function () {
     const r = typeof onCfg === "function" ? onCfg.apply(this, arguments) : undefined;
-    setTimeout(() => renderPanel(node), 0);
+    // 配置同步阶段先只增不删（连线/控件可能还没恢复）；deferred 的这次 render
+    // 发生在整张图 configure 之后，此时再按实际图片数收槽、断开多余连线。
+    node.__kdGrowOnly = true;
+    setTimeout(() => {
+      node.__kdGrowOnly = false;
+      renderPanel(node);
+    }, 0);
     return r;
   };
   // 节点被删除时断开 ResizeObserver，否则观察着一个已移除的容器属于白占内存
   const onRm = node.onRemoved;
   node.onRemoved = function () {
     if (node.__kdRO) { node.__kdRO.disconnect(); node.__kdRO = null; }
+    if (node.__kdLocaleUnsub) { node.__kdLocaleUnsub(); node.__kdLocaleUnsub = null; }
     return typeof onRm === "function" ? onRm.apply(this, arguments) : undefined;
   };
   const size = node.size || [360, 320];
@@ -1215,12 +1270,30 @@ function ensurePackCss() {
 }
 
 let kpOverlay = null;
-let kpUnsubRepaint = null;   // 浮层面板的语言切换订阅，关闭时注销
+let kpUnsubRepaint = null;   // 面板常驻/浮层共用：关闭或重建时注销语言订阅
+let kpSyncTimer = null;      // 「画布点选」定时器（关闭/重建时必须清，否则泄漏累积）
+let kpRefreshTimer = null;   // 侧栏面板的工作流切换监视器
+let kpOpenGraph = "";        // 打开面板时的工作流 id；生成前复核，防止拿着旧候选打包
 function kpOnKey(e) { if (e.key === "Escape") closePackPanel(); }
 
-function closePackPanel() {
-  if (kpOverlay) { kpOverlay.remove(); kpOverlay = null; }
+function kpGraphKey() {
+  const g = app.graph;
+  return String((g && g.id) || "none");
+}
+
+function stopPackPanelRuntime() {
+  if (kpSyncTimer) { clearInterval(kpSyncTimer); kpSyncTimer = null; }
+  if (kpRefreshTimer) { clearInterval(kpRefreshTimer); kpRefreshTimer = null; }
   if (kpUnsubRepaint) { kpUnsubRepaint(); kpUnsubRepaint = null; }
+}
+
+function closePackPanel() {
+  // 侧栏面板由 ComfyUI 页签托管，这里只负责关闭浮层
+  if (!kpOverlay) return;
+  stopPackPanelRuntime();
+  kpOverlay.remove();
+  kpOverlay = null;
+  kpOpenGraph = "";
   document.removeEventListener("keydown", kpOnKey, true);
 }
 
@@ -1323,10 +1396,16 @@ function defaultAppName() {
 function openPackPanel(hostEl) {
   ensurePackCss();
   const sidebar = !!hostEl;                         // 侧栏模式：内容直接挂进页签元素
+  const gkey = kpGraphKey();
   if (sidebar) {
-    if (hostEl.dataset.kpMounted) return;           // 已挂过，不重复
+    if (hostEl.dataset.kpMounted && hostEl.dataset.kpGraph === gkey) return;
+    // 工作流切了：清掉旧候选，按新图重建
     hostEl.dataset.kpMounted = "1";
+    hostEl.dataset.kpGraph = gkey;
+    hostEl.innerHTML = "";
   } else if (kpOverlay) return;                     // 面板已开，不叠加
+  stopPackPanelRuntime();
+  kpOpenGraph = gkey;
 
   const ov = sidebar ? null : document.createElement("div");
   if (ov) ov.className = "kp-ov";
@@ -1567,14 +1646,14 @@ function openPackPanel(hostEl) {
   updateCount();
 
   // 画布点选联动：进入后点画布上的节点，这里自动展开并滚动到该节点分组
-  let syncOn = false, syncTimer = null, lastSel = null;
+  let syncOn = false, lastSel = null;
   syncBtn.onclick = () => {
     syncOn = !syncOn;
     syncBtn.classList.toggle("kp-on", syncOn);
     syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
     if (syncOn) {
       lastSel = null;
-      syncTimer = setInterval(() => {
+      kpSyncTimer = setInterval(() => {
         try {
           const sel = app.canvas && app.canvas.selected_nodes;
           const ids = sel ? Object.keys(sel) : [];
@@ -1590,7 +1669,7 @@ function openPackPanel(hostEl) {
         } catch (_) { /* ignore */ }
       }, 350);
     } else {
-      clearInterval(syncTimer);
+      if (kpSyncTimer) { clearInterval(kpSyncTimer); kpSyncTimer = null; }
     }
   };
 
@@ -1632,10 +1711,23 @@ function openPackPanel(hostEl) {
     if (emptyEl) emptyEl.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
     updateCount();   // 计数与「全选/取消全选」两态文案随之刷新
   };
-  const unsub = onLocaleChange(repaint);
-  if (!sidebar) kpUnsubRepaint = unsub;   // 侧栏模式面板常驻，订阅保留
+  kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
 
   gen.onclick = () => doGenerate({ nameInput, descInput, rows, err, gen });
+
+  if (sidebar) {
+    // 侧栏页签只挂载一次；用户切工作流后候选会全部指向旧节点 id。
+    // 图 id 变了就重建面板（只看 id，不看 _version，避免拖节点也触发）。
+    kpRefreshTimer = setInterval(() => {
+      if (!document.contains(hostEl)) { stopPackPanelRuntime(); return; }
+      if (kpGraphKey() !== hostEl.dataset.kpGraph) {
+        stopPackPanelRuntime();
+        hostEl.innerHTML = "";
+        delete hostEl.dataset.kpMounted;
+        openPackPanel(hostEl);
+      }
+    }, 800);
+  }
 
   // ---- 标题栏拖拽 + 视口夹持（仅浮层模式；侧栏模式由 ComfyUI 管布局） ----
   if (sidebar) return;
@@ -1670,6 +1762,11 @@ function openPackPanel(hostEl) {
 }
 
 async function doGenerate(ctx) {
+  if (kpOpenGraph && kpGraphKey() !== kpOpenGraph) {
+    // 候选快照来自另一张图：宁可拒绝，也不要生成一个绑错节点的包
+    ctx.err.textContent = t("Workflow changed; reopen the pack panel and try again.");
+    return;
+  }
   const checked = ctx.rows.filter((r) => r.cb.checked);
   if (!checked.length) {
     ctx.err.textContent = t("Select at least one parameter");

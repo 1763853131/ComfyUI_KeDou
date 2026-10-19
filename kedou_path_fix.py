@@ -19,7 +19,7 @@ import 本模块即自动对 folder_paths 打补丁（幂等，重复 import 无
 - 同名冲突规则：根目录优先 > 目录层浅优先 > 逐段目录名字典序（不能比拼好的
   路径字符串：Windows 下 "sub2" < "sub\\"，反斜杠的 ASCII 大于数字），行为可预期；
 - 校验列表追加的裸名用原始大小写（lowercase 只作查找键，否则 validate 误拒）；
-- 索引带缓存（默认 5 秒 TTL），兜底未命中且索引偏旧时自动重建，新文件秒级可见。
+- 索引带缓存（默认 5 秒 TTL），新文件最多 5 秒后可见；未命中不触发全量重扫；
 """
 
 import os
@@ -79,18 +79,20 @@ def _apply(fp):
         if r:
             return r
         try:
-            fn = fp.map_legacy(folder_name)
-            key = os.path.basename(str(filename)).lower()
+            # 带目录的引用必须由原生解析负责：跨目录按 basename 顶替会让
+            # 显式写错子目录的工作流静默加载成另一个同名文件。
+            req = str(filename).replace("\\", "/")
+            if "/" in req:
+                return None
+            key = req.lower()
             if not key:
                 return None
-            m = _index(fn)
-            hit = m.get(key)
-            if hit is None:
-                m = _force_rebuild(fn)
-                hit = m.get(key)
+            # miss 不再强制重建：TTL 由 _index 统一管理（最多 5 秒后自然刷新），
+            # 否则每次加载缺失模型都会递归扫全库。
+            hit = _index(fp.map_legacy(folder_name)).get(key)
             if hit:
                 rel = hit[0]
-                for base in fp.get_folder_paths(fn):
+                for base in fp.get_folder_paths(fp.map_legacy(folder_name)):
                     p = os.path.join(base, rel)
                     if os.path.isfile(p):
                         log.info("[kedou_path_fix] 兜底命中：%s -> %s", filename, p)
@@ -98,10 +100,6 @@ def _apply(fp):
         except Exception:
             pass
         return None
-
-    def _force_rebuild(folder_name):
-        _idx_cache.pop(folder_name, None)
-        return _index(folder_name)
 
     def get_filename_list_patched(folder_name):
         base_list = orig_get_filename_list(folder_name)

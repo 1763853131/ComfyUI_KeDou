@@ -86,6 +86,14 @@ young female cultivator, ...
 
 自动历史（MVP 内含，~30 行）：前端监听 ComfyUI `executed` 事件，把本次运行用到的每个 prompt 文本存为 `type: history`（名称取前 20 字），hash 去重，**只保留最近 50 条**（超出按 mtime 删最旧）。
 
+> **勘误（2026-10-18）**：`executed` 这个事件选错了，节点侧因此从来没存进过一条历史。官方
+> [ComfyUI Server Messages](https://docs.comfy.org/development/comfyui-server/comms_messages)
+> 写着 `executed` **「不是节点跑完就发，只有节点返回 ui 更新时才发」**，而提示词框返回的是普通元组；
+> 接收还得走 `api.addEventListener(...)`（api 是 EventTarget），往 `api.executed` 赋函数没人调。
+> 现在监听 `execution_start` + `executing` + `execution_cached` 收集「本轮真跑过的节点」，
+> 在 `execution_success` 时只存这些节点的提示词 —— 画布上没连进这次运行的框、以及从 PS 面板发起的
+> 运行，都不会再被当成「你跑过」存进来。
+
 ---
 
 ## 3. 前端（新文件 `web/promptlib.js`，~400 行，不再塞 kedou_media.js）

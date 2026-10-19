@@ -156,7 +156,11 @@ async function api(path, body) {
   const r = await fetch(API + path, body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
     : undefined);
-  if (!r.ok) throw new Error("HTTP " + r.status);
+  if (!r.ok) {
+    let msg = "HTTP " + r.status;
+    try { const d = await r.json(); if (d && d.error) msg = d.error; } catch (_) { /* 非 JSON */ }
+    throw new Error(msg);
+  }
   return r.json();
 }
 
@@ -214,9 +218,14 @@ function openRowMenu(x, y, entry, onChanged) {
   };
   menuEl.querySelector("[data-a=pin]").onclick = async () => {
     closeMenu();
-    await api("/save", { id: entry.id, pinned: !entry.pinned });
-    toast(entry.pinned ? t("Unpinned") : t("Pinned"));
-    onChanged();
+    try {
+      const r = await api("/save", { id: entry.id, pinned: !entry.pinned });
+      if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
+      toast(entry.pinned ? t("Unpinned") : t("Pinned"));
+      onChanged();
+    } catch (e) {
+      toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+    }
   };
   const delBtn = menuEl.querySelector("[data-a=del]");
   delBtn.onclick = async () => {
@@ -226,9 +235,14 @@ function openRowMenu(x, y, entry, onChanged) {
       return;
     }
     closeMenu();
-    const r = await api("/delete", { id: entry.id });
-    toast(r.ok ? t("Deleted (recoverable from .trash)") : t("Delete failed"), !r.ok);
-    onChanged();
+    try {
+      const r = await api("/delete", { id: entry.id });
+      toast(r.ok ? t("Deleted (recoverable from .trash)") : t("Delete failed"), !r.ok);
+      if (r.ok && libState.editId === entry.id) libState.editId = null;
+      onChanged();
+    } catch (e) {
+      toast(t("Delete failed") + ": " + serverError(e.message), true);
+    }
   };
 }
 document.addEventListener("pointerdown", (e) => {
@@ -267,9 +281,16 @@ function renderRowEdit(row, entry, onSaved) {
     };
     if (!body.name) { toast(t("Short name cannot be empty"), true); return; }
     if (!body.positive.trim() && !body.negative.trim()) { toast(t("Body and negative cannot both be empty"), true); return; }
-    const r = await api("/save", body);
-    toast(r.ok ? t("Saved") : t("Save failed: {error}", { error: serverError(r.error) }), !r.ok);
-    if (r.ok) onSaved();
+    try {
+      const r = await api("/save", body);
+      toast(r.ok ? t("Saved") : t("Save failed: {error}", { error: serverError(r.error) }), !r.ok);
+      if (r.ok) {
+        libState.editId = null;         // 保存成功后退出编辑态（否则重绘会继续停在编辑框）
+        onSaved();
+      }
+    } catch (e) {
+      toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+    }
   };
   row.appendChild(box);
   box.querySelector("[data-f=name]").focus();
@@ -375,6 +396,8 @@ function openLib(node, mode) {
       catch (e) { toast(t("Library folder move failed: {error}", { error: serverError(e.message) }), true); return; }
       if (!r.ok) { toast(t("Library folder move failed: {error}", { error: serverError(r.error) }), true); return; }
       loc = { vault: r.vault || "", source: r.vault_source || "default", error: r.error || "" };
+      locEditing = false;        // 成功后必须退出编辑态，否则刷新会一直跳过 showLoc，输入框留在原地
+      showLoc();
       libInvalidate();
       await refresh();
       toast(v ? t("Library folder changed") : t("Back to the default folder"));
@@ -633,35 +656,118 @@ function refreshAllPbox() {
   } catch (_) { /* ignore */ }
 }
 
-// ───────── 自动历史：executed 事件（带用途） ─────────
-function hookHistory(apiObj) {
-  const orig = apiObj.executed;
-  apiObj.executed = (detail, full) => {
-    try {
-      if (localStorage.getItem("kedou_plib_hist") === "0") return orig && orig(detail, full);
-      const g = app.graph.serialize().nodes;
-      const seen = new Set();
-      for (const n of g) {
-        if (!n.widgets_values) continue;
-        const node = app.graph.getNodeById(n.id);
-        if (!node || !node.widgets) continue;
-        const isPbox = (n.type === PBOX_CLASS);
-        const usage = isPbox ? String(n.widgets_values[1] || "文生图") : "文生图";
-        node.widgets.forEach((w, i) => {
-          const v = n.widgets_values[i];
-          if ((w.type === "textarea" || w.type === "string") && typeof v === "string" && v.trim().length >= 4) {
-            const key = v.trim();
-            if (seen.has(key)) return;
-            seen.add(key);
-            fetch(API + "/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positive: key, usage }) })
-              .then((res) => { if (res.ok) libTouch(); })
-              .catch(() => { /* 静默 */ });
-          }
-        });
-      }
-    } catch (_) { /* 静默：历史失败不影响出图 */ }
-    return orig && orig(detail, full);
+// ───────── 自动历史：execution_success 事件（带用途） ─────────
+// 官方《ComfyUI Server Messages》(docs.comfy.org/development/comfyui-server/comms_messages)
+// 把 2026-10-18 之前的写法（patch `api.executed`）否掉了两条：
+//   ① executed **不是**「节点跑完」，原文是 "not sent whenever a node completes execution …
+//      but only when the node returns a ui update"，即只有 main 函数 return {"ui":…, "result":…}
+//      才发。提示词框返回的是普通元组（STRING 直通），所以这个事件对本节点永远不来；
+//   ② 接收要 `api.addEventListener(type, handler)`（api 是 EventTarget，事件数据在 .detail），
+//      往 api.executed 赋函数在新前端里没人调用。
+// 结论：节点侧的自动历史一条都没写过，00_History 里那批全是 PS 面板那边存进去的。
+// 换成 execution_success：整条工作流全部跑成功才发一次，语义正好是「我运行了几次」，
+// 而且带 prompt_id —— 用它挡住同一轮重复记录（老写法每来一个事件就全图扫一遍）。
+function recordRunPrompts(onFail, only) {
+  const seen = new Set();
+  let posted = 0;
+  const post = (key, usage) => {
+    seen.add(key);
+    posted += 1;
+    fetch(API + "/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positive: key, usage }) })
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then((d) => {
+        if (d && d.ok) libTouch();
+        else onFail((d && d.error) || "save rejected");
+      })
+      .catch((e) => onFail(e && e.message ? e.message : String(e)));
   };
+  for (const node of ((app.graph && app.graph._nodes) || [])) {
+    if (!node.widgets) continue;
+    // 只记这一轮真跑过的节点：画布上常挂着好几条工作流的提示词框，从 PS 面板发起的运行
+    // 也不该把浏览器里开着的图存档成「你跑过」。
+    if (only && only.size && !only.has(Number(node.id))) continue;
+    const isPbox = ((node.constructor && node.constructor.comfyClass) || node.comfyClass || "") === PBOX_CLASS;
+    // 提示词框按 widget 名字取（prompt_state）：它是我们自己的控件，类型名随 ComfyUI 版本
+    // 叫 string / text / textarea 都有可能，按名字取就绕开了这个坑。
+    const pw = isPbox ? node.widgets.find((w) => w.name === "prompt_state") : null;
+    if (isPbox) {
+      const key = pw && typeof pw.value === "string" ? pw.value.trim() : "";
+      if (key.length >= 4 && !seen.has(key)) post(key, pboxUsage(node));
+      continue;
+    }
+    // 其它节点：白名单只放文本类控件，combo 的取值也是字符串（采样器名等），
+    // 不收进来就会把一串参数名写进历史。
+    const usage = USAGES[0];
+    const ntitle = String(node.title || "").toLowerCase();
+    if (ntitle.indexOf("negative") !== -1 || ntitle.indexOf("负向") !== -1) continue;
+    for (const w of node.widgets) {
+      const wt = String(w.type || "").toLowerCase();
+      if (wt !== "textarea" && wt !== "string" && wt !== "text") continue;
+      if (typeof w.value !== "string") continue;
+      // 负向提示词同样是文本控件：名字里带 negative / 负向 的不收，
+      // 否则每轮出图都会把负面词当成一条正向历史存进去。
+      const wname = String(w.name || "").toLowerCase();
+      if (wname.indexOf("negative") !== -1 || wname.indexOf("负向") !== -1) continue;
+      const key = w.value.trim();
+      if (key.length < 4 || seen.has(key)) continue;
+      post(key, usage);
+    }
+  }
+  return posted;
+}
+
+// USAGES 是数据不是文案：控件值对不上这五个字（旧工作流、被别的插件改过）就回落默认，
+// 不把脏值写进词库的 use_for。
+function pboxUsage(node) {
+  const uw = node.widgets.find((w) => w.name === "usage");
+  const v = String((uw && uw.value) || "");
+  return USAGES.indexOf(v) !== -1 ? v : USAGES[0];
+}
+
+function hookHistory(apiObj) {
+  if (!apiObj || typeof apiObj.addEventListener !== "function") {
+    console.warn("[kedou] 自动历史没接上：拿不到 api.addEventListener");
+    return;
+  }
+  let lastPid = "";
+  let lastAt = 0;
+  let warned = false;
+  let ran = new Set();          // 本轮真正执行过的节点 id
+  const onFail = (msg) => {
+    // 一次出图会写好几条，失败提示整个会话只弹一次，别把画布变成弹窗堆；原文进 console
+    console.warn("[kedou] 自动历史失败：" + msg);
+    if (warned) return;
+    warned = true;
+    try { toast(t("Auto-history failed: {error}", { error: serverError(msg) }), true); } catch (_) { /* ignore */ }
+  };
+  // executing 带 node（跑完时为 null）、execution_cached 带 nodes（被跳过的复用节点）。
+  // 两类都算「这一轮跑过」——缓存节点同样用到了那条提示词。
+  apiObj.addEventListener("execution_start", () => { ran = new Set(); });
+  apiObj.addEventListener("executing", (ev) => {
+    const n = ev && ev.detail && ev.detail.node;
+    if (n !== null && n !== undefined) ran.add(Number(n));
+  });
+  apiObj.addEventListener("execution_cached", (ev) => {
+    ((ev && ev.detail && ev.detail.nodes) || []).forEach((id) => ran.add(Number(id)));
+  });
+  apiObj.addEventListener("execution_success", (ev) => {
+    const d = (ev && ev.detail) || {};
+    const pid = String(d.prompt_id || "");
+    // detail 里没有 prompt_id 时（前端版本差异）退化成 3 秒窗口去重
+    if (pid ? pid === lastPid : Date.now() - lastAt < 3000) return;
+    if (pid) lastPid = pid; else lastAt = Date.now();
+    if (localStorage.getItem("kedou_plib_hist") === "0") return;
+    try {
+      // ran 为空（没收到 executing，比如老前端只发 executed）就退回全图扫描，宁多不漏
+      recordRunPrompts(onFail, ran);
+    } catch (e) {
+      console.warn("[kedou] 自动历史扫描失败：" + (e && e.message ? e.message : e));
+    }
+    ran = new Set();   // 用完即清：下一轮万一漏了 execution_start，也不会拿上一轮的节点集去筛
+  });
 }
 
 // ───────── 挂载 ─────────
@@ -685,6 +791,13 @@ app.registerExtension({
     } catch (e) {
       console.error("[kedou] 词库样式挂载失败", e);
     }
+    // 自动历史挂在 setup 而不是 registerApiHandlers：setup() 一定被调用（样式就是在这里挂上的，
+    // 节点界面能正常显示即证明），而 registerApiHandlers 有没有触发我们无法在用户机器上验证。
+    try {
+      hookHistory(app.api);
+    } catch (e) {
+      console.error("[kedou] 历史 hook 失败", e);
+    }
   },
   async nodeCreated(node) {
     const cls = (node.constructor && node.constructor.comfyClass) || node.comfyClass || "";
@@ -694,9 +807,6 @@ app.registerExtension({
     } catch (e) {
       console.error("[kedou] 提示词输入框构建失败", e);
     }
-  },
-  registerApiHandlers(apiObj) {
-    try { hookHistory(apiObj); } catch (e) { console.error("[kedou] 历史 hook 失败", e); }
   },
 });
 

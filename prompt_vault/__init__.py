@@ -52,6 +52,68 @@ _FM_RE = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n?", re.S)
 _SECTION_RE = re.compile(r"^# ([A-Za-z_ ]+)\s*$", re.M)
 _ID_RE = re.compile(r"^[0-9A-Za-z_.\-\u4e00-\u9fff]+$")
 _BAD_FN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_PLAIN_SCALAR_RE = re.compile(r"^[A-Za-z0-9_./\-\u4e00-\u9fff]+$")
+_NUM_SCALAR_RE = re.compile(r"^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$")
+_YAML_LOOKS_BOOL = {"true", "false", "yes", "no", "on", "off", "null", "~", "none"}
+
+
+def _yaml_scalar(v) -> str:
+    """把任意字符串写成安全的 YAML 标量。
+
+    以前直接 `name: %s`，短名里有 ": "、"#"、"[" 或换行就会写出解析失败的
+    frontmatter —— 文件在，词条却永远不显示。这里简单 token 原样写，其余一律
+    用 JSON 双引号形式（JSON 字符串同时是合法的 YAML 双引号标量）。
+    """
+    s = "" if v is None else str(v)
+    s = " ".join(s.splitlines()).strip()          # frontmatter 值只允许单行
+    if (s and _PLAIN_SCALAR_RE.match(s)
+            and s.lower() not in _YAML_LOOKS_BOOL
+            and not _NUM_SCALAR_RE.match(s)):
+        return s
+    return json.dumps(s, ensure_ascii=False)
+
+
+def _to_int(v, default=0) -> int:
+    """手改文件里的 uses/priority 可能是 'many'，不能让它把整个接口打 500。"""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_subdir(raw):
+    """客户端传来的 dir -> 词库内相对子目录；不合法返回 None。"""
+    s = str(raw or "").replace("\\", "/").strip().strip("/")
+    if not s:
+        return ""
+    if len(s) > 200 or re.search(r"[\x00-\x1f]", s) or re.match(r"^[A-Za-z]:", s):
+        return None
+    parts = []
+    for p in s.split("/"):
+        if p in ("", "."):
+            continue
+        if p == "..":
+            return None
+        parts.append(p)
+    return "/".join(parts)
+
+
+def _inside(root, path) -> bool:
+    try:
+        r = os.path.normcase(os.path.realpath(root))
+        p = os.path.normcase(os.path.realpath(path))
+        return os.path.commonpath([r, p]) == r
+    except (OSError, ValueError):
+        return False
+
+
+def _unique_path(directory, stem) -> str:
+    path = os.path.join(directory, stem + ".md")
+    n = 2
+    while os.path.exists(path):
+        path = os.path.join(directory, "%s_%d.md" % (stem, n))
+        n += 1
+    return path
 
 # 解析缓存：{路径: (mtime_ns, size, entry)} —— 文件没变不重复解析
 _cache = {}
@@ -306,11 +368,13 @@ def _parse_entry(path, rel):
         hit = _cache.get(path)
         if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
             return hit[2]
-        text = open(path, encoding="utf-8-sig").read()
+        # errors="replace"：GBK/UTF-16 手改文件也不能让整个 /ps/prompts 挂掉
+        text = open(path, encoding="utf-8-sig", errors="replace").read()
         meta, body = _split_fm(text)
         if meta is None:
-            print("[kedou词库] frontmatter 解析失败，跳过：%s" % rel)
-            return None
+            # frontmatter 坏了也保留正文：至少能在列表里看到并删掉，而不是永久隐身
+            print("[kedou词库] frontmatter 解析失败，按无 meta 处理：%s" % rel)
+            meta = {}
         secs = _sections(body)
         positive = secs.get("positive") or (secs.get("_pre", "") if "negative" not in secs else "")
 
@@ -327,10 +391,10 @@ def _parse_entry(path, rel):
             "dir": rel.split("/")[0] if "/" in rel else "",
             "models": _strlist(meta.get("models")),
             "tags": _strlist(meta.get("tags")),
-            "priority": int(meta.get("priority") or 0),
+            "priority": _to_int(meta.get("priority")),
             "pinned": bool(meta.get("pinned")),
             "enabled": meta.get("enabled", True) is not False,
-            "uses": int(meta.get("uses") or 0),
+            "uses": _to_int(meta.get("uses")),
             "created": str(meta.get("created") or ""),
             "updated": str(meta.get("updated") or ""),
             "positive": positive,
@@ -345,28 +409,30 @@ def _parse_entry(path, rel):
         }
         _cache[path] = (st.st_mtime_ns, st.st_size, entry)
         return entry
-    except OSError:
+    except Exception as e:                              # noqa: BLE001
+        # 单个坏文件不能拖垮整个列表：跳过并留下可排查的日志
+        print("[kedou词库] 读取失败，跳过：%s（%s: %s）" % (rel, type(e).__name__, e))
         return None
 
 
 def _serialize(entry):
-    fm = ["id: %s" % entry["id"], "type: %s" % entry["type"]]
+    fm = ["id: %s" % _yaml_scalar(entry["id"]), "type: %s" % _yaml_scalar(entry["type"])]
     if entry.get("category"):
-        fm.append("category: %s" % entry["category"])
-    fm.append("name: %s" % entry["name"])
+        fm.append("category: %s" % _yaml_scalar(entry["category"]))
+    fm.append("name: %s" % _yaml_scalar(entry["name"]))
     for k in ("models", "tags"):
         v = entry.get(k) or []
         fm.append("%s:" % k)
-        fm.extend("  - %s" % x for x in v)
-    fm.append("priority: %d" % int(entry.get("priority") or 0))
+        fm.extend("  - %s" % _yaml_scalar(x) for x in v)
+    fm.append("priority: %d" % _to_int(entry.get("priority")))
     fm.append("pinned: %s" % ("true" if entry.get("pinned") else "false"))
     fm.append("enabled: %s" % ("true" if entry.get("enabled", True) else "false"))
-    fm.append("uses: %d" % int(entry.get("uses") or 0))
+    fm.append("uses: %d" % _to_int(entry.get("uses")))
     fm.append("usage:")
-    fm.extend("  - %s" % x for x in (entry.get("use_for") or ["文生图"]))
+    fm.extend("  - %s" % _yaml_scalar(x) for x in (entry.get("use_for") or ["文生图"]))
     if entry.get("created"):
-        fm.append("created: %s" % entry["created"])
-    fm.append("updated: %s" % (entry.get("updated") or time.strftime("%Y-%m-%d")))
+        fm.append("created: %s" % _yaml_scalar(entry["created"]))
+    fm.append("updated: %s" % _yaml_scalar(entry.get("updated") or time.strftime("%Y-%m-%d")))
     body = "# Positive\n%s\n" % (entry.get("positive") or "").strip()
     for head, key in (("# Negative", "negative"), ("# Description", "description"),
                       ("# Use", "note"), ("# Avoid", "avoid"), ("# Related", "related")):
@@ -510,7 +576,7 @@ def save_prompt(body):
         if "usage" in body:
             entry["use_for"] = [str(x) for x in (body["usage"] or [])] or ["文生图"]
         if "priority" in body:
-            entry["priority"] = int(body.get("priority") or 0)
+            entry["priority"] = _to_int(body.get("priority"))
         if "pinned" in body:
             entry["pinned"] = bool(body["pinned"])
         if "enabled" in body:
@@ -518,39 +584,61 @@ def save_prompt(body):
         entry["updated"] = now
         entry["hash"] = hashlib.sha256(entry["positive"].encode("utf-8")).hexdigest()[:16]
         # 改名 → 文件跟着显示名走（id 不变）
-        new_name = _slug(entry["name"]) + ".md"
-        new_path = os.path.join(os.path.dirname(path), new_name)
+        new_stem = _slug(entry["name"])
+        new_path = os.path.join(os.path.dirname(path), new_stem + ".md")
+        if (os.path.abspath(new_path) != os.path.abspath(path)
+                and os.path.exists(new_path)):
+            # 同名文件属于另一条词条：另起 _2/_3，绝不能覆盖别人的内容
+            new_path = _unique_path(os.path.dirname(path), new_stem)
+        if not _inside(vault, new_path):
+            return {"ok": False, "error": "目标路径越出词库目录"}
         content = _serialize(entry)
         _atomic_write(new_path, content)
         if os.path.abspath(new_path) != os.path.abspath(path):
-            os.remove(path)
+            try:
+                os.remove(path)
+            except OSError as e:
+                print("[kedou词库] 旧文件删不掉（新文件已写入）：%s（%s）" % (path, e))
         _cache.pop(path, None)
         rel = os.path.relpath(new_path, vault).replace("\\", "/")
         return {"ok": True, "item": _parse_entry(new_path, rel)}
     # 新建
-    name = str(body.get("name") or "").strip()
+    name = " ".join(str(body.get("name") or "").splitlines()).strip()
     positive = str(body.get("positive") or "").strip()
     if not name or not positive:
         return {"ok": False, "error": "短名和提示词正文不能为空"}
-    # 去重：正文 hash 撞了直接返回已有条目
+    # 去重：正文 hash 撞了直接返回已有条目（同时把新用途并进去）
     h = hashlib.sha256(positive.encode("utf-8")).hexdigest()[:16]
     for e in _walk(vault):
         if e["hash"] == h:
+            if "usage" in body:
+                add = [str(x) for x in (body.get("usage") or []) if str(x).strip()]
+                merged = list(dict.fromkeys((e.get("use_for") or []) + add))
+                if merged != (e.get("use_for") or []):
+                    p, old = _find_path(vault, e["id"])
+                    if old:
+                        old["use_for"] = merged
+                        _atomic_write(p, _serialize(old))
+                        _cache.pop(p, None)
+                        e = old
             return {"ok": True, "item": e, "deduped": True}
     etype = str(body.get("type") or "精选")
-    base_dir = str(body.get("dir") or "").strip() or (HISTORY_DIR if etype == "历史" else "99_未分类")
+    raw_dir = str(body.get("dir") or "").strip()
+    base_dir = (_safe_subdir(raw_dir) if raw_dir
+                else (HISTORY_DIR if etype == "历史" else "99_未分类"))
+    if base_dir is None:
+        return {"ok": False, "error": "目录不合法（不能是绝对路径或包含 ..）"}
     stem = _slug(name)
-    path = os.path.join(vault, base_dir, stem + ".md")
-    n = 2
-    while os.path.exists(path):
-        path = os.path.join(vault, base_dir, "%s_%d.md" % (stem, n))
-        n += 1
+    dir_path = os.path.join(vault, *base_dir.split("/")) if base_dir else vault
+    path = _unique_path(dir_path, stem)
+    if not _inside(vault, path):
+        return {"ok": False, "error": "目标路径越出词库目录"}
     entry = {
         "id": "%s.%s" % (etype, h[:8]),
         "name": name, "type": etype, "category": str(body.get("category") or ""),
         "models": [str(x) for x in (body.get("models") or [])],
         "tags": [str(x) for x in (body.get("tags") or [])],
-        "priority": int(body.get("priority") or 0), "pinned": bool(body.get("pinned")),
+        "priority": _to_int(body.get("priority")), "pinned": bool(body.get("pinned")),
         "enabled": True, "uses": 0, "created": now, "updated": now,
         "positive": positive, "negative": str(body.get("negative") or ""),
         "description": str(body.get("description") or ""),
@@ -583,7 +671,7 @@ def save_history(positive, usage=None):
                 _atomic_write(path, _serialize(old))
                 _cache.pop(path, None)
             return {"ok": True, "item": e, "deduped": True}
-    name = positive[:20] + ("…" if len(positive) > 20 else "")
+    name = " ".join((positive[:20] + ("…" if len(positive) > 20 else "")).splitlines()).strip()
     body = {"name": name, "type": "历史", "positive": positive}
     if usage:
         body["usage"] = [str(usage)]
@@ -591,7 +679,16 @@ def save_history(positive, usage=None):
     if r.get("ok") and not r.get("deduped"):
         hist = [e for e in _walk(vault) if e["type"] == "历史"]
         if len(hist) > HISTORY_CAP:
-            hist.sort(key=lambda e: e["updated"])
+            # updated 只有日期精度，同一天会全部相等；用文件 mtime 作为次序兜底，
+            # 否则「删最旧」实际删的是文件系统遍历顺序里的随机一条。
+            def _old_key(e):
+                path, _ = _find_path(vault, e["id"])
+                try:
+                    mt = os.stat(path).st_mtime_ns if path else 0
+                except OSError:
+                    mt = 0
+                return (e.get("updated") or "", mt)
+            hist.sort(key=_old_key)
             for old in hist[: len(hist) - HISTORY_CAP]:
                 path, _ = _find_path(vault, old["id"])
                 if path:
@@ -643,6 +740,7 @@ def register_routes(routes):
     逻辑层没有 ComfyUI 依赖，所以换哪个宿主都不用改代码。
     """
     from aiohttp import web
+    import asyncio                                      # noqa: PLC0415 —— 文件 I/O 放线程池
 
     async def _body(request):
         try:
@@ -654,38 +752,44 @@ def register_routes(routes):
     @routes.get("/ps/prompts")
     async def _list(request):
         q = request.query
-        return web.json_response(list_prompts(
-            q.get("type", ""), q.get("dir", ""), q.get("tag", ""),
-            q.get("model", ""), q.get("q", ""), q.get("use", "")))
+        items = await asyncio.to_thread(
+            list_prompts, q.get("type", ""), q.get("dir", ""), q.get("tag", ""),
+            q.get("model", ""), q.get("q", ""), q.get("use", ""))
+        return web.json_response(items)
 
     @routes.post("/ps/prompts/save")
     async def _save(request):
         body = await _body(request)
         if body is None:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(save_prompt(body))
+        return web.json_response(await asyncio.to_thread(save_prompt, body))
 
     @routes.post("/ps/prompts/history")
     async def _hist(request):
         body = await _body(request) or {}
-        return web.json_response(save_history(str(body.get("positive") or ""), body.get("usage")))
+        result = await asyncio.to_thread(
+            save_history, str(body.get("positive") or ""), body.get("usage"))
+        return web.json_response(result)
 
     @routes.post("/ps/prompts/delete")
     async def _del(request):
         body = await _body(request) or {}
-        return web.json_response(delete_prompt(str(body.get("id") or "")))
+        return web.json_response(await asyncio.to_thread(
+            delete_prompt, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/use")
     async def _use(request):
         body = await _body(request) or {}
-        return web.json_response(bump_use(str(body.get("id") or "")))
+        return web.json_response(await asyncio.to_thread(
+            bump_use, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/vault")
     async def _vault(request):
         body = await _body(request)
         if body is None or "path" not in body:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(set_vault_config(str(body.get("path") or "")))
+        return web.json_response(await asyncio.to_thread(
+            set_vault_config, str(body.get("path") or "")))
 
 
 __all__ = [

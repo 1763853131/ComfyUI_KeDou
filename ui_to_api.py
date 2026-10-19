@@ -99,6 +99,14 @@ def _linked_input_names(node: dict) -> dict[str, str]:
     return out
 
 
+def _mode_of(node: dict) -> int:
+    """0=正常，2=静音，4=旁路；脏值按正常处理。"""
+    try:
+        return int(node.get("mode", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 class Converter:
     def __init__(self, object_info: dict):
         self.info = object_info or {}
@@ -108,7 +116,44 @@ class Converter:
         return class_type in self.info and class_type not in NON_EXECUTABLE
 
     def is_active(self, node: dict) -> bool:
-        return int(node.get("mode", 0)) == 0
+        return _mode_of(node) == 0
+
+    def _resolve_bypass(self, workflow: dict, links: dict, nodes: dict, node: dict,
+                        slot_index, depth: int):
+        """旁路节点的输出 = 它某个同类型输入的上游（与 ComfyUI 前端规则对齐）。"""
+        inputs = node.get("inputs") or []
+        if not inputs:
+            return (None, None)
+        ctype = str(node.get("type") or "")
+        outs = (self.info.get(ctype) or {}).get("output") or []
+        otype = (outs[slot_index]
+                 if isinstance(slot_index, int) and 0 <= slot_index < len(outs) else None)
+        # 顺序：同下标（类型允许）→ 第一个同类型 → 其余；只取真正有连线的
+        order = []
+        if isinstance(slot_index, int) and 0 <= slot_index < len(inputs):
+            same = inputs[slot_index]
+            st = same.get("type") if isinstance(same, dict) else None
+            if not otype or otype == "*" or st in (None, "*", otype):
+                order.append(slot_index)
+        if otype not in (None, "", "*"):
+            for i, s in enumerate(inputs):
+                if i not in order and isinstance(s, dict) and s.get("type") == otype:
+                    order.append(i)
+        for i in range(len(inputs)):
+            if i not in order:
+                order.append(i)
+        for i in order:
+            slot = inputs[i]
+            lid = slot.get("link") if isinstance(slot, dict) else None
+            if lid is None:
+                continue
+            lk = links.get(lid)
+            if not lk:
+                continue
+            return self._resolve_source(workflow, links, nodes,
+                                        lk["origin_id"], lk.get("origin_slot", 0),
+                                        depth + 1)
+        return (None, None)
 
     # ---------- 连线解析（会穿过前端专用节点） ----------
     def _link_by_id(self, workflow: dict) -> dict:
@@ -140,6 +185,13 @@ class Converter:
         node = nodes.get(node_id)
         if node is None:
             return (None, None)
+
+        mode = _mode_of(node)
+        if mode == 2:
+            return (None, None)                     # 静音：没有信号
+        if mode == 4:
+            # 旁路：按同类型输入透传（不能像旧版那样直接丢掉，否则下游缺输入）
+            return self._resolve_bypass(workflow, links, nodes, node, slot_index, depth)
 
         if self.is_real(node.get("type")):
             return ("link", (node_id, int(slot_index or 0)))
@@ -183,7 +235,7 @@ class Converter:
             if not self.is_real(ctype):
                 continue                      # 前端专用 / 注释
             if not self.is_active(node):
-                continue                      # 静音或旁路
+                continue                      # 静音/旁路都不直接进图（旁路在 _resolve_source 里透传）
 
             node_id = node.get("id")
             inputs: dict = {}
@@ -282,6 +334,26 @@ def _parse_link(l):
     return (None, None, None, None)
 
 
+def _pick_passthrough_input(slots: list, linked: dict, out_index: int, out_type):
+    """旁路时给第 out_index 个输出挑一个已连线的同类型输入，找不到返回 None。"""
+    order = []
+    if 0 <= out_index < len(slots):
+        st = slots[out_index].get("type") if isinstance(slots[out_index], dict) else None
+        if not out_type or out_type == "*" or st in (None, "*", out_type):
+            order.append(out_index)
+    if out_type not in (None, "", "*"):
+        for i, s in enumerate(slots):
+            if i not in order and isinstance(s, dict) and s.get("type") == out_type:
+                order.append(i)
+    for i in range(len(slots)):
+        if i not in order:
+            order.append(i)
+    for i in order:
+        if i in linked:
+            return i
+    return None
+
+
 def flatten_subgraphs(workflow: dict):
     """
     把「子图实例」展开成扁平节点，使转换器不必理解子图。
@@ -350,6 +422,29 @@ def flatten_subgraphs(workflow: dict):
                 inst_in[i] = root_by_lid[lid]
             elif (str(n.get("id")), i) in root_link_idx:
                 inst_in[i] = root_link_idx[(str(n.get("id")), i)]
+
+        mode = _mode_of(n)
+        if mode == 2:
+            notes.append("跳过静音子图实例 %s（%s）" % (n.get("id"), S.get("name") or "未命名"))
+            continue                                  # 静音：内部不执行，输出也不接
+        if mode == 4:
+            # 旁路：不内联内部节点，把实例输出按同类型映射回实例输入的上游
+            sub_outs = S.get("outputs") or n.get("outputs") or []
+            inst_slots = n.get("inputs") or []
+            outs: dict[int, tuple] = {}
+            for oi, odef in enumerate(sub_outs):
+                otype = odef.get("type") if isinstance(odef, dict) else None
+                pick = _pick_passthrough_input(inst_slots, inst_in, oi, otype)
+                if pick is not None:
+                    outs[oi] = inst_in[pick]
+            inst_out[str(n.get("id"))] = outs
+            notes.append("旁路子图实例 %s（%s）：输出改接实例输入"
+                         % (n.get("id"), S.get("name") or "未命名"))
+            continue
+        if mode != 0:
+            notes.append("跳过 mode=%s 的子图实例 %s（%s）"
+                         % (mode, n.get("id"), S.get("name") or "未命名"))
+            continue
 
         # 内联内部节点（跳过虚拟节点；通常虚拟节点不在 nodes 里）
         inlined = 0
