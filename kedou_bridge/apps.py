@@ -112,14 +112,17 @@ def _kapp_param_item(entry: dict, object_info: dict) -> dict:
         item["spec"].pop("options", None)
         item["spec"].pop("options_truncated", None)
     if widget == "prompt":
-        # 用途是复合控件的一部分：选项从节点声明现场取，不在客户端写死
+        # 用途是复合控件的一部分。kapp 里声明了 usage_options 就以声明为准（打包器本来就会写）：
+        # 图像应用不该被迫列出「文生视频」这类自己用不上的用途。只有旧 kapp 没写时才从节点声明现场取。
         usage = str(entry.get("usage_input") or "")
         if usage:
             item["usage_input"] = usage
-            uspec = widget_spec(object_info, ctype, usage)
-            uopts = uspec.get("options") if isinstance(uspec, dict) else None
+            uopts = entry.get("usage_options")
+            if not (isinstance(uopts, list) and uopts):
+                uspec = widget_spec(object_info, ctype, usage)
+                uopts = uspec.get("options") if isinstance(uspec, dict) else None
             if isinstance(uopts, list) and uopts:
-                item["usage_options"] = uopts
+                item["usage_options"] = [str(x) for x in uopts if str(x)]
             if entry.get("usage_default") is not None:
                 item["usage_default"] = entry.get("usage_default")
     if input_name in NOISE_INPUTS:
