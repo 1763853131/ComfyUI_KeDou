@@ -2,7 +2,7 @@
 
 把 ComfyUI 里的工作流变成可点击的 **App**。
 
-ComfyUI 本身没有"列出我的工作流和它们的参数"这样的接口，外部面板（启动器、Photoshop 面板等）拿不到数据。本插件补上这一层桥接：**列出应用 → 读取参数 → 回填取值 → 转成可直接提交的 API 格式 → 一键把工作流打包成应用包**。
+ComfyUI 本身没有"列出我的工作流和它们的参数"这样的接口，外部面板（启动器、Photoshop 面板等）拿不到数据。本插件补上这一层桥接：**列出应用 → 读取参数 → 持久化面板值（sidecar）→ 转成可直接提交的 API 格式 → 一键把工作流打包成应用包**。
 
 > 纯 Python 标准库实现，无第三方依赖，一个文件夹即装即用。
 
@@ -30,10 +30,11 @@ custom_nodes/ComfyUI_KeDou/
 
 | 路由 | 方法 | 用途 |
 |---|---|---|
+| `/ps/version` | GET | 协议握手：`schema_version` + 本版能力（sidecar / 转换缓存 / 写令牌） |
 | `/ps/apps` | GET | 列出全部「应用」：`{id, name, desc, param_count, has_image_input, node_count, format}` |
-| `/ps/apps/{app_id}` | GET | 取单个应用定义：参数列表 + 输出节点 |
-| `/ps/apps/{app_id}/values` | POST | 把面板上的编辑写回工作流文件（持久化） |
-| `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图 |
+| `/ps/apps/{app_id}` | GET | 取单个应用定义：参数列表 + 输出节点；参数默认值已叠加 sidecar 保存值 |
+| `/ps/apps/{app_id}/values` | POST | 把面板上的编辑存到 sidecar 状态文件（**不改工作流文件**） |
+| `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图；转换结果按文件版本缓存 |
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
 | `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256`，webp 落盘缓存（ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡） |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
@@ -100,6 +101,28 @@ custom_nodes/ComfyUI_KeDou/
 
 > 设计取舍：官方应用模式有三笔"税"——参数靠勾选、`widgets_values` 按位置对位、每次运行都要翻译一遍。
 > 应用包把这三样全部显式化，插件本身保持**纯通道**：声明是什么就是什么，不对任何具体应用做特判。
+
+---
+
+## 应用状态、缓存与写接口安全
+
+**参数值不再写回工作流。** `/ps/apps/{id}/values` 保存在
+`user/default/kedou_app_state/<相对路径hash>.json`（原子写入），工作流文件保持只读。
+读取应用/构建执行图时会自动叠加这些值，请求里显式传的值优先级更高。
+旧的 `.bak` 文件不再产生；已有 `.bak` 可以手动删除。
+
+**UI→API 转换带缓存。** 转换结果按 `(文件 mtime, 文件大小, 节点注册表指纹)` 缓存，
+运行期只做深拷贝 + 注值。工作流改动或节点增删后自动失效；每次返回里的 `cache`
+字段是 `hit` / `miss` / `off`，便于排查。
+
+**写接口默认拒绝外部网站来源。** 启动时会生成
+`user/default/kedou_bridge_token.txt`。外部面板可以在 POST 请求里带
+`X-Kedou-Token: <文件内容>`；本机无 Origin、`null`、loopback `http(s)`、
+以及 `file://` / `plugin://` / `uxp://` / `app://` 这类本地面板来源仍可直接调用。
+设置环境变量 `KEDOU_BRIDGE_REQUIRE_TOKEN=1` 后，所有写接口都必须带令牌。
+如果面板发来的 Origin 不在上述范围，可用 `KEDOU_BRIDGE_ALLOWED_ORIGINS` 追加
+（逗号分隔，例如 `plugin://com.adobe.photoshop`）。
+如果 ComfyUI 暴露到局域网，建议同时开启严格模式，并只给可信面板分发令牌。
 
 ---
 

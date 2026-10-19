@@ -15,10 +15,11 @@ ComfyUI_KeDou —— 修图工坊 · ComfyUI 桥接（v2：直接对接原生「
       同 stem 同时存在 .kapp.json 与 .app.json 时 kapp 优先。打包：POST /ps/pack。
 
 路由：
+      GET  /ps/version                 -> 协议版本 + 本版能力（握手用）
       GET  /ps/apps                    -> {"apps":[{id,name,desc,param_count,has_image_input,node_count,format}]}
       GET  /ps/apps/{app_id}           -> {id,name,params:[...],outputs:[...]}
-      POST /ps/apps/{app_id}/values    -> 把面板上的编辑写回工作流文件
-      POST /ps/apps/{app_id}/graph     -> 界面格式转 API 格式（可直接 POST /prompt）
+      POST /ps/apps/{app_id}/values    -> 面板值存 sidecar（不改工作流文件）
+      POST /ps/apps/{app_id}/graph     -> 界面格式转 API 格式（可直接 POST /prompt；转换结果带缓存）
       GET  /ps/media                   -> {ok,items:[{name,subfolder,kind,tab,size,mtime,url}]}
       POST /ps/media/pick              -> {ok,filename,copied}（输出目录的图先复制进输入目录，LoadImage 才认）
       GET  /ps/thumb                   -> image/webp 真缩略图（?filename=&subfolder=&type=&w=）
@@ -51,8 +52,11 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import tempfile
+import threading
 import time
+import urllib.parse
 from datetime import datetime as _kdt
 
 # ---- 只有在 ComfyUI 里才有这两个依赖；单独跑脚本做测试时允许缺失 ----
@@ -92,7 +96,22 @@ def _find_comfy_root() -> str:
 
 
 COMFY_ROOT = _find_comfy_root()
-WORKFLOW_DIR = os.path.join(COMFY_ROOT, "user", "default", "workflows")
+
+
+def _user_default_dir() -> str:
+    """ComfyUI 的 user/default（尊重 --user-directory）；独立脚本退回根目录约定。"""
+    try:
+        from folder_paths import get_user_directory       # noqa: PLC0415
+        ud = get_user_directory()
+        if ud:
+            d = os.path.join(ud, "default")
+            return d if os.path.isdir(d) else ud
+    except Exception:                                     # noqa: BLE001
+        pass
+    return os.path.join(COMFY_ROOT, "user", "default")
+
+
+WORKFLOW_DIR = os.path.join(_user_default_dir(), "workflows")
 if not os.path.isdir(os.path.join(COMFY_ROOT, "custom_nodes")):
     # 启动自检：根目录推断错误时立即报出，避免应用列表为空却无任何提示
     print("[KeDou] 警告：ComfyUI 根目录推断可能不对 -> %s" % COMFY_ROOT)
@@ -344,12 +363,154 @@ def _rel(path: str) -> str:
         return str(path).replace("\\", "/")
 
 
+# ---------------------------------------------------------------- 桥接状态 / 写接口令牌
+BRIDGE_SCHEMA_VERSION = 1
+
+
+def _bridge_state_dir() -> str:
+    return os.path.join(_user_default_dir(), "kedou_app_state")
+
+
+def _bridge_token_file() -> str:
+    return os.path.join(_user_default_dir(), "kedou_bridge_token.txt")
+
+
+def _state_path(app_path: str) -> str:
+    """应用文件 -> sidecar 状态文件（按相对路径 hash，避免同名应用互相覆盖）。"""
+    rel = _rel(app_path)
+    h = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
+    return os.path.join(_bridge_state_dir(), h + ".json")
+
+
+_STATE_LOCK = threading.RLock()
+
+
+def _read_app_state(app_path: str) -> dict:
+    fp = _state_path(app_path)
+    try:
+        with open(fp, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except Exception as e:                           # noqa: BLE001
+        print("[KeDou] 应用状态读取失败（按无状态继续）：%s（%s）" % (fp, e))
+        return {}
+    vals = data.get("values") if isinstance(data, dict) else None
+    return vals if isinstance(vals, dict) else {}
+
+
+def _load_app_state(app_path: str) -> dict:
+    with _STATE_LOCK:
+        return dict(_read_app_state(app_path))
+
+
+def _save_app_state(app_path: str, updates: dict) -> str:
+    """原子写入 sidecar；多个面板并发写时在进程内串行合并。"""
+    if not isinstance(updates, dict) or not updates:
+        return ""
+    fp = _state_path(app_path)
+    with _STATE_LOCK:
+        cur = _read_app_state(app_path)
+        cur.update({str(k): v for k, v in updates.items()})
+        payload = {"kedou_state": 1, "app": _rel(app_path),
+                   "updated": time.strftime("%Y-%m-%d %H:%M:%S"), "values": cur}
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        _dump_json_atomic(fp, payload)
+    return fp
+
+
+_BRIDGE_TOKEN = None
+_BRIDGE_TOKEN_LOCK = threading.Lock()
+
+
+def _get_bridge_token(create: bool = False) -> str:
+    """本机写接口令牌：env 优先，否则 user/default/kedou_bridge_token.txt。"""
+    global _BRIDGE_TOKEN
+    env = str(os.environ.get("KEDOU_BRIDGE_TOKEN") or "").strip()
+    if env:
+        return env
+    with _BRIDGE_TOKEN_LOCK:
+        if _BRIDGE_TOKEN:
+            return _BRIDGE_TOKEN
+        try:
+            with open(_bridge_token_file(), "r", encoding="utf-8-sig") as f:
+                tok = f.read().strip()
+        except OSError:
+            tok = ""
+        if tok:
+            _BRIDGE_TOKEN = tok
+            return tok
+        if not create:
+            return ""
+        tok = secrets.token_urlsafe(32)
+        fp = _bridge_token_file()
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(fp), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                f.write(tok + "\n")
+            os.replace(tmp, fp)
+            try:
+                os.chmod(fp, 0o600)
+            except OSError:
+                pass
+        except Exception:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+        _BRIDGE_TOKEN = tok
+        print("[KeDou] 已生成桥接写接口令牌：%s" % fp)
+        return tok
+
+
+def _origin_allowed(origin: str) -> bool:
+    """本机来源放行；具体的外部网站来源默认拒绝写操作。
+
+    放行：无 Origin（本机进程）、null（UXP/沙箱）、loopback 的 http(s)、
+          以及 file/plugin/uxp/app 这类本地面板/Electron 来源。
+    拒绝：具体域名的 http(s) 来源 —— 恶意网页的 Origin 长这样。
+    """
+    origin = str(origin or "").strip()
+    if not origin or origin == "null":
+        return True
+    extra = str(os.environ.get("KEDOU_BRIDGE_ALLOWED_ORIGINS") or "")
+    if extra and origin in {x.strip() for x in extra.split(",") if x.strip()}:
+        return True
+    try:
+        u = urllib.parse.urlsplit(origin)
+    except Exception:                                  # noqa: BLE001
+        return False
+    scheme = (u.scheme or "").lower()
+    if scheme in ("file", "plugin", "uxp", "app"):
+        return True
+    host = (u.hostname or "").lower()
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
+def _write_allowed(request) -> bool:
+    """写接口：有效 X-Kedou-Token，或来源为本机（严格模式只认令牌）。"""
+    try:
+        tok = str(request.headers.get("X-Kedou-Token") or "").strip()
+        expected = _get_bridge_token(create=False)
+        if tok and expected and secrets.compare_digest(tok, expected):
+            return True
+        require = str(os.environ.get("KEDOU_BRIDGE_REQUIRE_TOKEN") or "").lower()
+        if require in ("1", "true", "yes", "on"):
+            return False
+        return _origin_allowed(request.headers.get("Origin"))
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
 def build_spec(path: str, object_info: dict = None) -> dict:
     """读一个应用文件，产出面板要用的规格。object_info 省略时自动从节点注册表取。"""
     if os.path.basename(path).lower().endswith(".kapp.json"):
         return build_kapp_spec(path, object_info)
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
+    saved = _load_app_state(path)                    # 面板保存值（sidecar）覆盖工作流默认值
 
     nodes = wf.get("nodes") or []
     by_id = {str(n.get("id")): n for n in nodes}
@@ -377,6 +538,9 @@ def build_spec(path: str, object_info: dict = None) -> dict:
         _vi = _widget_index(object_info, node_type, widget) if object_info else None
         default = (wv[_vi] if (_vi is not None and _vi < len(wv))
                    else (wv[0] if len(wv) == 1 else None))
+        _sk = "%s:%s" % (node_id, widget)
+        if _sk in saved:
+            default = saved[_sk]
         kind = _kind_of(node, widget, default)
         item = {
             "node": str(node_id),
@@ -630,10 +794,11 @@ def _dump_json_atomic(path: str, data, indent: int = 2) -> None:
 
 
 def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
-    """
-    把 {“<节点id>:<控件名>”: 值} 写回工作流文件（方案 A：提示词库住在工作流里）。
-    第一次写之前留一份 .bak（原始文件字节，不是改完之后的）。
-    同时支持 UI 格式（nodes/widgets_values）与 kapp（graph/inputs）。
+    """把 {"<节点id>:<控件名>": 值} 持久化到 sidecar 状态文件。
+
+    工作流文件保持只读；这里仍会按 UI/kapp 结构校验节点、输入是否存在、是否连线，
+    只把校验通过的值写入 user/default/kedou_app_state/<hash>.json。
+    build_spec / build_graph 会自动叠加 sidecar 值，请求里显式传的值优先级更高。
     """
     path = _find_path(app_id)
     if path is None:
@@ -648,6 +813,7 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
         return {"ok": False, "error": "工作流文件不是 JSON 对象"}
 
     changed, failed = [], []
+    changed_values = {}
     graph = wf.get("graph")
     is_kapp = isinstance(graph, dict) and not isinstance(wf.get("nodes"), list)
 
@@ -678,6 +844,7 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
             if p is not None:
                 p["default"] = val
             changed.append(key)
+            changed_values[key] = val
     else:
         nodes = wf.get("nodes") or []
         by_id = {str(n.get("id")): n for n in nodes if isinstance(n, dict)}
@@ -723,22 +890,23 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
 
             if wrote:
                 changed.append(key)
+                changed_values[key] = val
             else:
                 failed.append({"key": key, "why": "cannot locate widget index"})
 
-    if changed:
+    state_file = ""
+    if changed_values:
         try:
-            bak = path + ".bak"
-            if not os.path.exists(bak):
-                # 备份必须是修改前的原始字节
-                with open(bak, "wb") as f:
-                    f.write(original)
-            _dump_json_atomic(path, wf)
+            # 方案 B：工作流文件保持只读，面板值存同名 sidecar。
+            # 好处：不产生 .bak、不制造工作流 diff、不会和多端同步/编辑器互相覆盖。
+            state_file = _save_app_state(path, changed_values)
         except Exception as e:                       # noqa: BLE001
-            return {"ok": False, "error": "写入失败：%s: %s" % (type(e).__name__, e),
+            return {"ok": False, "error": "状态写入失败：%s: %s" % (type(e).__name__, e),
                     "changed": [], "failed": failed, "path": _rel(path)}
 
-    return {"ok": not failed, "changed": changed, "failed": failed, "path": _rel(path)}
+    return {"ok": not failed, "changed": changed, "failed": failed, "path": _rel(path),
+            "persisted": "sidecar",
+            "state": _rel(state_file) if state_file else ""}
 
 
 # ------------------------------------------------- 出图：应用 -> 可提交的 API 图
@@ -802,36 +970,75 @@ def _inject_values(graph: dict, values: dict):
     return applied, skipped, failed
 
 
-def build_graph(app_id: str, values: dict = None, object_info: dict = None) -> dict:
-    """
-    把应用转成可直接 POST /prompt 的 API 图，并注入面板上的值。
-    values 形如 {"33:prompt": "文本", "119:value": 2, "114:image": "ps_upload/x.png"}
-    """
-    path = _find_path(app_id)
-    if path is not None and _is_kapp(path):
-        return _build_graph_kapp(path, values, object_info)
+_GRAPH_CACHE = {}
+_GRAPH_CACHE_MAX = 64
+
+
+def _registry_stamp():
+    """节点注册表指纹：节点增删（含自定义节点加载）后使转换缓存失效。"""
+    try:
+        return (id(_NODE_MAP), len(_NODE_MAP))
+    except Exception:                                  # noqa: BLE001
+        return (0, 0)
+
+
+def _cache_get_ui(path: str, object_info):
+    """命中返回 (entry, stat)；未命中返回 (None, stat)。显式传 object_info 时不走缓存。"""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None, None
+    if object_info is not None:
+        return None, st
+    key = (st.st_mtime_ns, st.st_size, _registry_stamp())
+    hit = _GRAPH_CACHE.get(path)
+    if hit is not None and hit[0] == key:
+        return hit, st
+    return None, st
+
+
+def _cache_put_ui(path: str, st, graph: dict, notes: list, unknown: dict) -> None:
+    key = (st.st_mtime_ns, st.st_size, _registry_stamp())
+    if len(_GRAPH_CACHE) >= _GRAPH_CACHE_MAX:
+        _GRAPH_CACHE.pop(next(iter(_GRAPH_CACHE)), None)     # 简单 FIFO，够用
+    # 缓存不可变底图；每次请求深拷贝后再注值，避免上一次的值污染下一次
+    _GRAPH_CACHE[path] = (key, copy.deepcopy(graph), notes, unknown)
+
+
+def _build_graph_ui(path: str, values: dict, object_info: dict = None) -> dict:
+    """UI 格式应用：转换结果按文件/注册表缓存，运行期只深拷贝 + 注值。"""
     conv = _load_converter()
     if conv is None:
         return {"ok": False, "error": "ui_to_api.py 未随桥接一起安装（两个文件都要）"}
-    path = _find_path(app_id)
-    if path is None:
-        return {"ok": False, "error": "app not found: %s" % app_id}
+    hit, st = _cache_get_ui(path, object_info)
+    cache_state = "off"
+    if hit is not None:
+        _, base_graph, notes, unknown = hit
+        graph = copy.deepcopy(base_graph)
+        cache_state = "hit"
+    else:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                wf = json.load(f)
+        except Exception as e:                         # noqa: BLE001
+            return {"ok": False, "error": "读取工作流失败：%s: %s"
+                                         % (type(e).__name__, e)}
+        nodes = wf.get("nodes") or []
+        oi = object_info
+        if oi is None and _NODE_MAP:
+            oi = build_object_info(sorted({str(n.get("type")) for n in nodes}))
+        graph, notes = conv.convert_ex(wf, oi or {})
+        unknown = _unknown_in_ui(wf)
+        if object_info is None:
+            cache_state = "miss"
+            try:
+                st2 = os.stat(path)
+                if st is not None and (st2.st_mtime_ns, st2.st_size) == (st.st_mtime_ns, st.st_size):
+                    _cache_put_ui(path, st2, graph, notes, unknown)
+            except OSError:
+                pass
 
-    with open(path, "r", encoding="utf-8") as f:
-        wf = json.load(f)
-    nodes = wf.get("nodes") or []
-    types = sorted({str(n.get("type")) for n in nodes})
-    if object_info is None and _NODE_MAP:
-        object_info = build_object_info(types)
-
-    graph, notes = conv.convert_ex(wf, object_info or {})
-
-    # 把值注入 API 图（API 图里的输入名就是控件名）
     applied, skipped, failed = _inject_values(graph, values)
-
-    # 如实报出"被溶解掉的未知节点"，不静默（这类多半是未安装的自定义节点）
-    unknown = _unknown_in_ui(wf)
-
     return {
         "ok": not failed,
         "graph": graph,
@@ -842,7 +1049,25 @@ def build_graph(app_id: str, values: dict = None, object_info: dict = None) -> d
         "float_notes": notes,                       # 子图展开说明
         "unknown_types": unknown,                   # 疑似未安装的节点
         "path": _rel(path),
+        "cache": cache_state,
     }
+
+
+def build_graph(app_id: str, values: dict = None, object_info: dict = None) -> dict:
+    """
+    把应用转成可直接 POST /prompt 的 API 图，并注入面板值。
+    values 形如 {"33:prompt": "文本", "119:value": 2, "114:image": "ps_upload/x.png"}。
+    持久化值从 sidecar 读取，请求里的 values 优先。
+    """
+    path = _find_path(app_id)
+    if path is None:
+        return {"ok": False, "error": "app not found: %s" % app_id}
+    merged = _load_app_state(path)
+    if values:
+        merged.update(values)
+    if _is_kapp(path):
+        return _build_graph_kapp(path, merged, object_info)
+    return _build_graph_ui(path, merged, object_info)
 
 
 # ---------------------------------------------------------------- 自研应用包（kapp）
@@ -919,6 +1144,7 @@ def build_kapp_spec(path: str, object_info: dict = None) -> dict:
     """kapp 的面板规格：参数完全按声明来，不推断。"""
     data = _load_kapp(path)
     graph = data["graph"]
+    saved = _load_app_state(path)                    # sidecar 保存值覆盖声明里的 default
     if object_info is None and _NODE_MAP:
         object_info = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()}))
     params = []
@@ -926,10 +1152,14 @@ def build_kapp_spec(path: str, object_info: dict = None) -> dict:
         if not isinstance(entry, dict):
             continue
         try:
-            params.append(_kapp_param_item(entry, object_info))
+            item = _kapp_param_item(entry, object_info)
         except ValueError as exc:
             raise ValueError("%s（参数 node=%s input=%s）"
                              % (exc, entry.get("node"), entry.get("input")))
+        _sk = "%s:%s" % (entry.get("node"), entry.get("input"))
+        if _sk in saved:
+            item["default"] = saved[_sk]
+        params.append(item)
 
     # 标签去重：与官方格式同一套兜底
     dup = {}
@@ -1033,6 +1263,7 @@ def pack_candidates(source: str) -> dict:
         return {"ok": False, "error": "找不到工作流文件：%s" % source}
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
+    saved = _load_app_state(path)
     nodes = [n for n in (wf.get("nodes") or []) if int(n.get("mode", 0)) == 0]
     if not nodes:
         return {"ok": False, "error": "该文件不是 UI 格式工作流（没有 nodes）"}
@@ -1044,6 +1275,9 @@ def pack_candidates(source: str) -> dict:
         vi = 0
         for name in _declared_widgets(object_info, ctype):
             default = wv[vi] if vi < len(wv) else None
+            _sk = "%s:%s" % (node.get("id"), name)
+            if _sk in saved:
+                default = saved[_sk]
             vi += 1
             if _ctl_after_gen(object_info, ctype, name):
                 vi += 1                     # control_after_generate 隐藏格
@@ -1080,6 +1314,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         return {"ok": False, "error": "ui_to_api.py 未随桥接一起安装（两个文件都要）"}
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
+    saved = _load_app_state(path)                    # 打包时也带上面板保存值
     nodes = wf.get("nodes") or []
     by_id = {str(n.get("id")): n for n in nodes}
     object_info = build_object_info(sorted({str(n.get("type")) for n in nodes})) if _NODE_MAP else {}
@@ -1109,6 +1344,9 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         wv = _widget_values(node) if node else []
         vi = _widget_index(object_info, ctype, input_name)
         default = wv[vi] if (vi is not None and vi < len(wv)) else None
+        _sk = "%s:%s" % (node_id, input_name)
+        if _sk in saved:
+            default = saved[_sk]
         if node:
             label = str(p.get("label") or _clean_label(node, input_name))
         else:
@@ -1303,6 +1541,12 @@ def save_kapp(name: str, desc, kapp) -> dict:
 
 # ---------------------------------------------------------------- 路由
 if _HAS_COMFY:
+    # 首次启动生成写接口令牌文件（外部面板可读取后放进 X-Kedou-Token；
+    # 本机无 Origin 的旧客户端仍放行，设 KEDOU_BRIDGE_REQUIRE_TOKEN=1 可强制令牌）。
+    try:
+        _get_bridge_token(create=True)
+    except Exception as _e:                            # noqa: BLE001
+        print("[KeDou] 写接口令牌生成失败（本机调用仍可用）:", _e)
 
     # UXP 的 fetch 会做跨域检查，而 ComfyUI 默认不回 CORS 头 →
     # PS 插件请求会被浏览器内核拦掉（表现为"连不上"）。
@@ -1311,7 +1555,13 @@ if _HAS_COMFY:
     async def _ps_cors_middleware(request, handler):
         if not request.path.startswith("/ps/"):
             return await handler(request)
-        if request.method == "OPTIONS":
+        # 写接口先过来源/令牌检查：默认拒绝来自其它网站的写请求。
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and not _write_allowed(request):
+            resp = web.json_response(
+                {"ok": False,
+                 "error": "unauthorized: pass X-Kedou-Token (see user/default/kedou_bridge_token.txt)"},
+                status=403)
+        elif request.method == "OPTIONS":
             resp = web.Response(status=204)
         else:
             resp = await handler(request)
@@ -1334,6 +1584,27 @@ if _HAS_COMFY:
         except Exception:                            # noqa: BLE001
             print("[KeDou] CORS 中间件注册失败（插件可能仍能用，但跨域可能被拦）:", _e)
 
+    @PromptServer.instance.routes.get("/ps/version")
+    async def ps_version(request):
+        """外部面板握手：协议版本 + 本版关键能力，避免靠猜。"""
+        token_file = _bridge_token_file()
+        return web.json_response({
+            "ok": True,
+            "bridge": "ComfyUI_KeDou",
+            "schema_version": BRIDGE_SCHEMA_VERSION,
+            "features": {
+                "sidecar_state": True,
+                "graph_cache": True,
+                "write_token": True,
+                "app_formats": ["kapp", "official"],
+            },
+            "write_auth": {
+                "header": "X-Kedou-Token",
+                "token_file": _rel(token_file) if os.path.isfile(token_file) else "",
+                "require_token_env": "KEDOU_BRIDGE_REQUIRE_TOKEN",
+            },
+        })
+
     @PromptServer.instance.routes.get("/ps/apps")
     async def ps_apps_list(request):
         # 目录遍历 + 逐个解析工作流可能很慢，放线程池，别卡住 ComfyUI 的事件循环
@@ -1352,7 +1623,7 @@ if _HAS_COMFY:
 
     @PromptServer.instance.routes.post("/ps/apps/{app_id}/values")
     async def ps_apps_values(request):
-        """把面板上的编辑写回工作流文件（提示词库持久化，方案 A）"""
+        """把面板上的编辑存到 sidecar（工作流文件不改；默认值会在读取应用时叠加）"""
         app_id = request.match_info.get("app_id", "")
         if not _safe_id(app_id):
             return web.json_response({"error": "bad id"}, status=400)
