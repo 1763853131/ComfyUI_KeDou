@@ -247,22 +247,24 @@ def register(routes):
 
     @routes.get("/ps/thumb")
     async def ps_thumb(request):
-        """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256&crop=square -> image/jpeg|image/png
+        """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256&fit=3x4 -> image/jpeg|image/png
 
         只服务图片；不是图 / 解不开 / 越界，一律 404。面板 setThumb 收到 404 会在日志里
         留一行「缩略图失败（HTTP 404 …）」，不会拿原图兜底（一屏 80 张 8MB 原图会把面板堵死）。
         格式按源图有没有透明通道定（见 media.THUMB_EXTS 那段注释：UXP 解不了 webp）；
-        crop=square 按短边居中裁方（面板格子是写死等边 px 的画法，见 media.THUMB_CROPS）。
+        fit=<宽x高> 让整图缩进这个比例并补边，位图比例严格等于面板格子（见 media.THUMB_PAD_RGB）。
         """
         global _thumb_pruned
         qq = request.query
         tab = "output" if str(qq.get("type") or "input") == "output" else "input"
-        crop = "square" if str(qq.get("crop") or "") == "square" else ""
         try:
             w = int(qq.get("w") or 256)
         except ValueError:
             w = 256
         w = max(32, min(media.THUMB_MAX_SIDE, w))
+        fit = str(qq.get("fit") or "")
+        if not media._thumb_box(fit, w):
+            fit = ""                                        # 比例串不合法就按长边封顶出图
         src = media._media_file(qq.get("filename"), qq.get("subfolder"), tab)
         if not src:
             return compat.web.Response(status=404)
@@ -273,7 +275,7 @@ def register(routes):
             st = os.stat(src)
         except OSError:
             return compat.web.Response(status=404)
-        key = hashlib.sha1(("%s|%d|%d|%d|%s" % (src, st.st_mtime_ns, st.st_size, w, crop)
+        key = hashlib.sha1(("%s|%d|%d|%d|%s" % (src, st.st_mtime_ns, st.st_size, w, fit)
                             ).encode("utf-8")).hexdigest()
         for ext in media.THUMB_EXTS:                        # 同一指纹只会有一种扩展名落地
             hit = os.path.join(media.THUMB_DIR, key + ext)
@@ -281,7 +283,7 @@ def register(routes):
                 return compat.web.FileResponse(hit, headers=_THUMB_CACHE_HEADER)
         base = os.path.join(media.THUMB_DIR, key)
         try:
-            dst = await asyncio.to_thread(media._make_thumb, src, base, w, crop)
+            dst = await asyncio.to_thread(media._make_thumb, src, base, w, fit)
         except Exception:                              # noqa: BLE001
             return compat.web.Response(status=404)
         if not os.path.isfile(dst):

@@ -2,6 +2,7 @@
 """媒体库清单、媒体选取（复制到 input）与真缩略图缓存。"""
 
 import os
+import re
 import tempfile
 import time
 
@@ -117,12 +118,23 @@ THUMB_DIR = os.path.join(os.path.dirname(paths.WORKFLOW_DIR), "kedou_thumbs")
 # 而且不报错，只在 DOM 里占个位）。所以缩略图只出面板一定认的格式：不透明走 JPEG，
 # 带透明通道的走 PNG（128px 量级也就几十 KB，不值得为省这点字节赌解码器）。
 THUMB_EXTS = (".jpg", ".png")
-# 面板的缩略图格子是「正方形 + 写死像素」的画法：UXP 会把 max-width:100% 和
-# max-height:100% 各自钳位、不锁宽高比，横图竖图都被拽成格子的比例（2026-10-20 实测：
-# 1.80 和 0.66 的两张图在 90×64 的格里分别被拉成 1.56 和 1.13）。位图本身是正方形，
-# 前端再写死等边 px，就没有任何一层能把它拉歪。
-THUMB_CROPS = ("", "square")
+# 面板的缩略图格子是「盒子比例 = 位图比例 + 写死像素」的画法：UXP 会把 max-width 和
+# max-height 各自钳位、不锁宽高比，只给 max-* 就一定被拽成格子的比例（2026-10-20 实测：
+# 1.80 和 0.66 的两张图在 90×64 的格子里变成 1.56 和 1.13）。
+# 所以这里按面板给的 fit=<宽x高> 出图：整图缩进盒子（contain，不裁边 —— 修图的人要靠
+# 缩略图判断构图，把头或脚切掉等于把信息弄没），再用格子底色补边补成精确比例。
+THUMB_PAD_RGB = (26, 26, 26)               # = styles.css 里缩略盒的 #1a1a1a
 _thumb_pruned = False
+
+
+def _thumb_box(fit, w):
+    """fit="3x4" 这种比例串 -> (box_w, box_h)，长边不超过 w；比例不合法返回 None。"""
+    m = re.fullmatch(r"([1-9]\d?)x([1-9]\d?)", str(fit or ""))
+    if not m:
+        return None
+    fw, fh = int(m.group(1)), int(m.group(2))
+    return (w, max(1, int(round(w * fh / float(fw))))) if fw >= fh \
+        else (max(1, int(round(w * fw / float(fh)))), w)
 
 
 def _media_file(name, sub, tab):
@@ -138,11 +150,11 @@ def _media_file(name, sub, tab):
     return path
 
 
-def _make_thumb(src, base, w, crop=""):
+def _make_thumb(src, base, w, fit=""):
     """缩到 w 以内并落盘，返回真实写出的路径（base + .jpg/.png）。
 
     base 不带扩展名：扩展名要看完图才知道有没有 alpha，调用方拿返回值发文件即可。
-    crop="square" 先按短边居中裁成正方形（裁在缩之前，画质才留得住）。
+    fit="3x4" 时整图缩进这个比例的盒子里、再用底色补边补成精确比例（不裁边）。
     跑在 asyncio.to_thread 里，不碰事件循环。
     """
     from PIL import Image, ImageOps                        # noqa: PLC0415
@@ -166,12 +178,15 @@ def _make_thumb(src, base, w, crop=""):
             fmt, ext = "JPEG", ".jpg"
             if im.mode != "RGB":
                 im = im.convert("RGB")
-        if crop == "square":
-            s = min(im.size)
-            x = (im.width - s) // 2
-            y = (im.height - s) // 2
-            im = im.crop((x, y, x + s, y + s))
-        im.thumbnail((w, w))
+        box = _thumb_box(fit, w) or (w, w)
+        im.thumbnail(box)
+        if im.size != box:                                  # 补边：位图比例 == 盒子比例
+            rgba = im.mode == "RGBA"
+            canvas = Image.new(im.mode, box,
+                               THUMB_PAD_RGB + ((255,) if rgba else ()))
+            canvas.paste(im, ((box[0] - im.width) // 2, (box[1] - im.height) // 2),
+                         im if rgba else None)
+            im = canvas
         fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=ext)
         os.close(fd)
         try:
