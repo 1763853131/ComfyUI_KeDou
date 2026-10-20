@@ -244,10 +244,12 @@ class Converter:
             # 1) 控件值（严格按位置对齐；被转成输入的控件仍占用位置，只是不输出）
             wnames = widget_names(self.info, ctype)
             wvals = node.get("widgets_values") or []
+            named = node.get("widgets_values_named")
+            values: dict = {}
             if isinstance(wvals, dict):            # 新版可能存成对象
                 for n in wnames:
                     if n in wvals and n not in converted:
-                        inputs[n] = wvals[n]
+                        values[n] = wvals[n]
             else:
                 idx = 0
                 for n in wnames:
@@ -259,7 +261,15 @@ class Converter:
                         idx += 1                   # 界面多占一位，API 不要
                     if n in converted:
                         continue                   # 值被连线取代，不作为控件输出
-                    inputs[n] = val
+                    values[n] = val
+            # 前端 1.55+ 同时写了 name->value，按名字覆盖上面按位置的猜测。
+            # 「界面有、API 没有」的子控件（TextGenerate 的 sampling_mode.*、mtp 等）会让
+            # 位置整体错位——真机样例里 thinking 会被读成采样模式的 "on"。有名字就信名字。
+            if isinstance(named, dict):
+                for n in wnames:
+                    if n in named and n not in converted:
+                        values[n] = named[n]
+            inputs.update(values)
             # 2) 连线（含被转成输入的控件）
             for slot in node.get("inputs") or []:
                 if slot.get("link") is None:

@@ -17,6 +17,9 @@
 - 读官方应用修了三处：控件名从 ref 字符串里取（第二个元素只是显示名，以前会把中文标签
   当控件名，默认值和类型全丢）、默认值优先用 `widgets_values_named`（位置对位错位不再影响
   读取）、DOM 把手还原成数据控件（图像/提示词，默认值取真实控件那份）。
+- `ui_to_api.py` 转换同样优先用 `widgets_values_named`：像 TextGenerate 这种
+  「界面上有 sampling_mode.* 子控件、API 里没有」的节点，原来按位置取值会整体错位
+  （thinking 被读成采样模式的 `"on"`）。跑官方应用时提交的图现在和画布一致。
 - `/ps/apps/{id}` 补上 `format` 字段（以前只有列表接口有）。
 - 打包面板新增「输出格式」：本插件应用包（`.kapp.json`）/ 官方应用（`.app.json`）。
   选官方时按画布当前 UI 图生成，直接出现在 ComfyUI 自己的 Apps 侧栏里；

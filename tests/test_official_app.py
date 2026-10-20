@@ -43,6 +43,15 @@ def load_bridge():
     return mod
 
 
+def load_ui_to_api():
+    """插件根目录的 UI→API 转换器（与应用侧的加载方式一致）。"""
+    spec = importlib.util.spec_from_file_location(
+        "ui_to_api", os.path.join(REPO, "ui_to_api.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main():
     bridge = load_bridge()
     paths, pack, apps = bridge.paths, bridge.pack, bridge.apps
@@ -207,6 +216,37 @@ def run(tmp, paths, pack, apps, common):
         check("thinking 不再是采样模式的 'on'", th.get("default") != "on", th.get("default"))
         imgs = [p for p in ss["params"] if p["kind"] == "image"]
         check("图片加载器的把手识别成 image", len(imgs) == 1, [p["input"] for p in imgs])
+
+    # ---------------------------------------------------------------- 8. UI→API 转换也用名字优先
+    print("\n[8] ui_to_api：位置错位时以 widgets_values_named 为准")
+    ui_to_api = load_ui_to_api()
+    oi = {"TextGenerate": {"input": {"required": {
+        "prompt": ["STRING", {}],
+        "max_length": ["INT", {}],
+        "thinking": ["BOOLEAN", {}],
+        "use_default_template": ["BOOLEAN", {}],
+        "mtp": ["INT", {}],
+    }}}}
+    wf = {
+        "id": "g", "links": [], "nodes": [{
+            "id": 523, "type": "TextGenerate", "inputs": [],
+            # 界面上 sampling_mode.* 这些子控件也占位置，API 声明里没有 -> 整体错位
+            "widgets_values": ["", 4096, "on", 1, 20, 0.95, 0, 1, 12345, 0, False, True, "auto"],
+            "widgets_values_named": {"prompt": "", "max_length": 4096, "sampling_mode": "on",
+                                     "sampling_mode.temperature": 1, "thinking": False,
+                                     "use_default_template": True, "mtp": "auto"},
+        }],
+    }
+    conv = ui_to_api.convert(wf, oi)["523"]["inputs"]
+    check("thinking = false（不是 'on'）", conv.get("thinking") is False, conv.get("thinking"))
+    check("use_default_template = true", conv.get("use_default_template") is True,
+          conv.get("use_default_template"))
+    check("mtp = 'auto'", conv.get("mtp") == "auto", conv.get("mtp"))
+
+    # 老工作流（没有 named）仍按位置取
+    wf["nodes"][0].pop("widgets_values_named")
+    conv2 = ui_to_api.convert(wf, oi)["523"]["inputs"]
+    check("没有 named 时退回位置映射", conv2.get("max_length") == 4096, conv2)
 
 
 if __name__ == "__main__":
