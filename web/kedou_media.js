@@ -1650,6 +1650,7 @@ const KPCSS = [
   ".kp-val{font-size:10.5px;color:var(--fg-color,#e7e7ea);opacity:.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".kp-err{color:var(--error-text,#ff7a7a);font-size:11.5px;min-height:14px;}",
   ".kp-ft{padding:10px 12px;border-top:1px solid var(--interface-stroke,#3a3a44);}",
+  ".kp-gen.kp-gen-off{opacity:.45;cursor:not-allowed;}",
   ".kp-gen{width:100%;border:0;background:var(--p-primary-color,#4a7dff);color:#fff;font:inherit;font-weight:600;font-size:13px;",
   "padding:9px;border-radius:8px;cursor:pointer;}",
   ".kp-gen:hover{filter:brightness(1.1);}",
@@ -1705,6 +1706,37 @@ const KPCSS = [
   ".kp-pdel{border:0;background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:14px;line-height:1;",
   "padding:2px 4px;cursor:pointer;opacity:.5;flex:none;}",
   ".kp-pdel:hover{color:var(--error-text,#ff7a7a);opacity:1;}",
+  ".kp-drag{cursor:grab;flex:none;opacity:.4;font-size:11px;line-height:1;user-select:none;padding:2px 1px;}",
+  ".kp-drag:hover{opacity:.85;}",
+  ".kp-pickrow.kp-dragging{opacity:.55;border-style:dashed;}",
+  ".kp-pickfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;opacity:.62;}",
+  ".kp-pclear{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:inherit;",
+  "font:inherit;font-size:11px;padding:3px 7px;border-radius:6px;cursor:pointer;opacity:.8;}",
+  ".kp-pclear:hover{border-color:var(--error-text,#ff7a7a);color:var(--error-text,#ff7a7a);opacity:1;}",
+  // 「用户看到的样子」预览：照着应用界面的样子摆一遍，纯展示，不能操作
+  ".kp-pv{border:1px solid var(--interface-stroke,#3a3a44);border-radius:10px;padding:0 10px;",
+  "background:var(--comfy-menu-bg,#23232b);margin-top:2px;}",
+  ".kp-pv>summary{cursor:pointer;font-size:11.5px;padding:8px 0;opacity:.8;list-style:none;}",
+  ".kp-pv>summary::-webkit-details-marker{display:none;}",
+  ".kp-pv>summary:before{content:'▸ ';opacity:.7;}",
+  ".kp-pv[open]>summary:before{content:'▾ ';}",
+  ".kp-pv-body{display:flex;flex-direction:column;gap:9px;padding:2px 0 11px;}",
+  ".kp-pv-name{font-size:12.5px;font-weight:600;}",
+  ".kp-pv-desc{font-size:11px;opacity:.6;margin-top:2px;}",
+  ".kp-pv-field{display:flex;flex-direction:column;gap:3px;}",
+  ".kp-pv-lab{font-size:11px;opacity:.85;}",
+  ".kp-pv-in{border:1px solid var(--interface-stroke,#3a3a44);border-radius:7px;padding:6px 8px;",
+  "font-size:11px;opacity:.72;background:var(--content-bg,#1b1b22);min-height:14px;overflow:hidden;",
+  "text-overflow:ellipsis;white-space:nowrap;}",
+  ".kp-pv-area{min-height:52px;white-space:pre-wrap;line-height:1.45;max-height:96px;}",
+  ".kp-pv-sw{width:34px;height:18px;border-radius:9px;background:var(--interface-stroke,#3a3a44);position:relative;}",
+  ".kp-pv-sw:after{content:'';position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;",
+  "background:var(--fg-color,#e7e7ea);opacity:.75;}",
+  ".kp-pv-up{border:1px dashed var(--interface-stroke,#3a3a44);border-radius:8px;padding:14px 8px;",
+  "text-align:center;font-size:11px;opacity:.6;}",
+  ".kp-pv-run{border:1px solid var(--p-primary-color,#4a7dff);background:var(--p-primary-color,#4a7dff);",
+  "color:#fff;border-radius:8px;padding:7px;text-align:center;font-size:11.5px;opacity:.85;margin-top:2px;}",
+  ".kp-pv-empty{font-size:11px;opacity:.55;}",
   // 画布上的勾选框层（照官方 App Builder 的样子）：一层透明蒙层，里面每个参数一格小方框
   ".kp-layer{position:fixed;inset:0;pointer-events:none;z-index:40;}",
   // 点选时给每个参数行让出左侧一条：方框落在这条里，参数名整体右移，和官方构建器一致
@@ -2079,7 +2111,27 @@ function openPackPanel(hostEl) {
   pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.");
   const pickList = document.createElement("div");
   pickList.className = "kp-picklist";
-  pickPane.append(pickSwitch, pickHint, pickList);
+  // 清单底下：几条 + 一键清空
+  const pickFoot = document.createElement("div");
+  pickFoot.className = "kp-pickfoot";
+  const pickCount = document.createElement("span");
+  const pickClear = document.createElement("button");
+  pickClear.className = "kp-pclear";
+  pickClear.textContent = t("Clear all");
+  pickClear.title = t("Remove every picked parameter; the canvas is untouched");
+  pickFoot.append(pickCount, pickClear);
+  // 「用户看到的样子」：照应用的样子把清单摆一遍，纯预览，点不动
+  const previewEl = document.createElement("details");
+  previewEl.className = "kp-pv";
+  const previewSum = document.createElement("summary");
+  const previewBody = document.createElement("div");
+  previewBody.className = "kp-pv-body";
+  previewEl.append(previewSum, previewBody);
+  try { previewEl.open = localStorage.getItem("kedou.pack.pv") !== "0"; } catch (_) { /* ignore */ }
+  previewEl.addEventListener("toggle", () => {
+    try { localStorage.setItem("kedou.pack.pv", previewEl.open ? "1" : "0"); } catch (_) { /* ignore */ }
+  });
+  pickPane.append(pickSwitch, pickHint, pickList, pickFoot, previewEl);
 
   const listPane = document.createElement("div");
   listPane.className = "kp-pane";
@@ -2119,6 +2171,7 @@ function openPackPanel(hostEl) {
   let pickOrder = [];
   let syncPick = () => {};
   let renderPick = () => {};
+  let renderPreview = () => {};
 
   // 「全选 / 取消全选」是同一个按钮的两态：全勾满了显示「取消全选」，否则显示「全选」。
   // 任何勾选变化（单条、组全选、顶部全选）都会走 updateCount -> 这里，保持一致。
@@ -2138,6 +2191,9 @@ function openPackPanel(hostEl) {
     syncToggleLabels();
     syncPick();
     renderPick();
+    // 一个参数都没勾时「生成」按钮变灰：省得点了才发现空清单
+    gen.disabled = !rows.some((r) => r.cb.checked);
+    gen.classList.toggle("kp-gen-off", gen.disabled);
   };
   const applyFilter = () => {
     for (const g of groups) {
@@ -2753,22 +2809,30 @@ function openPackPanel(hostEl) {
     const map = rowMap();
     const ordered = pickOrder.map((k) => map.get(k)).filter(Boolean);
     tabPick.textContent = ordered.length ? t("Point & click ({n})", { n: ordered.length }) : t("Point & click");
+    pickCount.textContent = ordered.length ? t("Top to bottom is the order users see") : "";
+    pickClear.style.display = ordered.length ? "" : "none";
     pickList.innerHTML = "";
     if (!ordered.length) {
       const empty = document.createElement("div");
       empty.className = "kp-pickhint";
       empty.textContent = t("Nothing picked yet — click a parameter on the canvas.");
       pickList.appendChild(empty);
+      renderPreview();
       return;
     }
     ordered.forEach((r, i) => {
       const el = document.createElement("div");
       el.className = "kp-pickrow";
+      el.dataset.key = keyOf(r);
+      const grip = document.createElement("span");
+      grip.className = "kp-drag";
+      grip.textContent = "⋮⋮";
+      grip.title = t("Hold and drag to reorder");
       const lab = document.createElement("input");
       lab.className = "kp-lab";
       lab.value = r.lab.value || r.c.label;
       lab.title = t("Name shown to users");
-      lab.oninput = () => { r.lab.value = lab.value; };
+      lab.oninput = () => { r.lab.value = lab.value; renderPreview(); };
       const sel = document.createElement("select");
       sel.className = "kp-sel";
       for (const opt of KP_WIDGETS) {
@@ -2781,6 +2845,7 @@ function openPackPanel(hostEl) {
       sel.onchange = () => {
         r.sel.value = sel.value;
         r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, sel.value) });
+        renderPreview();
       };
       const move = (dir) => {
         const j = pickOrder.indexOf(keyOf(r));
@@ -2807,10 +2872,119 @@ function openPackPanel(hostEl) {
       del.textContent = "×";
       del.title = t("Remove");
       del.onclick = () => toggleRow(r);
-      el.append(lab, sel, up, down, del);
+      el.append(grip, lab, sel, up, down, del);
       pickList.appendChild(el);
+      if (dragKey && el.dataset.key === dragKey) el.classList.add("kp-dragging");
     });
+    renderPreview();
   };
+
+  // 按住 ⋮⋮ 上下拖：拖动过程中直接改 pickOrder，松手就定下来（小箭头仍在，两种都行）
+  let dragKey = null;
+  const rowKeyAt = (y) => {
+    const list = Array.from(pickList.querySelectorAll(".kp-pickrow"));
+    if (!list.length) return null;
+    for (const el of list) {
+      const r = el.getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) return el.dataset.key;
+    }
+    return y < list[0].getBoundingClientRect().top ? list[0].dataset.key : list[list.length - 1].dataset.key;
+  };
+  pickList.addEventListener("pointerdown", (e) => {
+    const grip = e.target.closest && e.target.closest(".kp-drag");
+    if (!grip) return;
+    const row = grip.closest(".kp-pickrow");
+    if (!row || !row.dataset.key) return;
+    dragKey = row.dataset.key;
+    row.classList.add("kp-dragging");
+    try { pickList.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    e.preventDefault();
+  });
+  pickList.addEventListener("pointermove", (e) => {
+    if (!dragKey) return;
+    const toKey = rowKeyAt(e.clientY);
+    if (!toKey) return;
+    const from = pickOrder.indexOf(dragKey);
+    const to = pickOrder.indexOf(toKey);
+    if (from < 0 || to < 0 || from === to) return;
+    pickOrder.splice(from, 1);
+    pickOrder.splice(to, 0, dragKey);
+    renderPick();
+  });
+  const endDrag = () => {
+    if (!dragKey) return;
+    dragKey = null;
+    renderPick();
+  };
+  pickList.addEventListener("pointerup", endDrag);
+  pickList.addEventListener("pointercancel", endDrag);
+  pickClear.onclick = () => {
+    pickOrder.length = 0;
+    for (const r of rows) r.cb.checked = false;
+    updateCount();
+  };
+
+  // 「用户看到的样子」：按清单顺序摆一遍应用的样子（只画，不接任何操作）
+  renderPreview = () => {
+    const map = rowMap();
+    const ordered = pickOrder.map((k) => map.get(k)).filter(Boolean);
+    previewSum.textContent = ordered.length
+      ? t("What users will see ({n} fields)", { n: ordered.length })
+      : t("What users will see");
+    previewBody.innerHTML = "";
+    if (!ordered.length) {
+      const empty = document.createElement("div");
+      empty.className = "kp-pv-empty";
+      empty.textContent = t("Pick some parameters and they show up here, arranged like the app.");
+      previewBody.appendChild(empty);
+      return;
+    }
+    const head = document.createElement("div");
+    const nm = document.createElement("div");
+    nm.className = "kp-pv-name";
+    nm.textContent = nameInput.value.trim() || t("Untitled app");
+    head.appendChild(nm);
+    const dsc = descInput.value.trim();
+    if (dsc) {
+      const dd = document.createElement("div");
+      dd.className = "kp-pv-desc";
+      dd.textContent = dsc;
+      head.appendChild(dd);
+    }
+    previewBody.appendChild(head);
+    for (const r of ordered) {
+      const field = document.createElement("div");
+      field.className = "kp-pv-field";
+      const lab = document.createElement("div");
+      lab.className = "kp-pv-lab";
+      lab.textContent = r.lab.value || r.c.label;
+      field.appendChild(lab);
+      const w = r.sel.value;
+      if (w === "toggle") {
+        const sw = document.createElement("div");
+        sw.className = "kp-pv-sw";
+        field.appendChild(sw);
+      } else if (w === "image" || w === "kedou_media") {
+        const up = document.createElement("div");
+        up.className = "kp-pv-up";
+        up.textContent = t("Click to upload an image");
+        field.appendChild(up);
+      } else {
+        const box = document.createElement("div");
+        box.className = "kp-pv-in" + (w === "prompt" ? " kp-pv-area" : "");
+        const txt = kpPreview(r.c.default, w) || t("(empty)");
+        box.textContent = txt + (w === "combo" ? "  ▾" : "");
+        field.appendChild(box);
+      }
+      previewBody.appendChild(field);
+    }
+    const run = document.createElement("div");
+    run.className = "kp-pv-run";
+    run.textContent = t("Run");
+    previewBody.appendChild(run);
+  };
+  nameInput.addEventListener("input", () => { if (typeof renderPreview === "function") renderPreview(); });
+  descInput.addEventListener("input", () => { if (typeof renderPreview === "function") renderPreview(); });
 
   const setTab = (tab) => {
     const pick = tab !== "list";
