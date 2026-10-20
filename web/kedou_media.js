@@ -1918,6 +1918,17 @@ function openPackPanel(hostEl) {
   descInput.placeholder = t("One sentence describing what this app does");
   descField.append(descLab, descInput);
 
+  // 输出格式：本插件 kapp（API 图，稳定）/ 官方 .app.json（UI 图，ComfyUI 自己的 Apps 侧栏也能打开）。
+  // 官方格式没有「应用描述」字段，选中时把描述行收起来。
+  const fmtField = document.createElement("div");
+  fmtField.className = "kp-field";
+  const fmtLab = document.createElement("label");
+  fmtLab.textContent = t("Output format");
+  const fmtSel = document.createElement("select");
+  fmtSel.appendChild(new Option(t("Kedou app package (.kapp.json)"), "kapp"));
+  fmtSel.appendChild(new Option(t("Official app (.app.json) - opens in ComfyUI's Apps sidebar"), "official"));
+  fmtField.append(fmtLab, fmtSel);
+
   const graphField = document.createElement("label");
   graphField.className = "kp-chk";
   graphField.style.display = "none";
@@ -1961,7 +1972,7 @@ function openPackPanel(hostEl) {
   gen.textContent = t("Generate app package");
   ft.appendChild(gen);
 
-  body.append(editField, nameField, descField, graphField, toolbar, rowsWrap, err);
+  body.append(editField, fmtField, nameField, descField, graphField, toolbar, rowsWrap, err);
   if (sidebar) {
     // 侧栏模式：无标题栏/遮罩/Esc，内容直接挂进页签
     panel.append(body, ft);
@@ -2143,8 +2154,20 @@ function openPackPanel(hostEl) {
   let orphanGroup = null;
 
   const setPrimaryLabel = () => {
-    gen.textContent = editing ? t("Save changes") : t("Generate app package");
+    if (editing) { gen.textContent = t("Save changes"); return; }
+    gen.textContent = fmtSel.value === "official" ? t("Generate official app") : t("Generate app package");
   };
+  // 官方格式只能从画布 UI 图生成，而「编辑已打包的应用」里只有 kapp：
+  // 编辑态锁死格式，免得用户以为能把旧 kapp 原地转成官方包。
+  const syncFmt = () => {
+    const official = fmtSel.value === "official";
+    descField.style.display = official ? "none" : "";
+    fmtSel.disabled = !!editing;
+    fmtSel.title = editing ? t("Editing an existing app keeps its format") : "";
+    if (!gen.disabled) setPrimaryLabel();
+  };
+  fmtSel.onchange = syncFmt;
+  syncFmt();
   const removeOrphanGroup = () => {
     if (!orphanGroup) return;
     const gi = groups.indexOf(orphanGroup);
@@ -2223,6 +2246,8 @@ function openPackPanel(hostEl) {
   };
   const applyEditing = (file, kapp) => {
     editing = { file, kapp: kapp || {} };
+    fmtSel.value = "kapp";
+    syncFmt();
     removeOrphanGroup();
     resetRows();
     nameInput.value = String(editing.kapp.name || "");
@@ -2272,6 +2297,7 @@ function openPackPanel(hostEl) {
   };
   const resetEditor = () => {
     editing = null;
+    syncFmt();
     removeOrphanGroup();
     resetRows();
     nameInput.value = defaultAppName();
@@ -2390,6 +2416,9 @@ function openPackPanel(hostEl) {
     editLab.textContent = t("Edit packaged app");
     editSel.options[0].textContent = t("New app");
     nameLab.textContent = t("App name");
+    fmtLab.textContent = t("Output format");
+    fmtSel.options[0].textContent = t("Kedou app package (.kapp.json)");
+    fmtSel.options[1].textContent = t("Official app (.app.json) - opens in ComfyUI's Apps sidebar");
     descLab.textContent = t("Description (optional)");
     descInput.placeholder = t("One sentence describing what this app does");
     nameInput.title = editing ? t("For an existing app, this only changes the display name; the file name stays.") : "";
@@ -2414,7 +2443,7 @@ function openPackPanel(hostEl) {
   kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
 
   gen.onclick = () => doGenerate({
-    nameInput, descInput, rows, err, gen, graphCb,
+    nameInput, descInput, rows, err, gen, graphCb, fmtSel,
     editing: () => editing,
   });
 
@@ -2471,15 +2500,20 @@ async function doGenerate(ctx) {
     return;
   }
   const editing = typeof ctx.editing === "function" ? ctx.editing() : null;
-  // 编辑已有应用时默认保留原 graph / outputs，只改参数声明；
-  // 勾了「用当前工作流更新图」才重新抓图（参数也得能在新图里找到）。
-  const updateGraph = !editing || !!(ctx.graphCb && ctx.graphCb.checked);
-  const primary = () => editing ? t("Save changes") : t("Generate app package");
   const checked = ctx.rows.filter((r) => r.cb.checked);
   if (!checked.length) {
     ctx.err.textContent = t("Select at least one parameter");
     return;
   }
+  // 官方 .app.json 只能从画布 UI 图生成，且「编辑已打包的应用」里只有 kapp
+  if (!editing && ctx.fmtSel && ctx.fmtSel.value === "official") {
+    await doGenerateOfficial(ctx, checked);
+    return;
+  }
+  // 编辑已有应用时默认保留原 graph / outputs，只改参数声明；
+  // 勾了「用当前工作流更新图」才重新抓图（参数也得能在新图里找到）。
+  const updateGraph = !editing || !!(ctx.graphCb && ctx.graphCb.checked);
+  const primary = () => editing ? t("Save changes") : t("Generate app package");
   ctx.gen.disabled = true;
   ctx.gen.textContent = editing ? t("Saving…") : t("Generating…");
   ctx.err.textContent = "";
@@ -2599,6 +2633,66 @@ async function doGenerate(ctx) {
         kpToast(t(editing ? "Saved changes to {file}" : "Generated {file}; refresh the launcher to see it", { file: j.file || kapp.name }));
         closePackPanel();
       }
+    }
+  } catch (e) {
+    const msg = serverError(e && e.message ? e.message : String(e));
+    ctx.err.textContent = t("Request failed: {msg}", { msg });
+    kpToast(t("Request failed: {msg}", { msg }), true);
+  } finally {
+    ctx.gen.disabled = false;
+    ctx.gen.textContent = primary();
+  }
+}
+
+// 官方 App Mode 的应用就是 UI 工作流本身 + extra.linearMode/linearData：
+// 必须发 app.graph.serialize()（整张界面图），API 图反推不回位置与连线。
+// 参数只报 node/input，后端按节点类型把自绘控件换成 DOM 把手（media_state→kedou_media）。
+async function doGenerateOfficial(ctx, checked) {
+  const primary = () => t("Generate official app");
+  ctx.gen.disabled = true;
+  ctx.gen.textContent = t("Generating…");
+  ctx.err.textContent = "";
+  let wf;
+  try {
+    wf = app.graph.serialize();
+  } catch (e) {
+    ctx.err.textContent = t("Failed to read the workflow: {msg}", { msg: e && e.message ? e.message : e });
+    ctx.gen.disabled = false;
+    ctx.gen.textContent = primary();
+    return;
+  }
+  const params = checked.map((r) => ({
+    node: r.c.node,
+    input: r.c.input,
+    label: r.lab.value.trim() || r.c.label || r.c.input,
+  }));
+  const outputs = [];
+  for (const n of (wf.nodes || [])) {
+    if (n && String(n.type || "").toLowerCase().includes("save")) outputs.push(String(n.id));
+  }
+  if (!outputs.length) {
+    ctx.err.textContent = t("No output node found; add a SaveImage-like node first.");
+    ctx.gen.disabled = false;
+    ctx.gen.textContent = primary();
+    return;
+  }
+  const name = ctx.nameInput.value.trim() || defaultAppName();
+  try {
+    const resp = await fetch("/ps/pack/app", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, workflow: wf, params, outputs }),
+    });
+    let j = null;
+    try { j = await resp.json(); } catch (_) { /* ignore */ }
+    if (!resp.ok || !j || !j.ok) {
+      const msg = serverError((j && j.error) ? j.error : ("HTTP " + resp.status));
+      const text = t("Generation failed: {msg}", { msg });
+      ctx.err.textContent = text;
+      kpToast(text, true);
+    } else {
+      kpToast(t("Generated {file}; refresh the launcher to see it", { file: j.file || name }));
+      closePackPanel();
     }
   } catch (e) {
     const msg = serverError(e && e.message ? e.message : String(e));

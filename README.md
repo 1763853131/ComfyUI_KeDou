@@ -247,6 +247,9 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 - 写出来的文件 ComfyUI 自己的 **Apps 侧栏**（按 `*.app.json` 后缀）也能直接打开；
   同名 `.app.json` 与 `.kapp.json` 并存时，本插件仍按 `.kapp.json` 优先。
 
+打包面板里「输出格式」下拉即可切换：选「本插件应用包」走 `/ps/pack/save`（API 图），
+选「官方应用」走 `/ps/pack/app`（画布 UI 图，格式固定、不能原地编辑已打包的 kapp）。
+
 > 自带的自测：`tests/test_official_app.py`（生成 → 读回 → 与真机样例对照，不需要启动 ComfyUI）。
 
 ### 编辑已打包的应用
