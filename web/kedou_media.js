@@ -21,6 +21,8 @@ const NODE_CLASS = "KedouImageLoader";
 // 槽数随实际会出图的张数增长（选择模式按 picked，批次模式 1 个），已连线的槽始终保留。
 // 空槽运行时由后端在 /prompt 入口剔除，既不用重连，也不会把 None 送进下游。
 const IMG_SLOTS = 50;
+// 输出长边上限允许范围；0 = 原尺寸（与后端 nodes.py 的 MAX_SIDE_LIMIT 保持一致）
+const MAX_SIDE_LIMIT = 16384;
 const IMG_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
 const VID_EXTS = [".mp4", ".mov", ".webm", ".avi", ".mkv"];
 const AUD_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
@@ -43,6 +45,14 @@ const CSS = [
   ".kd-sw input{display:none;}",
   ".kd-sw input:checked + i{background:var(--p-primary-color,#4a7dff);}",
   ".kd-sw input:checked + i::after{transform:translateX(12px);}",
+  // 输出长边缩放：嵌在节点底栏（与 KeDou 同一行），不额外占内容高度
+  ".kd-limitbar{margin-left:auto;display:flex;align-items:center;gap:4px;min-width:0;}",
+  ".kd-limitbar span{font-size:10px;white-space:nowrap;opacity:.85;flex:none;}",
+  ".kd-limitbar select{height:16px;font:inherit;font-size:10px;line-height:1;color:inherit;",
+  "background:transparent;border:1px solid var(--border-color,#3a3a44);border-radius:4px;",
+  "padding:0 2px;outline:none;cursor:pointer;flex:none;}",
+  ".kd-limitbar select:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kd-limitbar select option{background:var(--comfy-input-bg,#1b1b21);color:var(--fg-color,#ddd);}",
   // 选择模式下的格子状态：选中的主色描边 + 顺序徽标；未选中的序号变暗
   ".kd-cell.kd-picked{border-color:var(--p-primary-color,#4a7dff);box-shadow:0 0 0 1px var(--p-primary-color,#4a7dff);}",
   ".kd-cell.kd-picked .kd-no{background:var(--p-primary-color,#4a7dff);color:#fff;font-weight:600;}",
@@ -325,6 +335,8 @@ function readState(node) {
     cursor: (obj && Number(obj.cursor)) || 0,
     select: !!(obj && obj.select),
     picked: (obj && Array.isArray(obj.picked)) ? obj.picked.filter((f) => typeof f === "string") : [],
+    // 输出长边上限（0 = 原尺寸）；旧工作流没有该字段时按 0 处理
+    max_side: Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(obj && obj.max_side) || 0))),
   };
 }
 
@@ -339,6 +351,7 @@ function writeState(node, state) {
     cursor: Math.max(0, Number(state.cursor) || 0),
     select: !!state.select,
     picked: (state.picked || []).filter((f) => typeof f === "string"),
+    max_side: Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(state.max_side) || 0))),
   });
   try {
     if (typeof w.callback === "function") w.callback(w.value);
@@ -758,6 +771,7 @@ function renderPanel(node) {
   // 两个开关与按钮的状态跟随（赋值 checked 不会触发 onchange，安全）
   if (ui.swBatchCb) ui.swBatchCb.checked = !!state.batch;
   if (ui.swSelCb) ui.swSelCb.checked = !!state.select;
+  try { ensureLimitBar(node); } catch (_) { /* 底栏还没挂好时下次重绘再试 */ }
   const effN = effectiveImages(state).length;
   if (ui.runBtn) {
     ui.runBtn.style.display = state.batch ? "" : "none";
@@ -1163,6 +1177,85 @@ async function openSetsMenu(node, anchor) {
   await paintList();
 }
 
+// ---------------------------------------------------------------- 底栏：长边缩放
+// 放在节点原生底栏（与 KeDou 同一行），不额外占图片区域高度。
+// 常用尺寸 + 「原尺寸」；旧工作流里的非预设值也会临时列进下拉，不会被悄悄改掉。
+const MAX_SIDE_PRESETS = [0, 1024, 1280, 1536, 2048, 2560, 3072, 4096];
+
+function nodeFooterEl(node) {
+  const card = node._kdUI && node._kdUI.card;
+  if (!card) return null;
+  let el = card;
+  for (let i = 0; i < 6 && el; i++) {
+    el = el.parentElement;
+    if (!el) break;
+    for (const child of el.children) {
+      if (child.classList && child.classList.contains("mt-auto") && child.classList.contains("h-5")) {
+        return child;
+      }
+    }
+  }
+  return null;
+}
+
+function fillLimitOptions(node) {
+  const sel = node.__kdLimitSel;
+  if (!sel) return;
+  const cur = readState(node).max_side || 0;
+  const values = MAX_SIDE_PRESETS.slice();
+  if (cur > 0 && values.indexOf(cur) < 0) values.push(cur);
+  values.sort((a, b) => a - b);
+  sel.innerHTML = "";
+  values.forEach((v) => {
+    const o = document.createElement("option");
+    o.value = String(v);
+    o.textContent = v ? String(v) : t("Original");
+    sel.appendChild(o);
+  });
+  sel.value = String(cur);
+}
+
+function ensureLimitBar(node) {
+  const ui = node._kdUI;
+  if (!ui) return false;
+  let bar = node.__kdLimitBar;
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.className = "kd-limitbar";
+    const name = document.createElement("span");
+    const sel = document.createElement("select");
+    sel.onpointerdown = (e) => e.stopPropagation();
+    sel.onclick = (e) => e.stopPropagation();
+    sel.onkeydown = (e) => e.stopPropagation();
+    sel.onwheel = (e) => e.stopPropagation();
+    sel.onchange = () => {
+      const v = Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(sel.value) || 0)));
+      const st = readState(node);
+      if (st.max_side === v) return;
+      st.max_side = v;
+      writeState(node, st);       // 只写状态，不重绘面板
+    };
+    bar.append(name, sel);
+    node.__kdLimitBar = bar;
+    node.__kdLimitName = name;
+    node.__kdLimitSel = sel;
+  }
+  const foot = nodeFooterEl(node);
+  if (!foot) return false;
+  if (bar.parentElement !== foot) foot.appendChild(bar);
+
+  // 语言切换 / 外部改状态后同步文案和当前值
+  if (node.__kdLimitName) node.__kdLimitName.textContent = t("Long side scale");
+  const sel = node.__kdLimitSel;
+  if (sel) {
+    sel.title = t("Resize each output image so its longest side does not exceed this value. Aspect ratio is kept; images are never enlarged. Choose \"Original\" for no limit.");
+    const cur = String(readState(node).max_side || 0);
+    if (!Array.from(sel.options).some((o) => o.value === cur)) fillLimitOptions(node);
+    else sel.value = cur;
+  }
+  return true;
+}
+
 function build(node) {
   ensureCss();
   hideWidget(wOf(node, "media_state"), false);
@@ -1263,11 +1356,13 @@ function build(node) {
     renderPanel(node);
   };
   top.append(title, count, swBatch.lab, swSel.lab, btns);
+
   const body = document.createElement("div");
   body.className = "kd-body";
   card.append(top, body);
 
-  node._kdUI = { card, body, count, libBtn, setsBtn, upBtn, fileEl, runBtn, swBatchCb: swBatch.cb, swSelCb: swSel.cb };
+  node._kdUI = { card, body, count, libBtn, setsBtn, upBtn, fileEl, runBtn,
+    swBatchCb: swBatch.cb, swSelCb: swSel.cb };
   // 选择/框选手势（仅选择模式生效）：点击切换、Shift 范围、点击空白清空、拖框多选
   kdGesture(body, () => Array.from(body.querySelectorAll(".kd-cell")), {
     enabled: () => !!readState(node).select,
@@ -1418,6 +1513,13 @@ function build(node) {
   const size = node.size || [360, 320];
   node.setSize([Math.max(Number(size[0]) || 0, 360), Math.max(Number(size[1]) || 0, 320)]);
   renderPanel(node);
+  // 原生底栏可能比卡片晚一帧挂上；再补几次，挂上后就不再重试
+  let limitTries = 0;
+  const attachLimit = () => {
+    if (ensureLimitBar(node) || limitTries++ >= 10) return;
+    setTimeout(attachLimit, 100);
+  };
+  setTimeout(attachLimit, 0);
 }
 
 // 词库面板的「图片排列」点加载时走这里：由媒体模块自己写 media_state 并重绘，
@@ -1426,12 +1528,15 @@ window.addEventListener("kedou:media-apply", (ev) => {
   const d = ev.detail || {};
   const node = (app.graph && d.nodeId != null) ? app.graph.getNodeById(d.nodeId) : null;
   if (!node) return;
+  const cur = readState(node);
   writeState(node, {
     images: (d.images || []).map((f) => ({ filename: String(f) })),
     batch: !!d.batch,
     select: !!d.select,
     picked: Array.isArray(d.picked) ? d.picked : [],
     cursor: 0,
+    // 排列只还原图片和输出顺序；长边上限是节点设置，保持用户当前值
+    max_side: cur.max_side,
   });
   renderPanel(node);
 });
@@ -1621,18 +1726,46 @@ function promptUsageOf(ntype, name) {
   return (ntype === "KedouPromptBox" && name === "prompt_state") ? "usage" : "";
 }
 
+// ComfyUI 1.55 的控件 canonical 类型与别名（前端 vA 注册表）。
+// 真机 widget.type 是 "number"/"combo"/"toggle"/"customtext" 这类小写名，
+// 不是 INPUT_TYPES 里的 "INT"/"FLOAT"；旧版只认大写，数值框就会退化成文本。
+// 值为 null 的：按钮、预览、曲线、3D 等专用控件，不适合打包成参数。
+const KP_WIDGET_KIND = {
+  int: "number", float: "number", number: "number", slider: "number", gradientslider: "number",
+  boolean: "toggle", toggle: "toggle",
+  combo: "combo", asset: "combo",
+  string: "text", text: "text", textarea: "text", multiline: "text", customtext: "text",
+  color: "text",
+  button: null, chart: null, imagecompare: null, galleria: null, markdown: null,
+  progresstext: null, textpreview: null, text_preview: null,
+  audiorecord: null, audioui: null, audio_ui: null,
+  load3d: null, load3dadvanced: null, camerainfo: null, cameraangle: null,
+  imagecrop: null, boundingbox: null, boundingboxes: null,
+  curve: null, painter: null, compositor: null, range: null, videoedit: null,
+  colors: null, resolutionpreview: null,
+  legacy: "",                    // 未知的旧控件：交给值/选项兜底
+};
+
+function widgetKind(type) {
+  const t = String(type || "").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(KP_WIDGET_KIND, t)
+    ? KP_WIDGET_KIND[t] : undefined;
+}
+
 function suggestWidget(node, w) {
   const ntype = node.type || node.comfyClass || "";
   if (ntype === "KedouImageLoader" && w.name === "media_state") return "kedou_media";
   if (ntype === "LoadImage" && w.name === "image") return "image";
   if (promptUsageOf(ntype, w.name)) return "prompt";
-  if (w.type === "INT" || w.type === "FLOAT") return "number";
-  if (w.type === "BOOLEAN") return "toggle";
-  if (w.type === "COMBO") return "combo";
+  const kind = widgetKind(w.type);
+  if (kind) return kind;         // null/""/undefined 继续往下兜底
   // 自定义类型名（如 ResolutionSelector 的 aspect_ratio）：控件对象里有选项列表就是下拉，
   // 不应按类型名推断：判为 text 会使应用中的下拉退化为输入框
   const vals = comboValuesOf(w);
   if (vals && vals.length) return "combo";
+  // 有些插件把数值/布尔塞进自定义控件，类型名认不出时按值兜底
+  if (typeof w.value === "boolean") return "toggle";
+  if (typeof w.value === "number") return "number";
   return "text";
 }
 
@@ -1662,26 +1795,36 @@ function collectCandidates() {
       if (u) absorbed.add(u);
     }
     for (const w of widgets) {
+      if (!w || !w.name) continue;
       if (w.name === "control_after_generate" || w.type === "control_after_generate") continue;
       if (absorbed.has(w.name)) continue;
       // DOM 控件是节点自绘的面板 UI 本身（图片选择器 / 提示词输入框），没有值，不能当参数
       if (w.type === "div" || w.name === "kedou_media" || w.name === "kedou_promptbox") continue;
-      if (w.type === "converted-widget" &&
-          !(ntype === "KedouImageLoader" && w.name === "media_state")) continue;  // 隐藏格
+      const special = ntype === "KedouImageLoader" && w.name === "media_state";
+      if (w.type === "converted-widget" && !special) continue;  // 隐藏格
       // 已转换为输入且连着上游的 widget：值由上游驱动，打包成可调参数会在运行时破坏连线，故不提供勾选
       if (w.type === "converted-widget" && Array.isArray(node.inputs)
           && node.inputs.some((inp) => inp && inp.name === w.name && inp.link != null)) continue;
+      const opt = w.options && typeof w.options === "object" ? w.options : {};
+      if (!special) {
+        // 按钮 / 预览 / 曲线 / 3D 等专用控件不是参数；不进应用面板
+        if (widgetKind(w.type) === null) continue;
+        // 不随工作流序列化、只在画布或属性面板展示的控件也不适合打包
+        if (opt.serialize === false || opt.canvasOnly || opt.hideInPanel) continue;
+      }
       const widget = suggestWidget(node, w);
       // 能力采集与建议类型解耦：选项/范围/多行一律从真机控件对象取下来存进候选，
       // 用户手动改控件类型（如文本→下拉）时能力不丢：仅按建议类型采集时，
       // 自定义类型名的下拉（ResolutionSelector 的 aspect_ratio）会落为空输入框
-      const opt = w.options && typeof w.options === "object" ? w.options : {};
       let min, max, step;
       if (typeof opt.min === "number") min = opt.min;
       if (typeof opt.max === "number") max = opt.max;
       if (typeof opt.step === "number") step = opt.step;
       const options = comboValuesOf(w) ? comboValuesOf(w).slice() : null;
-      const multiline = !!opt.multiline;
+      const rawType = String(w.type || "").toLowerCase();
+      // customtext / multiline / textarea 没带 options.multiline，但它们在应用里应是多行文本框
+      const multiline = !!opt.multiline || rawType === "customtext"
+        || rawType === "multiline" || rawType === "textarea";
       // 复合控件的能力项一起存进候选：用户把建议类型改掉再改回来时不丢用途信息
       const usage = promptUsageOf(ntype, w.name);
       let usageInput, usageOptions, usageDefault;
@@ -1692,12 +1835,14 @@ function collectCandidates() {
         if (uv && uv.length) usageOptions = uv.slice();
         usageDefault = uw ? uw.value : undefined;
       }
+      // 控件自己的标题（本地化 label），不是节点标题；没有就用控件名
+      const label = String(w.label || w.displayName || w.name || "").trim() || w.name;
       out.push({
         node: String(node.id), input: w.name, widget, default: w.value,
         node_type: ntype, node_title: title,
         min, max, step, options, multiline,
         usage_input: usageInput, usage_options: usageOptions, usage_default: usageDefault,
-        label: title || w.name,
+        label,
         valuePreview: kpPreview(w.value, widget),
       });
     }
@@ -2059,6 +2204,23 @@ function openPackPanel(hostEl) {
     if (emptyEl) emptyEl.style.display = "none";
     return g;
   };
+  // 旧版打包把数值/布尔都存成了 text；重新打开时以当前控件识别结果为准。
+  // 用户自己改过的类型（非 text）保留，不覆盖。
+  const editedWidgetType = (saved, cand) => {
+    const w = KP_WIDGETS.indexOf(saved) >= 0 ? saved : "text";
+    if (!cand || w !== "text") return w;
+    return KP_WIDGETS.indexOf(cand.widget) >= 0 ? cand.widget : w;
+  };
+  // 标题：旧应用的 label 往往就是节点标题（整组同名），换成控件自己的标题；
+  // 用户改过的标题保留。同节点多个参数共用一个标题也视为旧的节点标题。
+  const editedLabel = (saved, p, cand, dup) => {
+    const s = String(saved || "").trim();
+    const input = String((cand && cand.input) || p.input || "").trim();
+    const titles = [cand && cand.node_title, p.node_title].filter(Boolean);
+    const stale = !s || s === input || titles.indexOf(s) >= 0 || (dup && dup[s] > 1);
+    if (stale && cand && cand.label) return String(cand.label);
+    return s || input;
+  };
   const applyEditing = (file, kapp) => {
     editing = { file, kapp: kapp || {} };
     removeOrphanGroup();
@@ -2069,18 +2231,24 @@ function openPackPanel(hostEl) {
     graphCb.checked = false;
     graphField.style.display = "";
     const params = Array.isArray(editing.kapp.params) ? editing.kapp.params : [];
+    const labelCount = {};
+    for (const p of params) {
+      const s = p && typeof p === "object" ? String(p.label || "").trim() : "";
+      if (s) labelCount[s] = (labelCount[s] || 0) + 1;
+    }
     for (const p of params) {
       if (!p || typeof p !== "object") continue;
       const nodeId = String(p.node == null ? "" : p.node);
       const input = String(p.input == null ? "" : p.input);
-      const widget = KP_WIDGETS.indexOf(p.widget) >= 0 ? p.widget : "text";
       let r = rows.find((x) => x.c.node === nodeId && x.c.input === input);
+      const widget = editedWidgetType(p.widget, r ? r.c : null);
+      const label = editedLabel(p.label, p, r ? r.c : null, labelCount);
       if (!r) {
         r = addRow({
           node: nodeId, input, widget,
           default: p.default,
           node_type: p.node_type || "", node_title: p.node_title || "",
-          label: p.label || input,
+          label,
           valuePreview: kpPreview(p.default, widget),
           min: p.min, max: p.max, step: p.step,
           options: Array.isArray(p.options) ? p.options : null,
@@ -2091,7 +2259,7 @@ function openPackPanel(hostEl) {
         }, ensureOrphanGroup());
       }
       r.cb.checked = true;
-      r.lab.value = String(p.label || input);
+      r.lab.value = label;
       r.sel.value = widget;
       r.valEl.textContent = t("Current value: {v}", { v: kpPreview(p.default, widget) });
       r.existingParam = p;

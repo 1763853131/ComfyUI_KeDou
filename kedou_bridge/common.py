@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """应用解析共用的常量与纯函数（不依赖 ComfyUI 运行时）。"""
 
-import re
-
 
 # 这些节点类型代表"要一张图进来"
 IMAGE_LOADERS = {
@@ -29,15 +27,22 @@ FALLBACK_LABEL = {
 }
 
 def _clean_label(node: dict, widget: str) -> str:
+    """控件显示名：优先工作流里记录的控件标题，其次控件名，不再用节点标题。
+
+    UI 工作流的 node.inputs 里通常带 localized_name（如「百万像素」）和 label；
+    一个节点有多个控件时，用节点标题会让所有参数同名，用户分不清是哪个。
     """
-    显示名优先取节点标题；"#01. Pos Prompt" 这种去掉 #序号前缀后仍可读。
-    标题为空或只剩 #序号 时，退回按控件名给的兜底名。
-    """
-    title = (node.get("title") or "").strip()
-    if title:
-        stripped = re.sub(r"^#\s*\d+\s*[.、:]?\s*", "", title).strip()
-        if stripped:
-            return stripped
+    for inp in (node.get("inputs") or []):
+        if not isinstance(inp, dict):
+            continue
+        wspec = inp.get("widget") if isinstance(inp.get("widget"), dict) else {}
+        name = str(inp.get("name") or wspec.get("name") or "")
+        if name != widget:
+            continue
+        for key in ("localized_name", "label"):
+            text = " ".join(str(inp.get(key) or "").splitlines()).strip()
+            if text:
+                return text
     return FALLBACK_LABEL.get(widget, widget)
 
 

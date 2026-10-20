@@ -37,7 +37,20 @@ def _prompt_usage_of(class_type: str, name: str) -> str:
     return ""
 
 
-def _suggest_widget(object_info: dict, class_type: str, name: str) -> str:
+def _ui_widget_names(node: dict) -> list:
+    """UI 工作流里声明为控件的输入名（含 frontend-only 节点）；socket 输入没有 widget 键。"""
+    out = []
+    for inp in (node.get("inputs") if isinstance(node, dict) else None) or []:
+        if not isinstance(inp, dict):
+            continue
+        w = inp.get("widget") if isinstance(inp.get("widget"), dict) else None
+        name = str((w or {}).get("name") or "")
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = None) -> str:
     """打包候选的建议 widget（按节点声明推断，仅几处品牌特判：本家节点）。
     自定义类型名不按名称推断：声明 cfg 里带 choices/options 选项列表的即为下拉 ——
     判为 text 会使应用中的下拉退化为输入框（ResolutionSelector 的 aspect_ratio 即如此）。"""
@@ -58,6 +71,20 @@ def _suggest_widget(object_info: dict, class_type: str, name: str) -> str:
         ch = cfg.get("choices") or cfg.get("options")
         if isinstance(ch, (list, tuple)) and ch:
             return "combo"
+    # 注册表里查不到（前端节点/子图）时，退回 UI 工作流里的输入声明
+    for inp in (node.get("inputs") if isinstance(node, dict) else None) or []:
+        if not isinstance(inp, dict) or str(inp.get("name") or "") != name:
+            continue
+        t = str(inp.get("type") or "").upper()
+        if t in ("INT", "FLOAT"):
+            return "number"
+        if t == "BOOLEAN":
+            return "toggle"
+        if t == "COMBO":
+            return "combo"
+        if t == "STRING":
+            return "text"
+        break
     return "text"
 
 
@@ -77,7 +104,7 @@ def pack_candidates(source: str) -> dict:
     for node in nodes:
         ctype = str(node.get("type") or "")
         wv = _widget_values(node)
-        names = _declared_widgets(object_info, ctype)
+        names = _declared_widgets(object_info, ctype) or _ui_widget_names(node)
         # 被「提示词框」吸收的输入不再单独列为候选（否则应用里会出现两个用途下拉）
         absorbed = set()
         for nm in names:
@@ -95,7 +122,7 @@ def pack_candidates(source: str) -> dict:
                 vi += 1                     # control_after_generate 隐藏格
             if name in absorbed:
                 continue
-            widget = _suggest_widget(object_info, ctype, name)
+            widget = _suggest_widget(object_info, ctype, name, node)
             item = {
                 "node": str(node.get("id")),
                 "input": name,
