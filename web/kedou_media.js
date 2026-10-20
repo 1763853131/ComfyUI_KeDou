@@ -1916,14 +1916,29 @@ function collectCandidates() {
   return out;
 }
 
+// 应用名默认取工作流名字：新建/未保存的占位名不算，退回 untitled。
+// 顺序：页签上的名字 → 文件名 → 图标题（官方 .app.json 里有）。
 function defaultAppName() {
+  const strip = (s) => String(s == null ? "" : s).trim()
+    .replace(/\.kapp\.json$/i, "")
+    .replace(/\.app\.json$/i, "")
+    .replace(/\.json$/i, "")
+    .replace(/\.kapp$/i, "");
+  const placeholder = (s) => !s || /^unsaved/i.test(s) || /^untitled$/i.test(s)
+    || /^未保存/.test(s) || /^未命名/.test(s);
+  const pick = (s) => { const v = strip(s); return placeholder(v) ? "" : v; };
   try {
-    const g = app.graph;
-    if (g && g.title) return g.title;
+    const mgr = app.extensionManager && app.extensionManager.workflow;
+    const wf = (mgr && mgr.activeWorkflow) || (app.workflowManager && app.workflowManager.activeWorkflow);
+    if (wf) {
+      const base = wf.path ? String(wf.path).split("/").pop() : "";
+      const v = pick(wf.name) || pick(wf.filename) || pick(wf.fullFilename) || pick(base);
+      if (v) return v;
+    }
   } catch (_) { /* ignore */ }
   try {
-    const wf = app.workflowManager && app.workflowManager.activeWorkflow;
-    if (wf && wf.name) return wf.name;
+    const g = app.graph;
+    if (g) { const v = pick(g.title); if (v) return v; }
   } catch (_) { /* ignore */ }
   return "untitled";
 }
@@ -1974,6 +1989,9 @@ function openPackPanel(hostEl) {
   nameLab.textContent = t("App name");
   const nameInput = document.createElement("input");
   nameInput.value = defaultAppName();
+  // 名字还没被用户改过时跟着工作流走：换工作流后面板自动换成新名字
+  let nameAuto = true;
+  nameInput.addEventListener("input", () => { nameAuto = false; });
   nameField.append(nameLab, nameInput);
 
   const descField = document.createElement("div");
@@ -2933,6 +2951,7 @@ function openPackPanel(hostEl) {
     removeOrphanGroup();
     resetRows();
     nameInput.value = String(editing.kapp.name || "");
+    nameAuto = false;
     nameInput.title = t("For an existing app, this only changes the display name; the file name stays.");
     descInput.value = String(editing.kapp.desc || "");
     graphCb.checked = false;
@@ -2985,6 +3004,7 @@ function openPackPanel(hostEl) {
     removeOrphanGroup();
     resetRows();
     nameInput.value = defaultAppName();
+    nameAuto = true;
     nameInput.title = "";
     descInput.value = "";
     graphCb.checked = false;
@@ -3143,6 +3163,10 @@ function openPackPanel(hostEl) {
         delete hostEl.dataset.kpMounted;
         openPackPanel(hostEl);
         return;
+      }
+      if (nameAuto && !editing) {
+        const auto = defaultAppName();
+        if (auto && nameInput.value !== auto) nameInput.value = auto;
       }
     }, 800);
   }
