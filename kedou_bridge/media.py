@@ -117,6 +117,11 @@ THUMB_DIR = os.path.join(os.path.dirname(paths.WORKFLOW_DIR), "kedou_thumbs")
 # 而且不报错，只在 DOM 里占个位）。所以缩略图只出面板一定认的格式：不透明走 JPEG，
 # 带透明通道的走 PNG（128px 量级也就几十 KB，不值得为省这点字节赌解码器）。
 THUMB_EXTS = (".jpg", ".png")
+# 面板的缩略图格子是「正方形 + 写死像素」的画法：UXP 会把 max-width:100% 和
+# max-height:100% 各自钳位、不锁宽高比，横图竖图都被拽成格子的比例（2026-10-20 实测：
+# 1.80 和 0.66 的两张图在 90×64 的格里分别被拉成 1.56 和 1.13）。位图本身是正方形，
+# 前端再写死等边 px，就没有任何一层能把它拉歪。
+THUMB_CROPS = ("", "square")
 _thumb_pruned = False
 
 
@@ -133,10 +138,11 @@ def _media_file(name, sub, tab):
     return path
 
 
-def _make_thumb(src, base, w):
+def _make_thumb(src, base, w, crop=""):
     """缩到 w 以内并落盘，返回真实写出的路径（base + .jpg/.png）。
 
     base 不带扩展名：扩展名要看完图才知道有没有 alpha，调用方拿返回值发文件即可。
+    crop="square" 先按短边居中裁成正方形（裁在缩之前，画质才留得住）。
     跑在 asyncio.to_thread 里，不碰事件循环。
     """
     from PIL import Image, ImageOps                        # noqa: PLC0415
@@ -160,6 +166,11 @@ def _make_thumb(src, base, w):
             fmt, ext = "JPEG", ".jpg"
             if im.mode != "RGB":
                 im = im.convert("RGB")
+        if crop == "square":
+            s = min(im.size)
+            x = (im.width - s) // 2
+            y = (im.height - s) // 2
+            im = im.crop((x, y, x + s, y + s))
         im.thumbnail((w, w))
         fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=ext)
         os.close(fd)
