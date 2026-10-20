@@ -59,7 +59,7 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/apps/{app_id}/package` | GET | 取原始 kapp 包（`graph` + `params` + `outputs`），供打包面板回填编辑 |
 | `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘；带 `target` 时回写同一个 `.kapp.json` |
 | `/ps/pack/app` | POST | 按 **ComfyUI 官方 App Mode 格式**写 `<stem>.app.json`（UI 图 + `extra.linearMode` / `extra.linearData`）；带 `target` 时回写同一个官方包 |
-| `/ps/pack/linear` | POST | 按 **官方 App Builder 的勾选结果**（`extra.linearData`）直接生成 `.kapp.json`，不需要二次勾选；带 `target` 时回写同一个包 |
+| `/ps/pack/linear` | POST | 按 **官方 App Builder 的勾选结果**（`extra.linearData`）直接生成 `.kapp.json`，不需要二次勾选；带 `target` 时回写同一个包（面板暂无入口，接口保留） |
 | `/ps/prompts` | GET | **语库**清单（只含主动保存的 `.md`，不含历史），连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
 | `/ps/prompts/save` \| `delete` \| `use` | POST | 存语库条目 / 删除（进 `.trash`）/ 计次 |
 | `/ps/prompts/history` | GET / POST | 自动历史：GET 列表（`?use=&q=`），POST 记录（hash 去重、50 条封顶） |
@@ -253,20 +253,12 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 
 > 自带的自测：`tests/test_official_app.py`（生成 → 读回 → 与真机样例对照，不需要启动 ComfyUI）。
 
-### 用官方 App Builder 勾选，一键生成 kapp
+### 读官方 App Builder 的勾选结果（接口，面板无入口）
 
-不想在面板里逐行比对、怕勾错时，可以只用 ComfyUI 自己的 **App Builder** 当编辑器：
-
-1. 画布右上 / 面包屑菜单进入 **App Builder**，在节点上点要暴露的参数（输入），
-   再到 Outputs 里点输出节点，拖动排序、双击加描述 —— 这套交互就是官方的构建方式；
-2. 打开打包面板：检测到构建器里已勾选，就会出现「**从 App Builder 导入**」一栏，
-   列出这些输入（顺序就是构建器的顺序）；
-3. 点「**按 App Builder 的勾选生成**」，`POST /ps/pack/linear` 直接出 `<stem>.kapp.json`。
-
-不需要重新勾一遍：`linearData.inputs` 已经确定了**哪些参数、什么顺序、什么显示名、什么描述**，
-服务端按这份清单换算成 kapp 的 `params`（DOM 把手还原成真实控件、类型从节点声明推断、
-默认值取 `widgets_values_named`），`outputs` 直接用构建器勾的输出节点，图用同一张 UI 图转成 API 图。
-面板顶部的「输出格式」和下面的候选勾选仍然保留，供需要 kapp 专属参数（构建器里不方便点的）时手动微调。
+`POST /ps/pack/linear` 仍然保留：给它一张带官方构建器勾选（`extra.linearData`）的工作流，
+就能直接产出 `<stem>.kapp.json` —— 哪些参数、什么顺序、什么显示名、什么描述都沿用构建器的，
+`outputs` 用构建器勾的输出节点，图用同一张 UI 图转成 API 图。适合脚本或以后接到「保存后自动生成」。
+面板上的「从 App Builder 导入」区块已按反馈移除（它只列内部控件名，反而是干扰）。
 
 ### 打包面板：点选 / 全部选项两个子标签
 

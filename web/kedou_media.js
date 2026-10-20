@@ -1719,7 +1719,6 @@ function ensurePackCss() {
 
 let kpOverlay = null;
 let kpUnsubRepaint = null;   // 面板常驻/浮层共用：关闭或重建时注销语言订阅
-let kpRefreshLinear = null;  // App Builder 区块的刷新函数（构建器里增删输入后随之更新）
 let kpUnhookPick = null;     // 点选模式挂在 window 上的监听器（关面板时必须摘掉）
 let kpSyncTimer = null;      // 「画布点选」定时器（关闭/重建时必须清，否则泄漏累积）
 let kpRefreshTimer = null;   // 侧栏面板的工作流切换监视器
@@ -1735,7 +1734,6 @@ function stopPackPanelRuntime() {
   if (kpSyncTimer) { clearInterval(kpSyncTimer); kpSyncTimer = null; }
   if (kpRefreshTimer) { clearInterval(kpRefreshTimer); kpRefreshTimer = null; }
   if (kpUnsubRepaint) { kpUnsubRepaint(); kpUnsubRepaint = null; }
-  kpRefreshLinear = null;
   if (kpUnhookPick) { kpUnhookPick(); kpUnhookPick = null; }
 }
 
@@ -1978,25 +1976,6 @@ function openPackPanel(hostEl) {
   fmtSel.appendChild(new Option(t("Official app (.app.json) - opens in ComfyUI's Apps sidebar"), "official"));
   fmtField.append(fmtLab, fmtSel);
 
-  // 「从 App Builder 生成」：官方构建器里点过的输入/输出就是 kapp 的全部参数，
-  // 顺序和显示名都已定好，所以这里不需要再逐行勾选 —— 一次点击直接出包。
-  const linField = document.createElement("div");
-  linField.className = "kp-field";
-  linField.style.display = "none";
-  const linLab = document.createElement("label");
-  linLab.textContent = t("From App Builder");
-  const linHint = document.createElement("div");
-  linHint.className = "kp-hint";
-  linHint.style.opacity = "0.75";
-  linHint.style.fontSize = "11px";
-  linHint.style.lineHeight = "1.45";
-  const linBtn = document.createElement("button");
-  linBtn.className = "kp-tbtn";
-  linBtn.style.marginTop = "6px";
-  linBtn.textContent = t("Generate from App Builder selection");
-  linBtn.title = t("Uses the inputs/outputs you picked in ComfyUI's App Builder — no need to tick them again here");
-  linField.append(linLab, linHint, linBtn);
-
   const graphField = document.createElement("label");
   graphField.className = "kp-chk";
   graphField.style.display = "none";
@@ -2070,7 +2049,7 @@ function openPackPanel(hostEl) {
   listPane.style.display = "none";
   listPane.append(toolbar, rowsWrap);
 
-  body.append(editField, linField, fmtField, nameField, descField, graphField,
+  body.append(editField, fmtField, nameField, descField, graphField,
               tabBar, pickPane, listPane, err);
   if (sidebar) {
     // 侧栏模式：无标题栏/遮罩/Esc，内容直接挂进页签
@@ -2732,94 +2711,6 @@ function openPackPanel(hostEl) {
   };
   kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
 
-  // ---- App Builder 联动：构建器里点过的输入就是 kapp 的参数，不用再勾一遍 ----
-  const readLinear = () => {
-    const g = (typeof app !== "undefined" && app && app.graph) ? app.graph : null;
-    const root = (typeof app !== "undefined" && app && app.rootGraph) ? app.rootGraph : null;
-    const extra = (g && g.extra) || (root && root.extra) || {};
-    const ld = extra.linearData || {};
-    return { mode: !!extra.linearMode, inputs: Array.isArray(ld.inputs) ? ld.inputs : [] };
-  };
-  const linLabelOf = (entry) => {
-    try {
-      if (Array.isArray(entry) && entry.length) {
-        if (entry.length === 2 && String(entry[0]).indexOf(":") < 0) return String(entry[1] || entry[0]);
-        const shown = String(entry[1] || "");
-        if (shown && shown.indexOf(":") < 0) return shown;
-        const ref = String(entry[0] || "");
-        return String(ref.split(":").pop() || ref);
-      }
-    } catch (_) { /* ignore */ }
-    return "";
-  };
-  const refreshLinear = () => {
-    const { mode, inputs } = readLinear();
-    const show = mode || inputs.length > 0;
-    linField.style.display = show ? "" : "none";
-    if (!show) return;
-    linBtn.disabled = !inputs.length;
-    if (!inputs.length) {
-      linHint.textContent = t("Nothing picked yet: enter App Builder on the canvas and click the parameters to expose.");
-      return;
-    }
-    const names = inputs.map(linLabelOf).filter(Boolean);
-    const shown = names.slice(0, 6).join("、") + (names.length > 6 ? "…" : "");
-    linHint.textContent = t("App Builder has {n} inputs: {names}. They become the app parameters in that order.", { n: inputs.length, names: shown });
-  };
-  kpRefreshLinear = refreshLinear;
-
-  linBtn.onclick = async () => {
-    if (kpOpenGraph && kpGraphKey() !== kpOpenGraph) {
-      err.textContent = t("Workflow changed; reopen the pack panel and try again.");
-      return;
-    }
-    const label = linBtn.textContent;
-    linBtn.disabled = true;
-    linBtn.textContent = t("Generating…");
-    err.textContent = "";
-    let wf;
-    try {
-      wf = app.graph.serialize();
-    } catch (e) {
-      err.textContent = t("Failed to read the workflow: {msg}", { msg: e && e.message ? e.message : e });
-      linBtn.disabled = false;
-      linBtn.textContent = label;
-      return;
-    }
-    const name = nameInput.value.trim() || defaultAppName();
-    try {
-      const resp = await fetch("/ps/pack/linear", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, desc: descInput.value.trim(), workflow: wf }),
-      });
-      let j = null;
-      try { j = await resp.json(); } catch (_) { /* ignore */ }
-      if (!resp.ok || !j || !j.ok) {
-        const msg = serverError((j && j.error) ? j.error : ("HTTP " + resp.status));
-        const text = t("Generation failed: {msg}", { msg });
-        err.textContent = text;
-        kpToast(text, true);
-      } else if (j.warnings && j.warnings.length) {
-        const list = j.warnings.slice(0, 4).join(t("; ")) + (j.warnings.length > 4 ? "…" : "");
-        err.textContent = t("Generated {file}, {w} warnings: {list}", { file: j.file || name, w: j.warnings.length, list });
-        kpToast(t("Generated with {w} warnings — see details in the panel", { w: j.warnings.length }), true);
-        refreshLinear();
-      } else {
-        kpToast(t("Generated {file}; refresh the launcher to see it", { file: j.file || name }));
-        closePackPanel();
-      }
-    } catch (e) {
-      const msg = serverError(e && e.message ? e.message : String(e));
-      err.textContent = t("Request failed: {msg}", { msg });
-      kpToast(t("Request failed: {msg}", { msg }), true);
-    } finally {
-      linBtn.disabled = false;
-      linBtn.textContent = label;
-    }
-  };
-  refreshLinear();
-
   gen.onclick = () => doGenerate({
     nameInput, descInput, rows, err, gen, graphCb, fmtSel,
     order: () => pickOrder,
@@ -2838,7 +2729,6 @@ function openPackPanel(hostEl) {
         openPackPanel(hostEl);
         return;
       }
-      if (kpRefreshLinear) kpRefreshLinear();   // 构建器里勾选变化后，面板里的清单跟着走
     }, 800);
   }
 
