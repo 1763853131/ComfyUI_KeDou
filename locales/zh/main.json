@@ -257,5 +257,17 @@
   "Generate from App Builder selection": "按 App Builder 的勾选生成",
   "Uses the inputs/outputs you picked in ComfyUI's App Builder — no need to tick them again here": "直接用你在 ComfyUI App Builder 里勾的输入/输出，这里不用再勾一遍",
   "Nothing picked yet: enter App Builder on the canvas and click the parameters to expose.": "还没勾选：在画布上进入 App Builder，点要暴露给用户的参数",
-  "App Builder has {n} inputs: {names}. They become the app parameters in that order.": "App Builder 里已勾 {n} 个输入：{names}。它们会按这个顺序成为应用参数。"
+  "App Builder has {n} inputs: {names}. They become the app parameters in that order.": "App Builder 里已勾 {n} 个输入：{names}。它们会按这个顺序成为应用参数。",
+  "Point & click": "点选",
+  "Point & click ({n})": "点选（{n}）",
+  "All options": "全部选项",
+  "Picking is on": "点选已开启",
+  "Picking is off": "点选已关闭",
+  "While on, clicking a parameter on the canvas adds or removes it": "开启后，在画布上点参数即加入/移出",
+  "Click a parameter on the canvas to add it; click again to remove it.": "在画布上点一下参数就加进来，再点一下移出。",
+  "Nothing picked yet — click a parameter on the canvas.": "还没选任何一项 —— 在画布上点一个参数试试。",
+  "Name shown to users": "用户看到的名称",
+  "Move up": "上移",
+  "Move down": "下移",
+  "Remove": "移出"
 }

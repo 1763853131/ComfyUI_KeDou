@@ -771,7 +771,7 @@ function renderPanel(node) {
   // 两个开关与按钮的状态跟随（赋值 checked 不会触发 onchange，安全）
   if (ui.swBatchCb) ui.swBatchCb.checked = !!state.batch;
   if (ui.swSelCb) ui.swSelCb.checked = !!state.select;
-  try { ensureLimitBar(node); } catch (_) { /* 底栏还没挂好时下次重绘再试 */ }
+  try { if (ensureLimitBar(node)) node.__kdLimitDone = true; } catch (_) { /* 底栏还没挂好时看门狗会补 */ }
   const effN = effectiveImages(state).length;
   if (ui.runBtn) {
     ui.runBtn.style.display = state.batch ? "" : "none";
@@ -1256,6 +1256,38 @@ function ensureLimitBar(node) {
   return true;
 }
 
+// 原生底栏由前端组件渲染，可能比卡片晚几帧才出现；前 1 秒每 100ms 试一次，
+// 之后每 500ms 再试到约 6 秒（大工作流加载慢时 1 秒窗口根本等不到底栏）。
+function attachLimitBar(node) {
+  let tries = 0;
+  const step = () => {
+    if (node.__kdLimitDone) return;                 // 已挂上（或被看门狗挂上）就不再重试
+    if (ensureLimitBar(node)) { node.__kdLimitDone = true; return; }
+    if (tries++ >= 20) return;
+    setTimeout(step, tries < 10 ? 100 : 500);
+  };
+  setTimeout(step, 0);
+}
+
+// 模块级看门狗（全页只有一个定时器）：只查"下拉框是否还挂在文档里"，
+// 正常情况一次布尔判断就跳过，不动 DOM。用于两类会导致下拉框悄悄消失的情形：
+//   * 节点在视口外，底栏当时还没被渲染出来（前端按可见性挂载 DOM）；
+//   * 前端重挂节点组件时把底栏整个换掉，我们的下拉框跟着旧节点一起掉出文档。
+let kdLimitWatchdog = null;
+function startLimitWatchdog() {
+  if (kdLimitWatchdog) return;
+  kdLimitWatchdog = setInterval(() => {
+    const nodes = (app.graph && app.graph._nodes) || [];
+    for (const n of nodes) {
+      if (n.comfyClass !== NODE_CLASS || !n._kdUI) continue;
+      const bar = n.__kdLimitBar;
+      if (bar && bar.isConnected) { n.__kdLimitDone = true; continue; }
+      if (!n._kdUI.card.isConnected) continue;      // 卡片本身还没上屏，等它出现再看
+      try { if (ensureLimitBar(n)) n.__kdLimitDone = true; } catch (_) { /* 单节点失败不影响其它 */ }
+    }
+  }, 2000);
+}
+
 function build(node) {
   ensureCss();
   hideWidget(wOf(node, "media_state"), false);
@@ -1513,13 +1545,8 @@ function build(node) {
   const size = node.size || [360, 320];
   node.setSize([Math.max(Number(size[0]) || 0, 360), Math.max(Number(size[1]) || 0, 320)]);
   renderPanel(node);
-  // 原生底栏可能比卡片晚一帧挂上；再补几次，挂上后就不再重试
-  let limitTries = 0;
-  const attachLimit = () => {
-    if (ensureLimitBar(node) || limitTries++ >= 10) return;
-    setTimeout(attachLimit, 100);
-  };
-  setTimeout(attachLimit, 0);
+  attachLimitBar(node);      // 原生底栏可能比卡片晚几帧挂上，用退避重试补上
+  startLimitWatchdog();      // 大工作流/节点在视口外时底栏可能还没渲染，看门狗兜底
 }
 
 // 词库面板的「图片排列」点加载时走这里：由媒体模块自己写 media_state 并重绘，
@@ -1657,6 +1684,24 @@ const KPCSS = [
   ".kp-gsel:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
   ".kp-gbody{display:flex;flex-direction:column;gap:7px;padding:8px;}",
   ".kp-syncbtn.kp-on,.kp-tbtn.kp-on{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.12);}",
+  // 子标签（点选 / 全部选项）：两页并排，默认点选
+  ".kp-tabs{display:flex;gap:4px;border-bottom:1px solid var(--interface-stroke,#3a3a44);}",
+  ".kp-tab{flex:1;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--fg-color,#e7e7ea);",
+  "font:inherit;font-size:12px;padding:7px 6px;cursor:pointer;opacity:.6;}",
+  ".kp-tab:hover{opacity:.85;}",
+  ".kp-tab.kp-on{opacity:1;border-bottom-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);font-weight:600;}",
+  ".kp-pane{display:flex;flex-direction:column;gap:8px;}",
+  ".kp-pickhint{font-size:11px;line-height:1.5;color:var(--fg-color,#e7e7ea);opacity:.62;}",
+  ".kp-picklist{display:flex;flex-direction:column;gap:6px;}",
+  ".kp-pickrow{display:flex;align-items:center;gap:6px;padding:6px 7px;border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;}",
+  ".kp-pickrow .kp-lab{flex:1;min-width:0;}",
+  ".kp-pickrow .kp-sel{width:74px;}",
+  ".kp-pmove{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);",
+  "font:inherit;font-size:10px;line-height:1;padding:4px 5px;border-radius:5px;cursor:pointer;flex:none;opacity:.7;}",
+  ".kp-pmove:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);opacity:1;}",
+  ".kp-pdel{border:0;background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:14px;line-height:1;",
+  "padding:2px 4px;cursor:pointer;opacity:.5;flex:none;}",
+  ".kp-pdel:hover{color:var(--error-text,#ff7a7a);opacity:1;}",
 ].join("");
 
 let kpCssDone = false;
@@ -1675,6 +1720,7 @@ function ensurePackCss() {
 let kpOverlay = null;
 let kpUnsubRepaint = null;   // 面板常驻/浮层共用：关闭或重建时注销语言订阅
 let kpRefreshLinear = null;  // App Builder 区块的刷新函数（构建器里增删输入后随之更新）
+let kpUnhookPick = null;     // 点选模式挂在 window 上的监听器（关面板时必须摘掉）
 let kpSyncTimer = null;      // 「画布点选」定时器（关闭/重建时必须清，否则泄漏累积）
 let kpRefreshTimer = null;   // 侧栏面板的工作流切换监视器
 let kpOpenGraph = "";        // 打开面板时的工作流 id；生成前复核，防止拿着旧候选打包
@@ -1690,6 +1736,7 @@ function stopPackPanelRuntime() {
   if (kpRefreshTimer) { clearInterval(kpRefreshTimer); kpRefreshTimer = null; }
   if (kpUnsubRepaint) { kpUnsubRepaint(); kpUnsubRepaint = null; }
   kpRefreshLinear = null;
+  if (kpUnhookPick) { kpUnhookPick(); kpUnhookPick = null; }
 }
 
 function closePackPanel() {
@@ -1993,7 +2040,38 @@ function openPackPanel(hostEl) {
   gen.textContent = t("Generate app package");
   ft.appendChild(gen);
 
-  body.append(editField, linField, fmtField, nameField, descField, graphField, toolbar, rowsWrap, err);
+  // 子标签：点选（默认）/ 全部选项。老的分组勾选表整个退到第二页，能力一点不丢，
+  // 只是不再是必经之路 —— 只在点不到（折叠节点、子图、被挡住）时才需要翻出来。
+  const tabBar = document.createElement("div");
+  tabBar.className = "kp-tabs";
+  const tabPick = document.createElement("button");
+  tabPick.className = "kp-tab";
+  tabPick.textContent = t("Point & click");
+  const tabList = document.createElement("button");
+  tabList.className = "kp-tab";
+  tabList.textContent = t("All options");
+  tabBar.append(tabPick, tabList);
+
+  const pickPane = document.createElement("div");
+  pickPane.className = "kp-pane";
+  const pickSwitch = document.createElement("button");
+  pickSwitch.className = "kp-tbtn";
+  pickSwitch.textContent = t("Picking is on");
+  pickSwitch.title = t("While on, clicking a parameter on the canvas adds or removes it");
+  const pickHint = document.createElement("div");
+  pickHint.className = "kp-pickhint";
+  pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it.");
+  const pickList = document.createElement("div");
+  pickList.className = "kp-picklist";
+  pickPane.append(pickSwitch, pickHint, pickList);
+
+  const listPane = document.createElement("div");
+  listPane.className = "kp-pane";
+  listPane.style.display = "none";
+  listPane.append(toolbar, rowsWrap);
+
+  body.append(editField, linField, fmtField, nameField, descField, graphField,
+              tabBar, pickPane, listPane, err);
   if (sidebar) {
     // 侧栏模式：无标题栏/遮罩/Esc，内容直接挂进页签
     panel.append(body, ft);
@@ -2020,6 +2098,12 @@ function openPackPanel(hostEl) {
   const groups = [];
   let onlySel = false;
 
+  // 点选状态：pickOrder = 用户点选的先后顺序，kapp 里的参数就按它排。
+  // syncPick / renderPick 在下面点选模块里赋值；updateCount 每变一次就刷新一遍。
+  let pickOrder = [];
+  let syncPick = () => {};
+  let renderPick = () => {};
+
   // 「全选 / 取消全选」是同一个按钮的两态：全勾满了显示「取消全选」，否则显示「全选」。
   // 任何勾选变化（单条、组全选、顶部全选）都会走 updateCount -> 这里，保持一致。
   const syncToggleLabels = () => {
@@ -2036,6 +2120,8 @@ function openPackPanel(hostEl) {
       g.cntEl.textContent = sel ? sel + "/" + g.rows.length : t("{n} items", { n: g.rows.length });
     }
     syncToggleLabels();
+    syncPick();
+    renderPick();
   };
   const applyFilter = () => {
     for (const g of groups) {
@@ -2168,6 +2254,187 @@ function openPackPanel(hostEl) {
   }
   updateCount();
 
+  // ---- 点选（默认页）：在画布上点参数即加/减，不用在列表里逐个比对 ----
+  //
+  // 命中靠 litegraph 自己的命中测试：调整鼠标坐标后 graph.getNodeOnPos + node.getWidgetOnPos，
+  // 和 ComfyUI 构建器判断“鼠标悬停在哪一项”用的是同一套，缩放/滚动都自动正确。
+  // 监听挂在 window 的捕获阶段：命中就拦下这次按下，litegraph 不会再当成拖控件/连线。
+  // 自绘控件（图片框/提示词框）是 DOM 元素，canvas 上收不到，用 DOM 反查补上。
+  const keyOf = (r) => String(r.c.node) + "|" + String(r.c.input);
+  const rowMap = () => {
+    const m = new Map();
+    for (const r of rows) m.set(keyOf(r), r);
+    return m;
+  };
+  syncPick = () => {
+    const keys = rows.filter((r) => r.cb.checked).map(keyOf);
+    for (let i = pickOrder.length - 1; i >= 0; i--) {
+      if (keys.indexOf(pickOrder[i]) < 0) pickOrder.splice(i, 1);
+    }
+    for (const k of keys) if (pickOrder.indexOf(k) < 0) pickOrder.push(k);
+  };
+
+  let pickOn = true;
+  let pickHooked = false;
+
+  const toggleRow = (r) => {
+    r.cb.checked = !r.cb.checked;
+    updateCount();
+    if (onlySel) applyFilter();
+  };
+
+  const findRowByIds = (nodeId, names) => {
+    const list = Array.isArray(names) ? names : [names];
+    for (const r of rows) {
+      if (String(r.c.node) !== String(nodeId)) continue;
+      for (const n of list) {
+        if (n && (r.c.input === n || r.c.widget === n)) return r;
+      }
+    }
+    return null;
+  };
+
+  const domWidgetAt = (t) => {
+    for (const n of (app.graph && app.graph.nodes) || []) {
+      for (const w of n.widgets || []) {
+        const el = w && w.element;
+        if (el && (el === t || (el.contains && el.contains(t)))) return { node: n, widget: w };
+      }
+    }
+    return null;
+  };
+
+  const onPickDown = (e) => {
+    if (!pickOn || (e.button !== undefined && e.button !== 0)) return;
+    const cv = app.canvas;
+    if (!cv || !cv.graph) return;
+    const tgt = e.target;
+    if (!tgt) return;
+
+    if (tgt === cv.canvas) {
+      let node = null, w = null;
+      try {
+        cv.adjustMouseEvent(e);
+        node = cv.graph.getNodeOnPos(e.canvasX, e.canvasY);
+        if (node && node.getWidgetOnPos) w = node.getWidgetOnPos(e.canvasX, e.canvasY, false);
+      } catch (_) {
+        return;
+      }
+      if (!node || !w || !w.name) return;          // 空白处 / 连线 / 非控件位置：不打扰
+      const r = findRowByIds(node.id, [w.name]);
+      if (!r) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleRow(r);
+      return;
+    }
+
+    const hit = domWidgetAt(tgt);                    // 自绘控件（图片框/提示词框）
+    if (!hit || !hit.widget || !hit.widget.name) return;
+    const r = findRowByIds(hit.node.id, [hit.widget.name, hit.widget.options && hit.widget.options.serialize]);
+    if (!r) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleRow(r);
+  };
+
+  const hookPick = (on) => {
+    pickSwitch.classList.toggle("kp-on", !!on);
+    pickSwitch.textContent = on ? t("Picking is on") : t("Picking is off");
+    pickHint.style.opacity = on ? ".62" : ".4";
+    if (on === pickHooked) return;
+    pickHooked = on;
+    if (on) window.addEventListener("pointerdown", onPickDown, true);
+    else window.removeEventListener("pointerdown", onPickDown, true);
+  };
+
+  renderPick = () => {
+    const map = rowMap();
+    const ordered = pickOrder.map((k) => map.get(k)).filter(Boolean);
+    tabPick.textContent = ordered.length ? t("Point & click ({n})", { n: ordered.length }) : t("Point & click");
+    pickList.innerHTML = "";
+    if (!ordered.length) {
+      const empty = document.createElement("div");
+      empty.className = "kp-pickhint";
+      empty.textContent = t("Nothing picked yet — click a parameter on the canvas.");
+      pickList.appendChild(empty);
+      return;
+    }
+    ordered.forEach((r, i) => {
+      const el = document.createElement("div");
+      el.className = "kp-pickrow";
+      const lab = document.createElement("input");
+      lab.className = "kp-lab";
+      lab.value = r.lab.value || r.c.label;
+      lab.title = t("Name shown to users");
+      lab.oninput = () => { r.lab.value = lab.value; };
+      const sel = document.createElement("select");
+      sel.className = "kp-sel";
+      for (const opt of KP_WIDGETS) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = t(KP_WIDGET_LABEL[opt] || opt);
+        if (opt === r.sel.value) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.onchange = () => {
+        r.sel.value = sel.value;
+        r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, sel.value) });
+      };
+      const move = (dir) => {
+        const j = pickOrder.indexOf(keyOf(r));
+        const k = j + dir;
+        if (j < 0 || k < 0 || k >= pickOrder.length) return;
+        pickOrder.splice(j, 1);
+        pickOrder.splice(k, 0, keyOf(r));
+        renderPick();
+      };
+      const up = document.createElement("button");
+      up.className = "kp-pmove";
+      up.textContent = "↑";
+      up.title = t("Move up");
+      up.disabled = i === 0;
+      up.onclick = () => move(-1);
+      const down = document.createElement("button");
+      down.className = "kp-pmove";
+      down.textContent = "↓";
+      down.title = t("Move down");
+      down.disabled = i === ordered.length - 1;
+      down.onclick = () => move(1);
+      const del = document.createElement("button");
+      del.className = "kp-pdel";
+      del.textContent = "×";
+      del.title = t("Remove");
+      del.onclick = () => toggleRow(r);
+      el.append(lab, sel, up, down, del);
+      pickList.appendChild(el);
+    });
+  };
+
+  const setTab = (tab) => {
+    const pick = tab !== "list";
+    tabPick.classList.toggle("kp-on", pick);
+    tabList.classList.toggle("kp-on", !pick);
+    pickPane.style.display = pick ? "" : "none";
+    listPane.style.display = pick ? "none" : "";
+    hookPick(pick && pickOn);
+    try { localStorage.setItem("kedou.pack.tab", pick ? "pick" : "list"); } catch (_) { /* ignore */ }
+  };
+  tabPick.onclick = () => setTab("pick");
+  tabList.onclick = () => setTab("list");
+  pickSwitch.onclick = () => {
+    pickOn = !pickOn;
+    hookPick(pickOn && pickPane.style.display !== "none");
+  };
+  kpUnhookPick = () => { if (pickHooked) { pickHooked = false; window.removeEventListener("pointerdown", onPickDown, true); } };
+  syncPick();
+  renderPick();
+  {
+    let saved = "pick";
+    try { saved = localStorage.getItem("kedou.pack.tab") || "pick"; } catch (_) { /* ignore */ }
+    setTab(saved);
+  }
+
   // ---- 编辑已打包应用 ----
   // 选一个 .kapp.json 后，把它的参数映射回当前画布的候选行；当前画布不存在的
   // 参数放进「Not in current workflow」组，仍可改标签/控件或取消勾选。
@@ -2278,6 +2545,7 @@ function openPackPanel(hostEl) {
     graphField.style.display = "";
     const params = Array.isArray(editing.kapp.params) ? editing.kapp.params : [];
     const labelCount = {};
+    pickOrder = [];                  // 清单按包里原来的顺序重建，别被画布顺序打乱
     for (const p of params) {
       const s = p && typeof p === "object" ? String(p.label || "").trim() : "";
       if (s) labelCount[s] = (labelCount[s] || 0) + 1;
@@ -2309,6 +2577,7 @@ function openPackPanel(hostEl) {
       r.sel.value = widget;
       r.valEl.textContent = t("Current value: {v}", { v: kpPreview(p.default, widget) });
       r.existingParam = p;
+      pickOrder.push(keyOf(r));
     }
     updateCount();
     applyFilter();
@@ -2553,6 +2822,7 @@ function openPackPanel(hostEl) {
 
   gen.onclick = () => doGenerate({
     nameInput, descInput, rows, err, gen, graphCb, fmtSel,
+    order: () => pickOrder,
     editing: () => editing,
   });
 
@@ -2612,6 +2882,15 @@ async function doGenerate(ctx) {
   }
   const editing = typeof ctx.editing === "function" ? ctx.editing() : null;
   const checked = ctx.rows.filter((r) => r.cb.checked);
+  // 点选页的顺序就是 kapp 里的参数顺序：按 pickOrder 排一遍（没点过的排在后面）
+  if (typeof ctx.order === "function") {
+    const ord = ctx.order() || [];
+    const pos = (r) => {
+      const i = ord.indexOf(String(r.c.node) + "|" + String(r.c.input));
+      return i < 0 ? 1e6 : i;
+    };
+    checked.sort((a, b) => pos(a) - pos(b));
+  }
   if (!checked.length) {
     ctx.err.textContent = t("Select at least one parameter");
     return;
