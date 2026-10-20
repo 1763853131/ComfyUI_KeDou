@@ -1709,6 +1709,7 @@ const KPCSS = [
   ".kp-layer{position:fixed;inset:0;pointer-events:none;z-index:40;}",
   // 点选时给每个参数行让出左侧一条：方框落在这条里，参数名整体右移，和官方构建器一致
   "body.kp-picking .lg-node-widgets .lg-node-widget{padding-left:24px;}",
+  "body.kp-picking .lg-node-widgets .kp-indent{padding-left:24px;}",
   ".kp-hit{position:absolute;box-sizing:border-box;border-radius:3px;border:1.5px solid rgba(255,255,255,.5);",
   "background:rgba(18,18,26,.72);pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;",
   "transition:background .08s,border-color .08s;}",
@@ -2357,36 +2358,70 @@ function openPackPanel(hostEl) {
     return pairs;
   };
 
+  // 圆点（被连线占用的参数只剩一个输入点）所在的行：往上找到直接挂在控件网格下面的那一层。
+  // 节点顶部那排纯连线口不在控件网格里，返回 null（那些本来也不该勾）。
+  const dotRowEl = (dot) => {
+    let e = dot;
+    while (e && e.parentElement) {
+      const p = e.parentElement;
+      if (p.classList && p.classList.contains("lg-node-widgets")) return e;
+      if (p.getAttribute && p.getAttribute("data-node-id")) return null;
+      e = p;
+    }
+    return null;
+  };
+
   // 节点 -> { byRow: rowKey -> 行元素, byEl: 行元素 -> row }
+  // 先按输入点自带的序号（data-slot-key = 节点-输入下标）一对一认，认不出的再按显示名对齐。
+  // 这样连上线的参数（只剩圆点、行高变了）也能对上，纯连线的口没有 widget 就不给它方框。
   const nodeRows = (node) => {
     if (!node) return null;
     let card = null;
     try { card = document.querySelector('[data-node-id="' + node.id + '"]'); } catch (_) { card = null; }
     if (!card) return null;
-    const els = Array.from(card.querySelectorAll(".lg-node-widget"));
-    if (!els.length) return null;
-    const cands = rows.filter((r) => String(r.c.node) === String(node.id));
-    const pairs = alignRows(els, cands);
-    if (!pairs) return null;
     const byRow = new Map(), byEl = new Map();
-    for (const [c, e] of pairs) { byRow.set(keyOf(c), e); byEl.set(e, c); }
+    const used = new Set();
+    const pre = node.id + "-in-";
+    let dots = [];
+    try { dots = Array.from(card.querySelectorAll("[data-slot-key]")); } catch (_) { dots = []; }
+    for (const d of dots) {
+      const k = String(d.getAttribute("data-slot-key") || "");
+      if (k.indexOf(pre) !== 0) continue;
+      const idx = Number(k.slice(pre.length));
+      if (!(idx >= 0)) continue;
+      const inp = node.inputs && node.inputs[idx];
+      const name = inp && inp.widget && inp.widget.name;
+      if (!name) continue;                       // 纯连线的口：官方也不让勾
+      const el = dotRowEl(d);
+      if (!el || used.has(el)) continue;
+      const row = findRowByIds(node.id, name);
+      if (!row) continue;
+      byRow.set(keyOf(row), el); byEl.set(el, row); used.add(el);
+    }
+    const els = Array.from(card.querySelectorAll(".lg-node-widget")).filter((e) => !used.has(e));
+    const cands = rows.filter((r) => String(r.c.node) === String(node.id) && !byRow.has(keyOf(r)));
+    const pairs = alignRows(els, cands);
+    if (pairs) for (const [c, e] of pairs) { byRow.set(keyOf(c), e); byEl.set(e, c); }
+    if (!byRow.size) return null;
     return { byRow, byEl };
   };
 
   // 元素 -> {node, widget:{name}}：行元素就是参数本身
   const rowElFromTarget = (el) => {
     if (!el || !el.closest) return null;
-    const rowEl = el.closest(".lg-node-widget");
-    if (!rowEl) return null;
-    const card = rowEl.closest("[data-node-id]");
+    const card = el.closest("[data-node-id]");
     if (!card) return null;
     const id = Number(card.getAttribute("data-node-id"));
     const node = app.canvas && app.canvas.graph ? app.canvas.graph.getNodeById(id) : null;
     const nr = nodeRows(node);
     if (!nr) return null;
-    const row = nr.byEl.get(rowEl);
-    if (!row) return null;
-    return { node, widget: { name: row.c.input } };
+    let e = el;
+    while (e && e !== card) {
+      const row = nr.byEl.get(e);
+      if (row) return { node, widget: { name: row.c.input } };
+      e = e.parentElement;
+    }
+    return null;
   };
 
   // 鼠标位置 -> {node, widget}（老渲染兜底用）
@@ -2444,11 +2479,14 @@ function openPackPanel(hostEl) {
       return;
     }
 
-    // 2) 画布区域：Vue 节点模式下点在「节点卡片」上（没到 canvas），所以不能只认 canvas
+    // 2) 落在节点卡片上但没落到参数行/自绘控件上（标题、连线口、折叠按钮……）：
+    //    Vue 卡片里行元素就是唯一依据，不再用老坐标猜，免得把纯连线的口认成某个参数。
+    if (tgt.closest && tgt.closest("[data-node-id]")) return;
+
+    // 3) 老渲染器（关掉 Vue 节点）没有卡片 DOM，退回按坐标估
     const host = cv.canvas.parentElement;
     const inGraph = tgt === cv.canvas
-      || (host && host.contains && host.contains(tgt))
-      || (tgt.closest && tgt.closest("[data-node-id]"));
+      || (host && host.contains && host.contains(tgt));
     if (!inGraph) return;
 
     const hit = widgetUnder(cv, e);
@@ -2523,6 +2561,7 @@ function openPackPanel(hostEl) {
   let hoverBoxKey = null;         // 鼠标停在哪个方框上（用来高亮它对应的行）
   let lastPointer = null;         // 最近一次鼠标位置（悬停高亮用）
   const KP_PICK_PAD = 24;         // 点选时给每行左侧让出的宽度（节点坐标，跟画布一起缩放）
+  const indented = new Set();     // 被连线顶上、只剩圆点的那种行：临时加缩进，好把方框放进去
 
   const ensureLayer = () => {
     if (!layerEl || !document.contains(layerEl)) {
@@ -2539,6 +2578,8 @@ function openPackPanel(hostEl) {
     if (layerEl) { layerEl.remove(); layerEl = null; }
     layerNodes = new Map();
     hoverBoxKey = null;
+    for (const e of indented) { try { e.classList.remove("kp-indent"); } catch (_) { /* ignore */ } }
+    indented.clear();
     document.body.classList.remove("kp-picking");
   };
 
@@ -2584,6 +2625,11 @@ function openPackPanel(hostEl) {
         if (!el) continue;
         const b = el.getBoundingClientRect();
         if (b.width < 8 || b.height < 4) continue;
+        if (el.classList && !el.classList.contains("lg-node-widget")) {
+          // 被连线顶成圆点的行本来没有左侧留白，临时补上，方框才不压住圆点
+          if (!el.classList.contains("kp-indent")) el.classList.add("kp-indent");
+          indented.add(el);
+        }
         rowLeft = b.left; rowTop = b.top; rowPx = b.height; rowW = b.width;
         const gx = (b.left + 6 - cr.left) / scale - ox;
         const gy = (b.top + b.height / 2 - cr.top) / scale - oy;
@@ -2641,7 +2687,12 @@ function openPackPanel(hostEl) {
       const on = !!r.cb.checked;
       it.box.classList.toggle("kp-on", on);
       it.box.classList.toggle("kp-hi", hi);
-      it.box.title = ((node.title || node.type || "") + " · " + (r.lab.value || r.c.label));
+      let byWire = false;
+      for (const s of node.inputs || []) {
+        if (s && s.widget && s.widget.name === r.c.input) { byWire = !!(s.link || (s.links && s.links.length)); break; }
+      }
+      it.box.title = ((node.title || node.type || "") + " · " + (r.lab.value || r.c.label))
+        + (byWire ? "（现在由连线提供）" : "");
       it.box.style.left = sx + "px";
       it.box.style.top = boxTop + "px";
       it.box.style.width = size + "px";
