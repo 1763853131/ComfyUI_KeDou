@@ -456,7 +456,10 @@ function syncOutputs(node) {
   node.outputs.forEach((o, i) => {
     if (linksOf(node, i).length) hi = i;   // .links 之外也认旧版/适配器的 .link
   });
-  let n = Math.max(1, Math.min(IMG_SLOTS, Math.max(outN, hi + 1)));
+  // 在此基础上**始终多留一个空位点位**（没到上限时）：连上第 1 个就能马上看到
+  // 第 2 个可以接哪儿，不用先往面板里塞第二张图。
+  // 空位不会打挂下游 —— 真正执行时后端在 /prompt 入口把空槽的连线剔掉。
+  let n = Math.max(1, Math.min(IMG_SLOTS, Math.max(outN, hi + 1) + 1));
   // 工作流配置期间连线/控件可能还没恢复：只增不删，等下一次同步再收槽。
   if (node.__kdGrowOnly || app.configuringGraph) n = Math.max(n, node.outputs.length);
   let changed = false;
