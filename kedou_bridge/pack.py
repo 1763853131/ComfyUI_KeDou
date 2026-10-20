@@ -4,9 +4,11 @@
 import json
 import os
 import re
+import urllib.parse
+import uuid
 
 from . import apps, compat, paths
-from .common import _clean_label, _widget_values
+from .common import _clean_label, _dom_handle, _widget_values
 from .registry import (build_object_info, widget_spec, _ctl_after_gen,
                        _declared_widgets, _find_spec, _widget_index)
 from .state import _load_app_state
@@ -459,3 +461,156 @@ def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
     return {"ok": True, "file": paths._rel(out_path), "target": _pack_target(out_path),
             "param_count": len(params), "node_count": len(graph), "warnings": warns,
             "edited": bool(target)}
+
+
+# ---------------------------------------------------------------- 官方应用（.app.json）
+#
+# 官方 App Mode 的「应用」就是 UI 工作流本身 + extra 里的两个字段（前端 1.55 的 appMode store）：
+#   extra.linearMode = true
+#   extra.linearData = {"inputs": [["<图id>:<节点id>:<控件名>", "<显示名>", {...}?]],
+#                       "outputs": ["<节点id>"]}
+# 第一段就是工作流顶层的 "id"（uuid），三段都走 encodeURIComponent；
+# 可选的第三段是 {description, height}，由 App Builder 自己写，这里不碰。
+#
+# 与 kapp 的根本差别：官方应用保留整张 **UI 图**（位置、连线、控件值都在里面），
+# 所以只能从画布序列化结果生成 —— API 图反推不回 UI 图，kapp 也就无法直接转官方包。
+# 好处是同一个文件既能被本插件读，也能被 ComfyUI 自己的 Apps 侧栏打开。
+
+# encodeURIComponent 不转义的那批字符
+_ENCODE_SAFE = "-_.!~*'()"
+
+
+def _app_widget_id(graph_id, node_id, name) -> str:
+    """与前端 widgetId(graphId, nodeId, name) 同构：三段分别编码后 join(':')。"""
+    return ":".join([urllib.parse.quote(str(graph_id), safe=_ENCODE_SAFE),
+                     urllib.parse.quote(str(node_id), safe=_ENCODE_SAFE),
+                     urllib.parse.quote(str(name), safe=_ENCODE_SAFE)])
+
+
+def _app_node_widgets(node: dict) -> list:
+    """画布上该节点真实存在的控件名（含自绘 DOM 控件；socket 输入不算）。"""
+    named = node.get("widgets_values_named")
+    if isinstance(named, dict) and named:
+        return list(named.keys())
+    return _ui_widget_names(node)
+
+
+def _resolve_app_target(target: str):
+    """官方应用回写目标：工作流目录内的相对 .app.json 路径。"""
+    t = str(target or "").strip().replace("\\", "/")
+    if not t or "\x00" in t or t.startswith("/") or re.match(r"^[A-Za-z]:", t):
+        return None
+    parts = [p for p in t.split("/") if p and p != "."]
+    if not parts or any(p == ".." for p in parts):
+        return None
+    path = os.path.join(paths.WORKFLOW_DIR, *parts)
+    if not paths._under(paths.WORKFLOW_DIR, path) or not path.lower().endswith(".app.json"):
+        return None
+    return path
+
+
+def save_official_app(name, workflow, params, outputs, target: str = None) -> dict:
+    """按官方 App Mode 的格式写 <stem>.app.json（POST /ps/pack/app）。
+
+    workflow = 画布上那份 **UI 格式**工作流（app.graph.serialize()），原样落盘，只改 extra：
+      * 顶层 id 缺失时补一个 uuid（官方 ref 的第一段就是它，前端自己也会认回来）；
+      * 每个参数按「节点 + 控件」换成 "<图id>:<节点id>:<控件名>"，自绘控件换成 DOM 把手
+        （media_state -> kedou_media，prompt_state -> kedou_promptbox）；
+      * outputs 列节点 id。
+    校验不过就不落盘（画布上没有的控件、不存在的节点/输出都如实报错，绝不静默丢弃）。
+    """
+    if not isinstance(workflow, dict):
+        return {"ok": False, "error": "workflow 必须是 UI 格式工作流对象（画布序列化结果）"}
+    nodes = [n for n in (workflow.get("nodes") or []) if isinstance(n, dict)]
+    if not nodes:
+        return {"ok": False, "error": "workflow 里没有 nodes —— 这不是 UI 格式工作流"
+                                      "（API 图无法还原成官方应用，请改用 kapp）"}
+    if not isinstance(params, list):
+        return {"ok": False, "error": "params 必须是列表"}
+    by_id = {str(n.get("id")): n for n in nodes}
+
+    gid = str(workflow.get("id") or "").strip()
+    if not gid:
+        gid = str(uuid.uuid4())
+        workflow = dict(workflow)
+        workflow["id"] = gid
+
+    errs = []
+    inputs = []
+    for i, p in enumerate(params):
+        if not isinstance(p, dict):
+            errs.append("第 %d 个参数不是对象" % (i + 1))
+            continue
+        nid = str(p.get("node") or "")
+        widget = str(p.get("input") or "")
+        node = by_id.get(nid)
+        if node is None:
+            errs.append("第 %d 个参数指向的节点 %s 不在工作流里" % (i + 1, nid))
+            continue
+        ntype = str(node.get("type") or "")
+        handle = _dom_handle(ntype, widget)
+        if handle not in _app_node_widgets(node):
+            errs.append("节点 %s（%s）没有控件 %s —— 画布上不存在这个控件，不能暴露到应用"
+                        % (nid, ntype, handle))
+            continue
+        label = str(p.get("label") or "").strip() or handle
+        inputs.append([_app_widget_id(gid, nid, handle), label])
+
+    outs = []
+    for o in (outputs or []):
+        nid = str(o)
+        if nid not in by_id:
+            errs.append("输出节点 %s 不在工作流里" % nid)
+            continue
+        outs.append(nid)
+    if not outs:
+        errs.append("至少要有一个输出节点（官方应用打开后没有图可看）")
+    if errs:
+        head = errs[:8]
+        more = "" if len(errs) <= 8 else "（另有 %d 个问题）" % (len(errs) - 8)
+        return {"ok": False, "error": "官方应用校验未通过，共 %d 个问题：%s%s"
+                                      % (len(errs), "；".join(head), more)}
+
+    if target:
+        out_path = _resolve_app_target(target)
+        if out_path is None:
+            return {"ok": False, "error": "目标应用路径不合法（必须是工作流目录内的 .app.json）：%s"
+                                          % target}
+        out_dir = os.path.dirname(out_path)
+        stem = paths._stem(os.path.basename(out_path))
+    else:
+        raw = str(name or "").strip()
+        if not raw:
+            return {"ok": False, "error": "应用名不能为空"}
+        if not paths._safe_id(raw):
+            return {"ok": False, "error": "应用名含非法字符（不能含 / \\ .. 或 :）"}
+        stem = paths._stem(raw)
+        if stem.lower().endswith(".app"):        # 兜底：用户误带 .app 后缀
+            stem = stem[: -len(".app")]
+        if not stem:
+            return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
+        out_dir = paths.WORKFLOW_DIR
+        out_path = os.path.join(out_dir, stem + ".app.json")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except Exception as e:                        # noqa: BLE001
+        return {"ok": False, "error": "工作流目录不可写：%s" % e}
+    if not paths._under(out_dir, out_path):
+        return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
+
+    # 官方只有这两个键；不动图上任何其它内容（位置、连线、控件值全部原样保留）
+    extra = workflow.get("extra")
+    if not isinstance(extra, dict):
+        extra = {}
+        workflow["extra"] = extra
+    extra["linearMode"] = True
+    extra["linearData"] = {"inputs": inputs, "outputs": outs}
+
+    try:
+        paths._dump_json_atomic(out_path, workflow, indent=1)
+    except Exception as e:                        # noqa: BLE001
+        return {"ok": False, "error": "写入失败：%s" % e}
+    return {"ok": True, "id": stem, "file": paths._rel(out_path),
+            "target": _pack_target(out_path), "graph_id": gid,
+            "input_count": len(inputs), "output_count": len(outs),
+            "outputs": outs, "edited": bool(target)}

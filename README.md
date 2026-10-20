@@ -58,6 +58,7 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/pack/apps` | GET | 列出可编辑的 `.kapp.json` 应用包（打包面板「编辑已打包的应用」用） |
 | `/ps/apps/{app_id}/package` | GET | 取原始 kapp 包（`graph` + `params` + `outputs`），供打包面板回填编辑 |
 | `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘；带 `target` 时回写同一个 `.kapp.json` |
+| `/ps/pack/app` | POST | 按 **ComfyUI 官方 App Mode 格式**写 `<stem>.app.json`（UI 图 + `extra.linearMode` / `extra.linearData`）；带 `target` 时回写同一个官方包 |
 | `/ps/prompts` | GET | **语库**清单（只含主动保存的 `.md`，不含历史），连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
 | `/ps/prompts/save` \| `delete` \| `use` | POST | 存语库条目 / 删除（进 `.trash`）/ 计次 |
 | `/ps/prompts/history` | GET / POST | 自动历史：GET 列表（`?use=&q=`），POST 记录（hash 去重、50 条封顶） |
@@ -187,7 +188,7 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 
 ## 两种「应用」来源
 
-插件同时识别两种工作流，**同名时 `.kapp.json` 优先**：
+插件同时识别两种工作流，**同名时 `.kapp.json` 优先**；官方格式也能由本插件生成（见下）。
 
 |  | 官方应用模式 | 自研应用包 `.kapp.json` |
 |---|---|---|
@@ -196,6 +197,7 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 | **图格式** | 界面格式，每次运行都要做 UI→API 翻译 | **直接存 API 格式**，无翻译、无位置对位 |
 | **参数** | `linearData` 勾选 | 显式声明 |
 | **输出** | `extra.linearData.outputs` | 显式列出节点 id |
+| **能否生成** | `POST /ps/pack/app`（用画布 UI 图） | `POST /ps/pack` / `/ps/pack/save` |
 
 应用包长这样：
 
@@ -214,6 +216,38 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 
 > 设计取舍：官方应用模式有三笔"税"——参数靠勾选、`widgets_values` 按位置对位、每次运行都要翻译一遍。
 > 应用包把这三样全部显式化，插件本身保持**纯通道**：声明是什么就是什么，不对任何具体应用做特判。
+
+### 生成官方 `.app.json`
+
+官方「应用」不是另一种文件，就是 UI 工作流本身多了两个字段（前端 1.55 的 App Mode）：
+
+```json
+{
+  "id": "54bb395d-3e60-4c94-b525-85523901575b",
+  "nodes": [ "…整张界面图，位置/连线/控件值原样…" ],
+  "extra": {
+    "linearMode": true,
+    "linearData": {
+      "inputs": [["54bb395d-3e60-4c94-b525-85523901575b:483:seed", "种子"]],
+      "outputs": ["461"]
+    }
+  }
+}
+```
+
+`POST /ps/pack/app` 收 `{name, workflow, params:[{node,input,label?}], outputs:[…], target?}`：
+
+- `workflow` 必须是画布序列化的 **UI 图**（`app.graph.serialize()`）。官方应用保留整张界面图，
+  API 图反推不回位置与连线，所以 **kapp 不能直接转成官方包**；反过来官方包随时可以打成 kapp。
+- 每条参数按 `"<顶层id>:<节点id>:<控件名>"` 写进 `linearData.inputs`，三段都 `encodeURIComponent`；
+  顶层 `id` 缺失时自动补一个 uuid（前端加载时会认回来）。
+- 自绘节点写的是 DOM 把手：`media_state → kedou_media`、`prompt_state → kedou_promptbox`
+  （与真机 App Builder 落到文件里的形态一致）。
+- 校验不过不落盘：画布上不存在的控件、不存在的节点/输出节点都如实报错，绝不静默丢弃。
+- 写出来的文件 ComfyUI 自己的 **Apps 侧栏**（按 `*.app.json` 后缀）也能直接打开；
+  同名 `.app.json` 与 `.kapp.json` 并存时，本插件仍按 `.kapp.json` 优先。
+
+> 自带的自测：`tests/test_official_app.py`（生成 → 读回 → 与真机样例对照，不需要启动 ComfyUI）。
 
 ### 编辑已打包的应用
 
@@ -236,6 +270,12 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
   没有控件标题时才退回控件名。
 - 按钮、预览、曲线、3D 编辑等不随工作流序列化的专用控件不会列为参数，避免把只读预览打包进去。
 - 重新编辑旧应用时，旧的 `text` 类型和节点标题会按当前识别结果升级；用户自己改过的标题/类型保留。
+- 读官方应用时，输入引用按规范形解析：控件名取自 `"<图id>:<节点id>:<控件名>"`，第二个元素只当**显示名**
+  （旧式 `[节点 id, 控件名]` 仍兼容）。以前会把中文标签当成控件名，默认值和类型全丢。
+- 控件值优先读 `widgets_values_named`（前端 1.55+ 才有，键就是控件名），不再受"按位置对位"错位影响；
+  老工作流没有这个字段时仍按声明顺序取下标。
+- 自绘节点的 DOM 把手（`kedou_media` / `kedou_promptbox`）读回时还原成数据控件
+  （`media_state` / `prompt_state`），类型按图像输入 / 提示词处理，默认值取真实控件那份。
 
 ---
 

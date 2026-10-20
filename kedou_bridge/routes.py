@@ -333,3 +333,25 @@ def register(routes):
                                          body.get("desc"), body.get("kapp"),
                                          body.get("target"))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/pack/app")
+    async def ps_pack_app_file(request):
+        """POST /ps/pack/app {name, workflow, params:[{node,input,label?}], outputs:[...], target?}
+        —— 按 ComfyUI 官方 App Mode 的格式写 <stem>.app.json。
+
+        workflow 必须是画布的真实 **UI 图**（app.graph.serialize()）：官方应用保留整张界面图，
+        API 图反推不回位置与连线，所以 kapp 不能直接转成官方包。
+        写出来的文件 ComfyUI 自己的 Apps 侧栏（suffix app.json）也能直接打开。
+        带 target 时回写同一个 .app.json（编辑已打包的应用）。"""
+        try:
+            body = await request.json()
+        except Exception:                            # noqa: BLE001
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        if not isinstance(body, dict):
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        result = await asyncio.to_thread(pack.save_official_app,
+                                         body.get("name"), body.get("workflow"),
+                                         body.get("params") or [],
+                                         body.get("outputs") or [],
+                                         body.get("target"))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)

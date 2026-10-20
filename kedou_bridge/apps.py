@@ -7,8 +7,8 @@ import json
 import os
 
 from . import compat, paths
-from .common import (KIND_CN, NOISE_INPUTS, _clean_label, _kind_of,
-                     _split_ref, _widget_values)
+from .common import (DOM_HANDLE_KIND, KIND_CN, NOISE_INPUTS, _clean_label,
+                     _kind_of, _panel_widget, _ref_parts, _widget_values)
 from .registry import (build_object_info, widget_spec, _unknown_in_ui,
                        _unknown_types, _widget_index)
 from .state import _load_app_state, _save_app_state
@@ -215,6 +215,17 @@ def _build_graph_kapp(path: str, values: dict, object_info: dict) -> dict:
     }
 
 
+def _named_values(node: dict) -> dict:
+    """真机 1.55+ 会把控件值同时写成 name->value（node["widgets_values_named"]）。
+
+    有它就优先用：widgets_values 是按位置对位的，节点升级、动态控件、自绘 DOM 控件
+    一错位，默认值就张冠李戴（官方应用里 TextGenerate 的 thinking 会读到采样模式的 "on"）。
+    老工作流没有这个字段，就照旧按声明顺序取下标。
+    """
+    named = node.get("widgets_values_named")
+    return named if isinstance(named, dict) and named else {}
+
+
 def build_spec(path: str, object_info: dict = None) -> dict:
     """读一个应用文件，产出面板要用的规格。object_info 省略时自动从节点注册表取。"""
     if os.path.basename(path).lower().endswith(".kapp.json"):
@@ -238,31 +249,48 @@ def build_spec(path: str, object_info: dict = None) -> dict:
     for entry in (ld.get("inputs") or []):
         if not isinstance(entry, (list, tuple)) or len(entry) < 2:
             continue
-        node_id = _split_ref(entry[0])[0]
-        widget = str(entry[1])
+        # 规范形里第二个元素是显示名，控件名在 ref 字符串里；旧式则在第二个元素
+        node_id, ref_name, stored_label = _ref_parts(entry)
         node = by_id.get(str(node_id))
         if node is None:
             continue
         node_type = str(node.get("type") or "")
-        wv = _widget_values(node)
-        # 默认值必须按控件在 widgets_values 里的真实下标取；wv[0] 会把 seed 当成 steps
-        _vi = _widget_index(object_info, node_type, widget) if object_info else None
-        default = (wv[_vi] if (_vi is not None and _vi < len(wv))
-                   else (wv[0] if len(wv) == 1 else None))
+        widget = _panel_widget(node_type, ref_name)      # 把手 -> 真正的数据控件
+        named = _named_values(node)
+        if widget in named:
+            default = named[widget]
+        elif ref_name in named:
+            default = named[ref_name]
+        else:
+            # 老工作流兜底：默认值必须按控件在 widgets_values 里的真实下标取；
+            # wv[0] 会把 seed 当成 steps
+            wv = _widget_values(node)
+            _vi = _widget_index(object_info, node_type, widget) if object_info else None
+            default = (wv[_vi] if (_vi is not None and _vi < len(wv))
+                       else (wv[0] if len(wv) == 1 else None))
         _sk = "%s:%s" % (node_id, widget)
         if _sk in saved:
             default = saved[_sk]
-        kind = _kind_of(node, widget, default)
+        # 自绘把手先按种类定位（图像/提示词），其余按声明与默认值推断
+        kind = DOM_HANDLE_KIND.get(ref_name) or _kind_of(node, widget, default)
+        label = _clean_label(node, widget)
+        # 存下来的是人写的显示名（本插件打包时写的、或 App Builder 里改的）就用它；
+        # 和控件名/把手名相同说明只是默认值，不算信息，继续用节点自己的标题
+        if stored_label and stored_label not in (widget, ref_name):
+            label = stored_label
         item = {
             "node": str(node_id),
-            "input": widget,
-            "label": _clean_label(node, widget),
+            "input": widget,                    # 面板回写用的真实控件名（不是 DOM 把手）
+            "label": label,
             "kind": kind,
             "default": default,
             "spec": widget_spec(object_info, node_type, widget),
             "node_type": node_type,
             "node_title": (node.get("title") or "").strip(),
         }
+        if ref_name != widget:
+            # 写回官方 .app.json 时要用的把手名；面板不需要它，但别丢信息
+            item["app_widget"] = ref_name
         if kind == "image":
             item["source"] = "canvas"          # 默认取 PS 当前画布（见设计文档）
             item["spec"].pop("options", None)  # 图像输入由 PS 供给，不需要候选文件名列表
@@ -307,6 +335,7 @@ def build_spec(path: str, object_info: dict = None) -> dict:
         "has_image_input": any(p["kind"] == "image" for p in params),
         "has_subgraph": bool((wf.get("definitions") or {}).get("subgraphs")),
         "linear_mode": bool(meta.get("linearMode")),
+        "format": "official",                # 与 list_apps 的 fmt 保持一致（get_app 也带）
         "filename": os.path.basename(path),
         "unknown_types": _unknown_in_ui(wf),     # 本机没装的节点：面板载入时就提示，不等运行失败
     }

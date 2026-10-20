@@ -4,6 +4,21 @@
 
 ## 2026-10-20
 
+### 官方应用格式：能生成，也读得更准
+
+- 新增 `POST /ps/pack/app`：按 ComfyUI 官方 App Mode 的格式写 `<stem>.app.json`
+  （UI 图 + `extra.linearMode` / `extra.linearData`）。写出来的文件 ComfyUI 自己的
+  Apps 侧栏也能直接打开；同名 `.kapp.json` 仍然优先。
+- 每条参数写成 `"<顶层id>:<节点id>:<控件名>"`（三段 `encodeURIComponent`），顶层 `id`
+  缺失时自动补 uuid；自绘节点写 DOM 把手（`media_state → kedou_media`、
+  `prompt_state → kedou_promptbox`），与真机 App Builder 落盘的形态一致。
+- 只能从画布的 **UI 图**生成（API 图反推不回位置与连线），所以 kapp 不能直接转官方包；
+  反过来官方包随时可以再打成 kapp。校验不过不落盘，画布上不存在的控件/节点会如实报错。
+- 读官方应用修了三处：控件名从 ref 字符串里取（第二个元素只是显示名，以前会把中文标签
+  当控件名，默认值和类型全丢）、默认值优先用 `widgets_values_named`（位置对位错位不再影响
+  读取）、DOM 把手还原成数据控件（图像/提示词，默认值取真实控件那份）。
+- `/ps/apps/{id}` 补上 `format` 字段（以前只有列表接口有）。
+
 ### 打包面板：控件类型与标题识别更准
 
 - 控件类型改为按 ComfyUI 真机 `widget.type` 判定（`number` / `combo` / `toggle` /
