@@ -259,7 +259,7 @@
   "Picking is on": "点选已开启",
   "Picking is off": "点选已关闭",
   "While on, clicking a parameter on the canvas adds or removes it": "开启后，在画布上点参数即加入/移出",
-  "Click a parameter on the canvas to add it; click again to remove it.": "在画布上点一下参数就加进来，再点一下移出。",
+  "Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.": "在画布上点一下参数就加进来，再点一下移出；也可以点它左边的小方框。",
   "Nothing picked yet — click a parameter on the canvas.": "还没选任何一项 —— 在画布上点一个参数试试。",
   "Name shown to users": "用户看到的名称",
   "Move up": "上移",

@@ -1702,6 +1702,17 @@ const KPCSS = [
   ".kp-pdel{border:0;background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:14px;line-height:1;",
   "padding:2px 4px;cursor:pointer;opacity:.5;flex:none;}",
   ".kp-pdel:hover{color:var(--error-text,#ff7a7a);opacity:1;}",
+  // 画布上的勾选框层（照官方 App Builder 的样子）：一层透明蒙层，里面每个参数一格小方框
+  ".kp-layer{position:fixed;inset:0;pointer-events:none;z-index:40;}",
+  ".kp-hit{position:absolute;box-sizing:border-box;border-radius:4px;border:1.5px solid rgba(255,255,255,.45);",
+  "background:rgba(18,18,26,.72);pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;",
+  "transition:background .08s,border-color .08s;}",
+  ".kp-hit:hover{border-color:#7aa2ff;background:rgba(59,130,246,.28);}",
+  ".kp-hit.kp-on{background:#3579f6;border-color:#3579f6;}",
+  ".kp-hit.kp-on::after{content:'';width:50%;height:26%;border-left:2px solid #fff;border-bottom:2px solid #fff;",
+  "transform:rotate(-45deg) translateY(-15%);}",
+  ".kp-selbox{position:absolute;box-sizing:border-box;border:2px solid #3579f6;border-radius:7px;",
+  "background:rgba(53,121,246,.10);pointer-events:none;}",
 ].join("");
 
 let kpCssDone = false;
@@ -2039,7 +2050,7 @@ function openPackPanel(hostEl) {
   pickSwitch.title = t("While on, clicking a parameter on the canvas adds or removes it");
   const pickHint = document.createElement("div");
   pickHint.className = "kp-pickhint";
-  pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it.");
+  pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.");
   const pickList = document.createElement("div");
   pickList.className = "kp-picklist";
   pickPane.append(pickSwitch, pickHint, pickList);
@@ -2312,6 +2323,7 @@ function openPackPanel(hostEl) {
     if (!cv || !cv.graph || !cv.canvas) return;
     const tgt = e.target;
     if (!tgt) return;
+    if (tgt.closest && tgt.closest(".kp-layer")) return;   // 画布蒙层上的小方框有自己的处理
 
     // 1) 自绘控件（图片框 / 提示词框）：它们是真实 DOM 元素，优先按元素认
     const dom = domWidgetAt(tgt);
@@ -2320,6 +2332,7 @@ function openPackPanel(hostEl) {
       if (r) {
         e.preventDefault();
         e.stopPropagation();
+        swallowMouse();
         toggleRow(r);
       }
       return;
@@ -2338,7 +2351,22 @@ function openPackPanel(hostEl) {
     if (!r) return;
     e.preventDefault();
     e.stopPropagation();
+    swallowMouse();
     toggleRow(r);
+  };
+
+  // 拦下一次按下后，浏览器仍会派发 mousedown；litegraph 的编辑/拖拽是在 mousedown 上启动的，
+  // 所以紧跟着的 mousedown 也要吃掉，否则点选参数时会顺带把参数带进编辑态（出现光标/工具栏）。
+  let swallowNext = false;
+  const swallowMouse = () => {
+    swallowNext = true;
+    setTimeout(() => { swallowNext = false; }, 0);
+  };
+  const onPickMouseDown = (e) => {
+    if (!swallowNext) return;
+    swallowNext = false;
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const hookPick = (on) => {
@@ -2347,9 +2375,126 @@ function openPackPanel(hostEl) {
     pickHint.style.opacity = on ? ".62" : ".4";
     if (on === pickHooked) return;
     pickHooked = on;
-    if (on) window.addEventListener("pointerdown", onPickDown, true);
-    else window.removeEventListener("pointerdown", onPickDown, true);
+    if (on) {
+      window.addEventListener("pointerdown", onPickDown, true);
+      window.addEventListener("mousedown", onPickMouseDown, true);
+    } else {
+      window.removeEventListener("pointerdown", onPickDown, true);
+      window.removeEventListener("mousedown", onPickMouseDown, true);
+    }
+    paintLayerLive(on);
   };
+
+  // ---- 画布上的勾选框（照官方 App Builder 的样子） ----
+  // 官方构建器是在每个参数行左边画一个小方框，勾上就把这项变成应用里的输入；勾了的行
+  // 外面再套一圈蓝框。这里复刻同样的手感：一层固定定位的透明蒙层盖在画布上，按当前
+  // 缩放/平移把方框贴到每个参数行上，每帧重算（几十个方框，成本可以忽略）。缩放、拖动
+  // 画布、折叠节点都会跟住；画布外和被面板盖住的行不画。
+  let layerEl = null;
+  let layerRaf = 0;
+  let layerNodes = new Map();     // 行 key -> {box, sel}
+
+  const ensureLayer = () => {
+    if (!layerEl || !document.contains(layerEl)) {
+      layerEl = document.createElement("div");
+      layerEl.className = "kp-layer";
+      document.body.appendChild(layerEl);
+      layerNodes = new Map();
+    }
+    return layerEl;
+  };
+
+  const dropLayer = () => {
+    if (layerRaf) { cancelAnimationFrame(layerRaf); layerRaf = 0; }
+    if (layerEl) { layerEl.remove(); layerEl = null; }
+    layerNodes = new Map();
+  };
+
+  const paintLayer = () => {
+    const cv = app.canvas;
+    const layer = layerEl;
+    if (!layer || !cv || !cv.canvas || !cv.ds || !cv.graph) return;
+    const scale = cv.ds.scale || 1;
+    const ox = cv.ds.offset[0], oy = cv.ds.offset[1];
+    const cr = cv.canvas.getBoundingClientRect();
+    let pr = null;
+    try { pr = hostEl && document.contains(hostEl) ? hostEl.getBoundingClientRect() : null; } catch (_) { pr = null; }
+    const size = Math.max(11, Math.min(20, 16 * scale));
+    const seen = new Set();
+    for (const r of rows) {
+      const node = cv.graph.getNodeById(r.c.node);
+      if (!node || (node.flags && node.flags.collapsed)) continue;
+      const w = (node.widgets || []).find((x) => x && x.name === r.c.input);
+      if (!w || typeof w.y !== "number" || !w.height) continue;
+      // 方框贴在节点左外侧的空白里：编辑器不像官方构建器那样给左侧留出一列，
+      // 画在节点里面会压住参数名，放外面既不挡字也不挡拖动。
+      const nodeLeft = (node.pos[0] + ox) * scale + cr.left;
+      const sx = nodeLeft - size - 6;
+      const gyTop = node.pos[1] + w.y;
+      // 被别的节点压在下面就不画：否则方框会飘在压住它的节点上
+      let topNode = null;
+      try { topNode = cv.graph.getNodeOnPos(node.pos[0] + 2, gyTop + w.height / 2); } catch (_) { topNode = null; }
+      if (topNode && topNode !== node) continue;
+      const sy = (gyTop + w.height / 2 + oy) * scale + cr.top;
+      if (sx < cr.left - 2 || sx > cr.right - size || sy < cr.top || sy > cr.bottom) continue;
+      if (pr && sx + size > pr.left && sx < pr.right && sy > pr.top && sy < pr.bottom) continue;
+
+      const key = keyOf(r);
+      seen.add(key);
+      let it = layerNodes.get(key);
+      if (!it) {
+        const sel = document.createElement("div");
+        sel.className = "kp-selbox";
+        const box = document.createElement("div");
+        box.className = "kp-hit";
+        box.onpointerdown = (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          swallowMouse();
+          toggleRow(r);
+          renderPick();
+        };
+        layer.append(sel, box);
+        it = { box, sel };
+        layerNodes.set(key, it);
+      }
+      const on = !!r.cb.checked;
+      it.box.classList.toggle("kp-on", on);
+      it.box.title = ((node.title || node.type || "") + " · " + (r.lab.value || r.c.label));
+      it.box.style.left = sx + "px";
+      it.box.style.top = (sy - size / 2) + "px";
+      it.box.style.width = size + "px";
+      it.box.style.height = size + "px";
+      if (on) {
+        it.sel.style.display = "";
+        it.sel.style.left = ((node.pos[0] + ox) * scale + cr.left) + "px";
+        it.sel.style.top = ((gyTop + oy) * scale + cr.top) + "px";
+        it.sel.style.width = ((node.size ? node.size[0] : 200) * scale) + "px";
+        it.sel.style.height = (w.height * scale) + "px";
+      } else {
+        it.sel.style.display = "none";
+      }
+    }
+    for (const [k, it] of layerNodes) {
+      if (seen.has(k)) continue;
+      it.box.remove();
+      it.sel.remove();
+      layerNodes.delete(k);
+    }
+  };
+
+  const tickLayer = () => {
+    layerRaf = 0;
+    if (!pickHooked) return;
+    try { paintLayer(); } catch (_) { /* 单帧失败不打断循环 */ }
+    if (pickHooked) layerRaf = requestAnimationFrame(tickLayer);
+  };
+
+  function paintLayerLive(on) {
+    if (!on) { dropLayer(); return; }
+    ensureLayer();
+    if (!layerRaf) layerRaf = requestAnimationFrame(tickLayer);
+  }
 
   renderPick = () => {
     const map = rowMap();
@@ -2429,7 +2574,14 @@ function openPackPanel(hostEl) {
     pickOn = !pickOn;
     hookPick(pickOn && pickPane.style.display !== "none");
   };
-  kpUnhookPick = () => { if (pickHooked) { pickHooked = false; window.removeEventListener("pointerdown", onPickDown, true); } };
+  kpUnhookPick = () => {
+    if (pickHooked) {
+      pickHooked = false;
+      window.removeEventListener("pointerdown", onPickDown, true);
+      window.removeEventListener("mousedown", onPickMouseDown, true);
+    }
+    dropLayer();
+  };
   syncPick();
   renderPick();
   {
