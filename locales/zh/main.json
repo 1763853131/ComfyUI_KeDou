@@ -252,5 +252,10 @@
   "Search arrangements…": "搜索图片排列…",
   "Apply to which image loader?": "加载到哪个图片加载器？",
   "Click an arrangement to load it into the image loader · right-click to rename or delete": "点排列加载到图片加载器 · 右键可重命名或删除",
-  "No image arrangements yet — save one with the \"Sets\" button on an image loader": "还没有图片排列 —— 在图片加载器上点「排列」保存一个"
+  "No image arrangements yet — save one with the \"Sets\" button on an image loader": "还没有图片排列 —— 在图片加载器上点「排列」保存一个",
+  "From App Builder": "从 App Builder 导入",
+  "Generate from App Builder selection": "按 App Builder 的勾选生成",
+  "Uses the inputs/outputs you picked in ComfyUI's App Builder — no need to tick them again here": "直接用你在 ComfyUI App Builder 里勾的输入/输出，这里不用再勾一遍",
+  "Nothing picked yet: enter App Builder on the canvas and click the parameters to expose.": "还没勾选：在画布上进入 App Builder，点要暴露给用户的参数",
+  "App Builder has {n} inputs: {names}. They become the app parameters in that order.": "App Builder 里已勾 {n} 个输入：{names}。它们会按这个顺序成为应用参数。"
 }

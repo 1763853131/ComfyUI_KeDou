@@ -8,7 +8,8 @@ import urllib.parse
 import uuid
 
 from . import apps, compat, paths
-from .common import _clean_label, _dom_handle, _widget_values
+from .common import (_clean_label, _dom_handle, _panel_widget, _ref_parts,
+                     _widget_values)
 from .registry import (build_object_info, widget_spec, _ctl_after_gen,
                        _declared_widgets, _find_spec, _widget_index)
 from .state import _load_app_state
@@ -149,32 +150,35 @@ def pack_candidates(source: str) -> dict:
     return {"ok": True, "source": os.path.basename(path), "candidates": out}
 
 
-def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dict:
-    """POST /ps/pack —— UI 工作流 + 勾选参数 -> 生成 <stem>.kapp.json（与 source 同目录）。"""
-    path = _find_workflow_file(source)
-    if path is None:
-        return {"ok": False, "error": "找不到工作流文件：%s" % source}
-    decls = []
-    for p in (params or []):
-        if not isinstance(p, dict):
-            continue
-        widget = str(p.get("widget") or "text")
-        if widget not in apps._KAPP_WIDGETS:
-            return {"ok": False, "error": "未知 widget 类型：%s" % widget}
-        if not str(p.get("node") or "") or not str(p.get("input") or ""):
-            return {"ok": False, "error": "参数缺少 node 或 input"}
-        decls.append(p)
-    if not decls:
-        return {"ok": False, "error": "没有勾选任何参数"}
+def _param_value(node, object_info, ctype, name, saved=None, nid=""):
+    """控件当前值：优先 widgets_values_named（位置对位会错），退回按声明下标。"""
+    named = node.get("widgets_values_named") if isinstance(node, dict) else None
+    if isinstance(named, dict) and name in named:
+        val = named[name]
+    else:
+        wv = _widget_values(node) if isinstance(node, dict) else []
+        vi = _widget_index(object_info, ctype, name) if object_info else None
+        val = wv[vi] if (vi is not None and vi < len(wv)) else None
+    _sk = "%s:%s" % (nid, name)
+    if saved and _sk in saved:
+        val = saved[_sk]
+    return val
+
+
+def _build_kapp(wf, decls, name, desc, saved, object_info=None):
+    """UI 工作流 + 参数声明 -> kapp 内容（不落盘）。
+
+    pack_app（按文件打包）与 kapp_from_linear（按 App Builder 勾选打包）共用一套：
+    同一张图、同一批声明，出来的包必须一模一样。
+    """
     conv = apps._load_converter()
     if conv is None:
         return {"ok": False, "error": "插件目录里缺少 ui_to_api.py"}
-    with open(path, "r", encoding="utf-8") as f:
-        wf = json.load(f)
-    saved = _load_app_state(path)                    # 打包时也带上面板保存值
     nodes = wf.get("nodes") or []
     by_id = {str(n.get("id")): n for n in nodes}
-    object_info = build_object_info(sorted({str(n.get("type")) for n in nodes})) if compat.NODE_MAP else {}
+    if object_info is None:
+        object_info = (build_object_info(sorted({str(n.get("type")) for n in nodes}))
+                       if compat.NODE_MAP else {})
     try:
         graph, _notes = conv.convert_ex(wf, object_info or {})
     except Exception as e:                       # noqa: BLE001
@@ -198,12 +202,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         widget = str(p.get("widget") or "text")
         node = by_id.get(node_id)
         ctype = str((node or {}).get("type") or "")
-        wv = _widget_values(node) if node else []
-        vi = _widget_index(object_info, ctype, input_name)
-        default = wv[vi] if (vi is not None and vi < len(wv)) else None
-        _sk = "%s:%s" % (node_id, input_name)
-        if _sk in saved:
-            default = saved[_sk]
+        default = _param_value(node, object_info, ctype, input_name, saved, node_id)
         if node:
             label = str(p.get("label") or _clean_label(node, input_name))
         else:
@@ -235,12 +234,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
                     usage = "usage"
             if usage and node:
                 item["usage_input"] = usage
-                uvi = _widget_index(object_info, ctype, usage)
-                uval = wv[uvi] if (uvi is not None and uvi < len(wv)) else None
-                _usk = "%s:%s" % (node_id, usage)
-                if _usk in saved:
-                    uval = saved[_usk]
-                item["usage_default"] = uval
+                item["usage_default"] = _param_value(node, object_info, ctype, usage, saved, node_id)
                 uspec = widget_spec(object_info, ctype, usage)
                 if isinstance(uspec.get("options"), list) and uspec["options"]:
                     item["usage_options"] = uspec["options"]
@@ -248,22 +242,142 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
 
     outputs = [nid for nid, node in graph.items()
                if "save" in str(node.get("class_type", "")).lower()]
-    stem = paths._stem(os.path.basename(path))
     kapp = {
         "kedou_app": 1,
-        "name": str(name or stem),
+        "name": str(name),
         "desc": str(desc or ""),
         "graph": graph,
         "params": kparams,
         "outputs": outputs,
     }
+    return {"ok": True, "kapp": kapp, "graph": graph, "params": kparams,
+            "outputs": outputs, "warnings": warns}
+
+
+def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dict:
+    """POST /ps/pack —— UI 工作流 + 勾选参数 -> 生成 <stem>.kapp.json（与 source 同目录）。"""
+    path = _find_workflow_file(source)
+    if path is None:
+        return {"ok": False, "error": "找不到工作流文件：%s" % source}
+    decls = []
+    for p in (params or []):
+        if not isinstance(p, dict):
+            continue
+        widget = str(p.get("widget") or "text")
+        if widget not in apps._KAPP_WIDGETS:
+            return {"ok": False, "error": "未知 widget 类型：%s" % widget}
+        if not str(p.get("node") or "") or not str(p.get("input") or ""):
+            return {"ok": False, "error": "参数缺少 node 或 input"}
+        decls.append(p)
+    if not decls:
+        return {"ok": False, "error": "没有勾选任何参数"}
+    with open(path, "r", encoding="utf-8") as f:
+        wf = json.load(f)
+    saved = _load_app_state(path)                    # 打包时也带上面板保存值
+    stem = paths._stem(os.path.basename(path))
+    built = _build_kapp(wf, decls, name or stem, desc, saved)
+    if not built["ok"]:
+        return built
     out_path = os.path.join(os.path.dirname(path), stem + ".kapp.json")
+    try:
+        paths._dump_json_atomic(out_path, built["kapp"], indent=1)
+    except Exception as e:                       # noqa: BLE001
+        return {"ok": False, "error": "写入失败：%s" % e}
+    return {"ok": True, "file": paths._rel(out_path), "param_count": len(built["params"]),
+            "node_count": len(built["graph"]), "outputs": built["outputs"],
+            "warnings": built["warnings"]}
+
+
+def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
+                     object_info: dict = None) -> dict:
+    """App Builder 的勾选结果 -> kapp（POST /ps/pack/linear）。
+
+    官方构建器已经把「哪些参数、什么顺序、什么显示名」全定好了，kapp 不缺任何信息，
+    所以这里不需要人再勾一遍：linearData.inputs 逐条换成 kapp 的 params，
+    outputs 用 linearData.outputs，图用同一张 UI 图转 API。
+    """
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("nodes"), list):
+        return {"ok": False, "error": "workflow 必须是 UI 格式工作流（画布序列化结果）"}
+    linear = ((workflow.get("extra") or {}).get("linearData")) or {}
+    entries = [e for e in (linear.get("inputs") or []) if isinstance(e, (list, tuple)) and len(e) >= 2]
+    if not entries:
+        return {"ok": False, "error": "App Builder 里还没有勾选输入：先在画布上点要暴露的参数"}
+    nid_order = [str(x) for x in (linear.get("outputs") or []) if str(x)]
+    if not nid_order:
+        return {"ok": False, "error": "App Builder 里还没有勾选输出节点"}
+    nodes = workflow["nodes"]
+    by_id = {str(n.get("id")): n for n in nodes if isinstance(n, dict)}
+    if object_info is None:
+        object_info = (build_object_info(sorted({str(n.get("type")) for n in nodes}))
+                       if compat.NODE_MAP else {})
+    decls, errs = [], []
+    for entry in entries:
+        node_id, ref_name, stored = _ref_parts(entry)
+        node = by_id.get(str(node_id))
+        if node is None:
+            errs.append("输入指向的节点 %s 不在工作流里" % node_id)
+            continue
+        ctype = str(node.get("type") or "")
+        widget_name = _panel_widget(ctype, ref_name)      # DOM 把手 -> 真实控件
+        label = _clean_label(node, widget_name)
+        if stored and stored not in (widget_name, ref_name):
+            label = stored                                # 构建器里改过的名字
+        descr = ""
+        if len(entry) > 2 and isinstance(entry[2], dict):
+            descr = str(entry[2].get("description") or "").strip()
+        decl = {"node": str(node_id), "input": widget_name, "label": label,
+                "widget": _suggest_widget(object_info, ctype, widget_name, node)}
+        if descr:
+            decl["desc"] = descr
+        decls.append(decl)
+    if errs:
+        return {"ok": False, "error": "；".join(errs[:8])}
+
+    raw = str(name or "").strip()
+    if target:
+        out_path = _resolve_pack_target(target)
+        if out_path is None:
+            return {"ok": False, "error": "目标路径不合法（必须是工作流目录内的 .kapp.json）：%s" % target}
+        stem = paths._stem(os.path.basename(out_path))
+        out_dir = os.path.dirname(out_path)
+    else:
+        if not raw:
+            return {"ok": False, "error": "应用名不能为空"}
+        if not paths._safe_id(raw):
+            return {"ok": False, "error": "应用名含非法字符（不能含 / \\ .. 或 :）"}
+        stem = paths._stem(raw)
+        if stem.lower().endswith(".kapp"):
+            stem = stem[: -len(".kapp")]
+        if not stem:
+            return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
+        out_dir = paths.WORKFLOW_DIR
+        out_path = os.path.join(out_dir, stem + ".kapp.json")
+
+    built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info)
+    if not built["ok"]:
+        return built
+    kapp = built["kapp"]
+    # 输出节点以构建器勾的为准（kapp 里就是这些节点 id），不在图里的直接拦下
+    missing = [x for x in nid_order if x not in built["graph"]]
+    if missing:
+        return {"ok": False, "error": "输出节点 %s 不在可执行图里（可能没装或画布上删了）"
+                                      % "、".join(missing)}
+    kapp["outputs"] = nid_order
+
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except Exception as e:                        # noqa: BLE001
+        return {"ok": False, "error": "工作流目录不可写：%s" % e}
+    if not paths._under(out_dir, out_path):
+        return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
     try:
         paths._dump_json_atomic(out_path, kapp, indent=1)
     except Exception as e:                       # noqa: BLE001
         return {"ok": False, "error": "写入失败：%s" % e}
-    return {"ok": True, "file": paths._rel(out_path), "param_count": len(kparams),
-            "node_count": len(graph), "outputs": outputs, "warnings": warns}
+    return {"ok": True, "id": stem, "file": paths._rel(out_path),
+            "target": _pack_target(out_path), "param_count": len(built["params"]),
+            "node_count": len(built["graph"]), "outputs": nid_order,
+            "warnings": built["warnings"], "edited": bool(target)}
 
 # ---------------------------------------------------------------- kapp 打包面板专用（只校验 + 落盘）
 #

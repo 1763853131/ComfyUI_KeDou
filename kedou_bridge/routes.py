@@ -355,3 +355,24 @@ def register(routes):
                                          body.get("outputs") or [],
                                          body.get("target"))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/pack/linear")
+    async def ps_pack_linear(request):
+        """POST /ps/pack/linear {name?, desc?, workflow, target?}
+        —— 直接按 ComfyUI 官方 App Builder 的勾选结果生成 kapp。
+
+        workflow 是画布的 UI 图（app.graph.serialize()），里面的 extra.linearData 就是
+        构建器里点的输入/输出（顺序、显示名、描述都在里面），所以不需要人再勾一遍：
+        桥接读 linearData 换算出 params，同一张图转成 API 图当 graph。
+        """
+        try:
+            body = await request.json()
+        except Exception:                            # noqa: BLE001
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        if not isinstance(body, dict):
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        result = await asyncio.to_thread(pack.kapp_from_linear,
+                                         body.get("name"), body.get("workflow"),
+                                         body.get("desc") or "",
+                                         body.get("target"))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)

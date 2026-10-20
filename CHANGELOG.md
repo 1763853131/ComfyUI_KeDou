@@ -4,6 +4,17 @@
 
 ## 2026-10-20
 
+### 用官方 App Builder 勾选，一键生成 kapp
+
+- 新增 `POST /ps/pack/linear`：直接拿 ComfyUI 官方 App Builder 的勾选结果
+  （工作流 `extra.linearData`）生成 `.kapp.json`。参数、顺序、显示名、描述全部沿用构建器里的，
+  `outputs` 用构建器勾的输出节点，图用同一张 UI 图转成 API 图 —— **不用在面板里再勾一遍**。
+- 打包面板检测到画布上有构建器勾选时，顶部出现「从 App Builder 导入」一栏，
+  列出已勾输入（顺序与构建器一致）和「按 App Builder 的勾选生成」按钮；
+  构建器里增删输入后，面板跟着刷新。原来的候选勾选与「输出格式」仍保留，供手动微调。
+- `pack_app`（`/ps/pack`）与新的 `kapp_from_linear` 共用同一套参数构造：同一张图、同一批声明，
+  两个入口出来的包一致；默认值一律优先取 `widgets_values_named`。
+
 ### 官方应用格式：能生成，也读得更准
 
 - 新增 `POST /ps/pack/app`：按 ComfyUI 官方 App Mode 的格式写 `<stem>.app.json`

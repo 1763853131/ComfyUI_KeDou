@@ -248,6 +248,52 @@ def run(tmp, paths, pack, apps, common):
     conv2 = ui_to_api.convert(wf, oi)["523"]["inputs"]
     check("没有 named 时退回位置映射", conv2.get("max_length") == 4096, conv2)
 
+    # ---------------------------------------------------------------- 9. App Builder 勾选 -> kapp
+    print("\n[9] kapp_from_linear：构建器勾选直接出包，不需二次勾选")
+    fake = {
+        "KedouImageLoader": {"input": {"required": {"media_state": ["STRING", {}]}}},
+        "IntThing": {"input": {"required": {"steps": ["INT", {"default": 20, "min": 1, "max": 100, "step": 1}]}}},
+        "SaveImage": {"input": {"required": {"filename_prefix": ["STRING", {}]}},
+                      "output": ["IMAGE"]},
+    }
+    ui = {
+        "id": "g", "links": [],
+        "nodes": [
+            {"id": 1, "type": "KedouImageLoader", "inputs": [], "widgets_values": ["IMG"],
+             "widgets_values_named": {"media_state": "IMG"}},
+            {"id": 3, "type": "IntThing", "inputs": [], "widgets_values": [20],
+             "widgets_values_named": {"steps": 20}},
+            {"id": 2, "type": "SaveImage", "inputs": [], "widgets_values": ["out"]},
+        ],
+        "extra": {"linearMode": True, "linearData": {
+            "inputs": [["g:1:kedou_media", "图片"],
+                       ["g:3:steps", "步数", {"description": "越大越细"}]],
+            "outputs": ["2"],
+        }},
+    }
+    res = pack.kapp_from_linear("构建器测试", ui, object_info=fake)
+    check("生成成功", res.get("ok"), res)
+    kp = os.path.join(tmp, "构建器测试.kapp.json")
+    check("落在工作流目录", os.path.isfile(kp), res.get("file"))
+    kapp2 = None
+    if os.path.isfile(kp):
+        with open(kp, "r", encoding="utf-8") as f:
+            kapp2 = json.load(f)
+    if kapp2:
+        check("参数顺序与构建器一致", [p["node"] for p in kapp2["params"]] == ["1", "3"],
+              kapp2["params"])
+        check("显示名沿用构建器里的名字", [p["label"] for p in kapp2["params"]] == ["图片", "步数"],
+              kapp2["params"])
+        check("DOM 把手还原成数据控件",
+              [p["widget"] for p in kapp2["params"]] == ["kedou_media", "number"], kapp2["params"])
+        check("默认值来自真实控件", [p["default"] for p in kapp2["params"]] == ["IMG", 20],
+              kapp2["params"])
+        check("outputs 用构建器的勾选", kapp2["outputs"] == ["2"], kapp2["outputs"])
+        check("graph 是 API 格式", kapp2["graph"]["1"]["class_type"] == "KedouImageLoader",
+              list(kapp2["graph"])[:3])
+    ui["extra"].pop("linearData")
+    check("没勾输入时明确拒绝", not pack.kapp_from_linear("x", ui, object_info=fake).get("ok"))
+
 
 if __name__ == "__main__":
     sys.exit(main())
