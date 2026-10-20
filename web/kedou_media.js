@@ -2283,34 +2283,58 @@ function openPackPanel(hostEl) {
     return null;
   };
 
+  // 鼠标位置 -> {node, widget}
+  // 新版 Vue 节点渲染下，节点卡片是 DOM、控件由上层画布按 Vue 布局绘制：
+  // litegraph 不再设置 widget.last_y，getWidgetOnPos 因此找不到。好在每个控件都带
+  // .y / .height（以节点左上角为原点、图坐标），按它命中一样准；老渲染器仍先走官方方法。
+  const widgetUnder = (cv, e) => {
+    try { cv.adjustMouseEvent(e); } catch (_) { return null; }
+    const gx = e.canvasX, gy = e.canvasY;
+    if (typeof gx !== "number" || typeof gy !== "number") return null;
+    const node = cv.graph.getNodeOnPos(gx, gy);
+    if (!node) return null;
+    let w = null;
+    try { if (node.getWidgetOnPos) w = node.getWidgetOnPos(gx, gy, false); } catch (_) { w = null; }
+    if (w) return { node, widget: w };
+    const local = gy - (node.pos ? node.pos[1] : 0);
+    for (const cand of node.widgets || []) {
+      const y = cand.y, h = cand.height;
+      if (typeof y !== "number" || !h) continue;
+      if (local < y || local > y + h) continue;
+      return { node, widget: cand };
+    }
+    return { node, widget: null };
+  };
+
   const onPickDown = (e) => {
     if (!pickOn || (e.button !== undefined && e.button !== 0)) return;
     const cv = app.canvas;
-    if (!cv || !cv.graph) return;
+    if (!cv || !cv.graph || !cv.canvas) return;
     const tgt = e.target;
     if (!tgt) return;
 
-    if (tgt === cv.canvas) {
-      let node = null, w = null;
-      try {
-        cv.adjustMouseEvent(e);
-        node = cv.graph.getNodeOnPos(e.canvasX, e.canvasY);
-        if (node && node.getWidgetOnPos) w = node.getWidgetOnPos(e.canvasX, e.canvasY, false);
-      } catch (_) {
-        return;
+    // 1) 自绘控件（图片框 / 提示词框）：它们是真实 DOM 元素，优先按元素认
+    const dom = domWidgetAt(tgt);
+    if (dom && dom.widget && dom.widget.name) {
+      const r = findRowByIds(dom.node.id, [dom.widget.name]);
+      if (r) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleRow(r);
       }
-      if (!node || !w || !w.name) return;          // 空白处 / 连线 / 非控件位置：不打扰
-      const r = findRowByIds(node.id, [w.name]);
-      if (!r) return;
-      e.preventDefault();
-      e.stopPropagation();
-      toggleRow(r);
       return;
     }
 
-    const hit = domWidgetAt(tgt);                    // 自绘控件（图片框/提示词框）
-    if (!hit || !hit.widget || !hit.widget.name) return;
-    const r = findRowByIds(hit.node.id, [hit.widget.name, hit.widget.options && hit.widget.options.serialize]);
+    // 2) 画布区域：Vue 节点模式下点在「节点卡片」上（没到 canvas），所以不能只认 canvas
+    const host = cv.canvas.parentElement;
+    const inGraph = tgt === cv.canvas
+      || (host && host.contains && host.contains(tgt))
+      || (tgt.closest && tgt.closest("[data-node-id]"));
+    if (!inGraph) return;
+
+    const hit = widgetUnder(cv, e);
+    if (!hit || !hit.widget || !hit.widget.name) return;   // 空白处 / 连线 / 非控件位置：不打扰
+    const r = findRowByIds(hit.node.id, [hit.widget.name]);
     if (!r) return;
     e.preventDefault();
     e.stopPropagation();
