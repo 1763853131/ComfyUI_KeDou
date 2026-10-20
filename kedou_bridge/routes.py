@@ -14,6 +14,8 @@ from . import apps, compat, image_sets, media, pack, paths, state
 
 LOCALE_DIR = os.path.join(paths.PLUGIN_DIR, "locales")
 _thumb_pruned = False
+# 缩略图文件名带源图指纹，内容变了 key 就变 → 可以让前端永久缓存
+_THUMB_CACHE_HEADER = {"Cache-Control": "public, max-age=31536000, immutable"}
 
 
 def register(routes):
@@ -245,9 +247,11 @@ def register(routes):
 
     @routes.get("/ps/thumb")
     async def ps_thumb(request):
-        """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256 -> image/webp
+        """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256 -> image/jpeg|image/png
 
-        只服务图片；不是图 / 解不开 / 越界，一律 404，由前端回退到 /view 原图。
+        只服务图片；不是图 / 解不开 / 越界，一律 404。面板 setThumb 收到 404 会在日志里
+        留一行「缩略图失败（HTTP 404 …）」，不会拿原图兜底（一屏 80 张 8MB 原图会把面板堵死）。
+        格式按源图有没有透明通道定（见 media.THUMB_EXTS 那段注释：UXP 解不了 webp）。
         """
         global _thumb_pruned
         qq = request.query
@@ -269,14 +273,19 @@ def register(routes):
             return compat.web.Response(status=404)
         key = hashlib.sha1(("%s|%d|%d|%d" % (src, st.st_mtime_ns, st.st_size, w)
                             ).encode("utf-8")).hexdigest()
-        dst = os.path.join(media.THUMB_DIR, key + ".webp")
+        for ext in media.THUMB_EXTS:                        # 同一指纹只会有一种扩展名落地
+            hit = os.path.join(media.THUMB_DIR, key + ext)
+            if os.path.isfile(hit):
+                return compat.web.FileResponse(hit, headers=_THUMB_CACHE_HEADER)
+        base = os.path.join(media.THUMB_DIR, key)
+        try:
+            dst = await asyncio.to_thread(media._make_thumb, src, base, w)
+        except Exception:                              # noqa: BLE001
+            return compat.web.Response(status=404)
         if not os.path.isfile(dst):
-            try:
-                await asyncio.to_thread(media._make_thumb, src, dst, w)
-            except Exception:                              # noqa: BLE001
-                return compat.web.Response(status=404)
+            return compat.web.Response(status=404)
         # 文件名带源图指纹，内容变了 key 就变，可以放心让浏览器永久缓存
-        return compat.web.FileResponse(dst, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+        return compat.web.FileResponse(dst, headers=_THUMB_CACHE_HEADER)
 
     @routes.get("/ps/pack/apps")
     async def ps_pack_apps(request):

@@ -32,6 +32,7 @@
 几条示例，让人一眼看懂格式；已经有内容的库绝不投放，也不会重复投放（靠 .kedou_seeded 标记）。
 """
 
+import asyncio
 import hashlib
 import json
 import os
@@ -766,6 +767,24 @@ def _serialize(entry):
     return "---\n" + "\n".join(fm) + "\n---\n\n" + body
 
 
+def _retry_locked(fn, *args, tries=6):
+    """跑一个会动文件的函数，撞上 Windows 的"瞬时独占"就短退避重试。
+
+    词库目录常在同步盘 / Obsidian 索引范围内（本机 D:\\知识库 里的 .md 全是
+    ReparsePoint），同步客户端、杀毒实时扫描、编辑器保存都能在几百毫秒内独占那个
+    文件，于是 os.replace / shutil.move 直接 WinError 5。这类锁重试就过去了 ——
+    为一次「使用计数 +1」把 500 甩给面板不值得。最多累计等 0.84s。
+    """
+    for i in range(tries):
+        try:
+            return fn(*args)
+        except PermissionError as e:
+            if i == tries - 1:
+                raise OSError("写词库失败：文件正被其它程序占用或只读（同步盘 / Obsidian / 杀毒），"
+                              "请让它先同步完再试 —— %s" % (args[-1] if args else "")) from e
+            time.sleep(0.04 * (i + 1))
+
+
 def _atomic_write(path, content):
     d = os.path.dirname(path)
     os.makedirs(d, exist_ok=True)
@@ -773,7 +792,7 @@ def _atomic_write(path, content):
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
-        os.replace(tmp, path)
+        _retry_locked(os.replace, tmp, path)
     except Exception:
         try:
             os.remove(tmp)
@@ -1234,7 +1253,7 @@ def delete_prompt(pid):
     while os.path.exists(dest):
         dest = os.path.join(tdir, "%s_%d.md" % (stem, n))
         n += 1
-    shutil.move(path, dest)
+    _retry_locked(shutil.move, path, dest)
     _cache.pop(path, None)
     return {"ok": True, "trashed": os.path.basename(dest)}
 
@@ -1266,6 +1285,19 @@ def bump_use(pid):
 
 # ─────────────────────────── 路由注册 ───────────────────────────
 
+async def _run(fn, *args):
+    """把同步的词库操作丢进线程池，顺手把磁盘异常变成 {ok:false,error}。
+
+    词库函数本来就个个返回 {"ok":…, "error":…}，这里唯一要补的是：文件被占用 /
+    没权限时别再往上抛 —— 抛出去就是 ComfyUI 控制台里一长串 traceback，
+    面板只拿到一个 500，用户和我们都不知道发生了什么。
+    """
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except OSError as e:
+        return {"ok": False, "error": str(e) or e.__class__.__name__}
+
+
 def register_routes(routes):
     """把 HTTP 接口挂到任意 aiohttp RouteTableDef 上（不是 app.router，那上面没有 .get/.post）。
 
@@ -1273,8 +1305,7 @@ def register_routes(routes):
     要独立起服务就 `routes = web.RouteTableDef(); register_routes(routes); app.add_routes(routes)`。
     逻辑层没有 ComfyUI 依赖，所以换哪个宿主都不用改代码。
     """
-    from aiohttp import web
-    import asyncio                                      # noqa: PLC0415 —— 文件 I/O 放线程池
+    from aiohttp import web                             # 只有起服务时才要它，逻辑层不依赖
 
     async def _body(request):
         try:
@@ -1286,7 +1317,7 @@ def register_routes(routes):
     @routes.get("/ps/prompts")
     async def _list(request):
         q = request.query
-        items = await asyncio.to_thread(
+        items = await _run(
             list_prompts, q.get("type", ""), q.get("dir", ""), q.get("tag", ""),
             q.get("model", ""), q.get("q", ""), q.get("use", ""))
         return web.json_response(items)
@@ -1296,36 +1327,36 @@ def register_routes(routes):
         body = await _body(request)
         if body is None:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(await asyncio.to_thread(save_prompt, body))
+        return web.json_response(await _run(save_prompt, body))
 
     @routes.post("/ps/prompts/history")
     async def _hist(request):
         body = await _body(request) or {}
-        result = await asyncio.to_thread(
+        result = await _run(
             save_history, str(body.get("positive") or ""), body.get("usage"))
         return web.json_response(result)
 
     @routes.get("/ps/prompts/history")
     async def _hist_list(request):
         q = request.query
-        result = await asyncio.to_thread(list_history, q.get("use", ""), q.get("q", ""))
+        result = await _run(list_history, q.get("use", ""), q.get("q", ""))
         return web.json_response(result)
 
     @routes.post("/ps/prompts/history/delete")
     async def _hist_del(request):
         body = await _body(request) or {}
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             delete_history, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/history/clear")
     async def _hist_clear(request):
-        return web.json_response(await asyncio.to_thread(clear_history))
+        return web.json_response(await _run(clear_history))
 
     # ── 词库（短词/标签） ──
     @routes.get("/ps/prompts/phrases")
     async def _phrases(request):
         q = request.query
-        result = await asyncio.to_thread(
+        result = await _run(
             list_phrases, q.get("q", ""), q.get("category", ""), q.get("group", ""))
         return web.json_response(result)
 
@@ -1334,23 +1365,23 @@ def register_routes(routes):
         body = await _body(request)
         if body is None:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(await asyncio.to_thread(save_phrase, body))
+        return web.json_response(await _run(save_phrase, body))
 
     @routes.post("/ps/prompts/phrases/delete")
     async def _phrase_del(request):
         body = await _body(request) or {}
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             delete_phrase, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/phrases/use")
     async def _phrase_use(request):
         body = await _body(request) or {}
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             bump_phrase_use, str(body.get("id") or "")))
 
     @routes.get("/ps/prompts/categories")
     async def _cats_list(request):
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             list_categories, request.query.get("scope", "")))
 
     @routes.post("/ps/prompts/categories")
@@ -1358,20 +1389,20 @@ def register_routes(routes):
         body = await _body(request)
         if body is None:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             add_category, str(body.get("scope") or ""),
             str(body.get("name") or ""), str(body.get("group") or "")))
 
     @routes.post("/ps/prompts/delete")
     async def _del(request):
         body = await _body(request) or {}
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             delete_prompt, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/use")
     async def _use(request):
         body = await _body(request) or {}
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             bump_use, str(body.get("id") or "")))
 
     @routes.post("/ps/prompts/vault")
@@ -1379,7 +1410,7 @@ def register_routes(routes):
         body = await _body(request)
         if body is None or "path" not in body:
             return web.json_response({"ok": False, "error": "bad json"}, status=400)
-        return web.json_response(await asyncio.to_thread(
+        return web.json_response(await _run(
             set_vault_config, str(body.get("path") or "")))
 
 

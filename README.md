@@ -52,7 +52,7 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/apps/{app_id}/values` | POST | 把面板上的编辑存到 sidecar 状态文件（**不改工作流文件**） |
 | `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图；转换结果按文件版本缓存 |
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
-| `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256`，webp 落盘缓存（ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡） |
+| `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256`，按源图指纹落盘缓存；不透明出 JPEG、带透明出 PNG（**不能用 webp —— PS 面板的 `<img>` 走 Adobe 解码器，解不出来就是一片空白**；ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡） |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
 | `/ps/pack` | POST | 按已有工作流文件生成 `<stem>.kapp.json` 应用包 |
 | `/ps/pack/apps` | GET | 列出可编辑的 `.kapp.json` 应用包（打包面板「编辑已打包的应用」用） |

@@ -109,9 +109,14 @@ def pick_media(name, sub="", tab="input") -> dict:
 # 一屏 80 格能把事件循环堵死。这里出真正的缩略图，并按 源文件指纹 落盘缓存：
 # 一张图一辈子只解一次码，之后纯静态发文件。
 THUMB_MAX_SIDE = 512
-THUMB_QUALITY = 72
+THUMB_QUALITY = 82
 THUMB_KEEP_DAYS = 30
 THUMB_DIR = os.path.join(os.path.dirname(paths.WORKFLOW_DIR), "kedou_thumbs")
+# PS 面板的 <img> 不走 Chromium 的解码器，走 Adobe 自己那套 —— 官方 known-issues 里连
+# 「灰度图不渲染」都单独列一条，webp 这种浏览器全认的格式它一样画不出来（一片空白，
+# 而且不报错，只在 DOM 里占个位）。所以缩略图只出面板一定认的格式：不透明走 JPEG，
+# 带透明通道的走 PNG（128px 量级也就几十 KB，不值得为省这点字节赌解码器）。
+THUMB_EXTS = (".jpg", ".png")
 _thumb_pruned = False
 
 
@@ -128,8 +133,12 @@ def _media_file(name, sub, tab):
     return path
 
 
-def _make_thumb(src, dst, w):
-    """缩到 w 以内存成 webp。跑在 asyncio.to_thread 里，不碰事件循环。"""
+def _make_thumb(src, base, w):
+    """缩到 w 以内并落盘，返回真实写出的路径（base + .jpg/.png）。
+
+    base 不带扩展名：扩展名要看完图才知道有没有 alpha，调用方拿返回值发文件即可。
+    跑在 asyncio.to_thread 里，不碰事件循环。
+    """
     from PIL import Image, ImageOps                        # noqa: PLC0415
     os.makedirs(THUMB_DIR, exist_ok=True)
     with Image.open(src) as im:
@@ -139,16 +148,29 @@ def _make_thumb(src, dst, w):
         except Exception:                                   # noqa: BLE001
             pass                                            # 非 JPEG（PNG/webp）不支持，照常全解
         im = ImageOps.exif_transpose(im)                    # 手机图的 EXIF 方向，不转就躺倒
+        # 先把模式收拾干净再缩：UXP 的解码器只认 Adobe 那套（官方 known-issues：灰度图不渲染），
+        # 而且 Pillow 的 thumbnail/reduce 对 16 位、浮点这类模式直接 ValueError。
+        # 有透明通道 → PNG 保住通道，没有 → JPEG。
+        has_alpha = "A" in im.getbands() or "transparency" in im.info
+        if has_alpha:
+            fmt, ext = "PNG", ".png"
+            if im.mode != "RGBA":
+                im = im.convert("RGBA")
+        else:
+            fmt, ext = "JPEG", ".jpg"
+            if im.mode != "RGB":
+                im = im.convert("RGB")
         im.thumbnail((w, w))
-        # UXP 不显示灰度图（官方 known-issues 原文：images with grayscale will not be displayed），
-        # 灰度文档/深度图选完在面板里就是一片空白 → 有 alpha 走 RGBA，没有走 RGB
-        if im.mode not in ("RGB", "RGBA"):
-            im = im.convert("RGBA" if ("A" in im.getbands() or "transparency" in im.info) else "RGB")
-        fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=".webp")
+        fd, tmp = tempfile.mkstemp(dir=THUMB_DIR, suffix=ext)
         os.close(fd)
         try:
-            im.save(tmp, "WEBP", quality=THUMB_QUALITY, method=4)
+            if fmt == "JPEG":
+                im.save(tmp, fmt, quality=THUMB_QUALITY, optimize=True)
+            else:
+                im.save(tmp, fmt, optimize=True)
+            dst = base + ext
             os.replace(tmp, dst)                            # 原子替换：并发请求不会读到半截文件
+            return dst
         finally:
             if os.path.exists(tmp):
                 try:
@@ -158,11 +180,15 @@ def _make_thumb(src, dst, w):
 
 
 def _thumb_prune_old():
-    """清掉 THUMB_KEEP_DAYS 天没再命中的缓存（源图删了/换机了就靠这个收口）。"""
+    """清掉 THUMB_KEEP_DAYS 天没再命中的缓存（源图删了/换机了就靠这个收口）。
+
+    认 .webp：老版本在这里出的是 webp，UXP 画不出来，路由已经不再发它，
+    留着就是永远命不中的死文件，一起按天数清掉。
+    """
     try:
         cutoff = time.time() - THUMB_KEEP_DAYS * 86400
         for fn in os.listdir(THUMB_DIR):
-            if not fn.endswith(".webp"):
+            if not fn.lower().endswith(THUMB_EXTS + (".jpeg", ".webp")):
                 continue
             p = os.path.join(THUMB_DIR, fn)
             try:
