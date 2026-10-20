@@ -1704,15 +1704,19 @@ const KPCSS = [
   ".kp-pdel:hover{color:var(--error-text,#ff7a7a);opacity:1;}",
   // 画布上的勾选框层（照官方 App Builder 的样子）：一层透明蒙层，里面每个参数一格小方框
   ".kp-layer{position:fixed;inset:0;pointer-events:none;z-index:40;}",
-  ".kp-hit{position:absolute;box-sizing:border-box;border-radius:4px;border:1.5px solid rgba(255,255,255,.45);",
+  // 点选时给每个参数行让出左侧一条：方框落在这条里，参数名整体右移，和官方构建器一致
+  "body.kp-picking .lg-node-widgets .lg-node-widget{padding-left:24px;}",
+  ".kp-hit{position:absolute;box-sizing:border-box;border-radius:3px;border:1.5px solid rgba(255,255,255,.5);",
   "background:rgba(18,18,26,.72);pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;",
   "transition:background .08s,border-color .08s;}",
   ".kp-hit:hover{border-color:#7aa2ff;background:rgba(59,130,246,.28);}",
+  ".kp-hit.kp-hi{border-color:#fff;box-shadow:0 0 0 3px rgba(122,162,255,.55);}",
   ".kp-hit.kp-on{background:#3579f6;border-color:#3579f6;}",
   ".kp-hit.kp-on::after{content:'';width:50%;height:26%;border-left:2px solid #fff;border-bottom:2px solid #fff;",
   "transform:rotate(-45deg) translateY(-15%);}",
   ".kp-selbox{position:absolute;box-sizing:border-box;border:2px solid #3579f6;border-radius:7px;",
   "background:rgba(53,121,246,.10);pointer-events:none;}",
+  ".kp-selbox.kp-sel-hi{border-style:dashed;border-width:1.5px;border-color:rgba(140,180,255,.85);background:rgba(53,121,246,.05);}",
 ].join("");
 
 let kpCssDone = false;
@@ -2271,6 +2275,7 @@ function openPackPanel(hostEl) {
     r.cb.checked = !r.cb.checked;
     updateCount();
     if (onlySel) applyFilter();
+    setTimeout(dropRowFocus, 0);
   };
 
   const findRowByIds = (nodeId, names) => {
@@ -2294,10 +2299,94 @@ function openPackPanel(hostEl) {
     return null;
   };
 
-  // 鼠标位置 -> {node, widget}
-  // 新版 Vue 节点渲染下，节点卡片是 DOM、控件由上层画布按 Vue 布局绘制：
-  // litegraph 不再设置 widget.last_y，getWidgetOnPos 因此找不到。好在每个控件都带
-  // .y / .height（以节点左上角为原点、图坐标），按它命中一样准；老渲染器仍先走官方方法。
+  const rowH = (w) => {
+    const ch = w && w.computedHeight;
+    if (typeof ch === "number" && ch > 0) return ch;
+    return (w && w.height) || 20;
+  };
+
+  // 新版 Vue 节点渲染里，节点卡片是真 DOM：每个画出来的参数行是一个 .lg-node-widget 元素，
+  // 但控件对象上没有行坐标（.y / computedHeight 是老布局的估算值，行高、多行框、折叠高级输入
+  // 一改就错位），所以位置和命中一律以行元素为准。
+  // 行元素上没有名字，只有显示名；按「显示名 + 顺序」和面板里的候选行做一次序列对齐，
+  // 就知道每行对应哪个参数（有控件被折叠/被连线顶掉时顺序会对不上，靠对齐一次补上）。
+  const rowLabelText = (rowEl) => {
+    try {
+      for (const e of rowEl.querySelectorAll("*")) {
+        if (e.childElementCount === 0) {
+          const s = (e.textContent || "").trim();
+          if (s) return s;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    return "";
+  };
+
+  const alignRows = (els, cands) => {
+    const n = els.length, m = cands.length;
+    if (!n || !m) return null;
+    const le = els.map(rowLabelText);
+    const lc = cands.map((c) => String(c.lab.value || c.c.label || "").trim());
+    const NEG = -1e9;
+    const dp = [];
+    for (let i = 0; i <= n; i++) dp.push(new Array(m + 1).fill(NEG));
+    dp[0][0] = 0;
+    for (let i = 0; i <= n; i++) {
+      for (let j = 0; j <= m; j++) {
+        if (!i && !j) continue;
+        let best = NEG;
+        if (j > 0) best = Math.max(best, dp[i][j - 1]);          // 这个控件没画出来（跳过）
+        if (i > 0 && j > 0 && dp[i - 1][j - 1] > NEG / 2) {
+          const same = le[i - 1] && lc[j - 1] && le[i - 1] === lc[j - 1] ? 4 : 0;
+          best = Math.max(best, dp[i - 1][j - 1] + same);
+        }
+        dp[i][j] = best;
+      }
+    }
+    if (dp[n][m] <= NEG / 2) return null;
+    const pairs = [];
+    let i = n, j = m;
+    while (i > 0 && j > 0) {
+      const same = le[i - 1] && lc[j - 1] && le[i - 1] === lc[j - 1] ? 4 : 0;
+      if (dp[i][j] === dp[i - 1][j - 1] + same) { pairs.push([cands[j - 1], els[i - 1]]); i--; j--; }
+      else j--;
+    }
+    return pairs;
+  };
+
+  // 节点 -> { byRow: rowKey -> 行元素, byEl: 行元素 -> row }
+  const nodeRows = (node) => {
+    if (!node) return null;
+    let card = null;
+    try { card = document.querySelector('[data-node-id="' + node.id + '"]'); } catch (_) { card = null; }
+    if (!card) return null;
+    const els = Array.from(card.querySelectorAll(".lg-node-widget"));
+    if (!els.length) return null;
+    const cands = rows.filter((r) => String(r.c.node) === String(node.id));
+    const pairs = alignRows(els, cands);
+    if (!pairs) return null;
+    const byRow = new Map(), byEl = new Map();
+    for (const [c, e] of pairs) { byRow.set(keyOf(c), e); byEl.set(e, c); }
+    return { byRow, byEl };
+  };
+
+  // 元素 -> {node, widget:{name}}：行元素就是参数本身
+  const rowElFromTarget = (el) => {
+    if (!el || !el.closest) return null;
+    const rowEl = el.closest(".lg-node-widget");
+    if (!rowEl) return null;
+    const card = rowEl.closest("[data-node-id]");
+    if (!card) return null;
+    const id = Number(card.getAttribute("data-node-id"));
+    const node = app.canvas && app.canvas.graph ? app.canvas.graph.getNodeById(id) : null;
+    const nr = nodeRows(node);
+    if (!nr) return null;
+    const row = nr.byEl.get(rowEl);
+    if (!row) return null;
+    return { node, widget: { name: row.c.input } };
+  };
+
+  // 鼠标位置 -> {node, widget}（老渲染兜底用）
   const widgetUnder = (cv, e) => {
     try { cv.adjustMouseEvent(e); } catch (_) { return null; }
     const gx = e.canvasX, gy = e.canvasY;
@@ -2309,8 +2398,9 @@ function openPackPanel(hostEl) {
     if (w) return { node, widget: w };
     const local = gy - (node.pos ? node.pos[1] : 0);
     for (const cand of node.widgets || []) {
-      const y = cand.y, h = cand.height;
-      if (typeof y !== "number" || !h) continue;
+      const y = cand.y;
+      if (typeof y !== "number") continue;
+      const h = rowH(cand);
       if (local < y || local > y + h) continue;
       return { node, widget: cand };
     }
@@ -2324,6 +2414,19 @@ function openPackPanel(hostEl) {
     const tgt = e.target;
     if (!tgt) return;
     if (tgt.closest && tgt.closest(".kp-layer")) return;   // 画布蒙层上的小方框有自己的处理
+
+    // 0) Vue 节点卡片里的参数行：一个行元素就是一个参数，按元素认最准
+    const rowHit0 = rowElFromTarget(tgt);
+    if (rowHit0) {
+      const r = findRowByIds(rowHit0.node.id, [rowHit0.widget.name]);
+      if (r) {
+        e.preventDefault();
+        e.stopPropagation();
+        swallowMouse();
+        toggleRow(r);
+      }
+      return;
+    }
 
     // 1) 自绘控件（图片框 / 提示词框）：它们是真实 DOM 元素，优先按元素认
     const dom = domWidgetAt(tgt);
@@ -2355,8 +2458,9 @@ function openPackPanel(hostEl) {
     toggleRow(r);
   };
 
-  // 拦下一次按下后，浏览器仍会派发 mousedown；litegraph 的编辑/拖拽是在 mousedown 上启动的，
-  // 所以紧跟着的 mousedown 也要吃掉，否则点选参数时会顺带把参数带进编辑态（出现光标/工具栏）。
+  // 拦下一次按下后，浏览器仍会派发 mousedown / mouseup / click；litegraph 的编辑/拖拽是在
+  // 这些事件上启动的，所以紧跟着的那一串也要吃掉，否则点选参数时会顺带把参数带进输入状态
+  // （出现光标、把键盘输入写进参数值）。
   let swallowNext = false;
   const swallowMouse = () => {
     swallowNext = true;
@@ -2368,6 +2472,19 @@ function openPackPanel(hostEl) {
     e.preventDefault();
     e.stopPropagation();
   };
+  const onPickFollow = (e) => {
+    if (!swallowNext) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const dropRowFocus = () => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.closest && a.closest(".lg-node-widget")) {
+      try { a.blur(); } catch (_) { /* ignore */ }
+    }
+  };
+
+  const onPickMove = (e) => { lastPointer = [e.clientX, e.clientY]; };
 
   const hookPick = (on) => {
     pickSwitch.classList.toggle("kp-on", !!on);
@@ -2378,9 +2495,16 @@ function openPackPanel(hostEl) {
     if (on) {
       window.addEventListener("pointerdown", onPickDown, true);
       window.addEventListener("mousedown", onPickMouseDown, true);
+      window.addEventListener("mouseup", onPickFollow, true);
+      window.addEventListener("click", onPickFollow, true);
+      window.addEventListener("pointermove", onPickMove, true);
     } else {
       window.removeEventListener("pointerdown", onPickDown, true);
       window.removeEventListener("mousedown", onPickMouseDown, true);
+      window.removeEventListener("mouseup", onPickFollow, true);
+      window.removeEventListener("click", onPickFollow, true);
+      window.removeEventListener("pointermove", onPickMove, true);
+      lastPointer = null;
     }
     paintLayerLive(on);
   };
@@ -2393,6 +2517,9 @@ function openPackPanel(hostEl) {
   let layerEl = null;
   let layerRaf = 0;
   let layerNodes = new Map();     // 行 key -> {box, sel}
+  let hoverBoxKey = null;         // 鼠标停在哪个方框上（用来高亮它对应的行）
+  let lastPointer = null;         // 最近一次鼠标位置（悬停高亮用）
+  const KP_PICK_PAD = 24;         // 点选时给每行左侧让出的宽度（节点坐标，跟画布一起缩放）
 
   const ensureLayer = () => {
     if (!layerEl || !document.contains(layerEl)) {
@@ -2408,6 +2535,8 @@ function openPackPanel(hostEl) {
     if (layerRaf) { cancelAnimationFrame(layerRaf); layerRaf = 0; }
     if (layerEl) { layerEl.remove(); layerEl = null; }
     layerNodes = new Map();
+    hoverBoxKey = null;
+    document.body.classList.remove("kp-picking");
   };
 
   const paintLayer = () => {
@@ -2419,28 +2548,74 @@ function openPackPanel(hostEl) {
     const cr = cv.canvas.getBoundingClientRect();
     let pr = null;
     try { pr = hostEl && document.contains(hostEl) ? hostEl.getBoundingClientRect() : null; } catch (_) { pr = null; }
-    const size = Math.max(11, Math.min(20, 16 * scale));
+
+    // 鼠标正压在哪一行：直接问行元素，跟眼睛看到的完全一致
+    let hoverKey = null;
+    const hp = lastPointer;
+    if (hp) {
+      let el = null;
+      try { el = document.elementFromPoint(hp[0], hp[1]); } catch (_) { el = null; }
+      if (el && !(el.closest && el.closest(".kp-layer"))) {
+        const rh = rowElFromTarget(el);
+        if (rh) {
+          const row = findRowByIds(rh.node.id, [rh.widget.name]);
+          if (row) hoverKey = keyOf(row);
+        }
+      }
+    }
+
     const seen = new Set();
+    const cache = new Map();
     for (const r of rows) {
       const node = cv.graph.getNodeById(r.c.node);
       if (!node || (node.flags && node.flags.collapsed)) continue;
-      const w = (node.widgets || []).find((x) => x && x.name === r.c.input);
-      if (!w || typeof w.y !== "number" || !w.height) continue;
-      // 方框贴在节点左外侧的空白里：编辑器不像官方构建器那样给左侧留出一列，
-      // 画在节点里面会压住参数名，放外面既不挡字也不挡拖动。
-      const nodeLeft = (node.pos[0] + ox) * scale + cr.left;
-      const sx = nodeLeft - size - 6;
-      const gyTop = node.pos[1] + w.y;
-      // 被别的节点压在下面就不画：否则方框会飘在压住它的节点上
-      let topNode = null;
-      try { topNode = cv.graph.getNodeOnPos(node.pos[0] + 2, gyTop + w.height / 2); } catch (_) { topNode = null; }
-      if (topNode && topNode !== node) continue;
-      const sy = (gyTop + w.height / 2 + oy) * scale + cr.top;
-      if (sx < cr.left - 2 || sx > cr.right - size || sy < cr.top || sy > cr.bottom) continue;
-      if (pr && sx + size > pr.left && sx < pr.right && sy > pr.top && sy < pr.bottom) continue;
-
       const key = keyOf(r);
+      let map = cache.get(node.id);
+      if (map === undefined) { map = nodeRows(node); cache.set(node.id, map); }
+
+      let rowLeft = 0, rowTop = 0, rowPx = 0, rowW = 0, domRow = true;
+      const nr = map;
+      const el = nr ? nr.byRow.get(key) : null;
+      if (nr) {
+        // Vue 卡片在：只认真正画出来的行，没画出来的（折叠/隐藏）不出方框
+        if (!el) continue;
+        const b = el.getBoundingClientRect();
+        if (b.width < 8 || b.height < 4) continue;
+        rowLeft = b.left; rowTop = b.top; rowPx = b.height; rowW = b.width;
+        const gx = (b.left + 6 - cr.left) / scale - ox;
+        const gy = (b.top + b.height / 2 - cr.top) / scale - oy;
+        let topNode = null;
+        try { topNode = cv.graph.getNodeOnPos(gx, gy); } catch (_) { topNode = null; }
+        if (topNode && topNode !== node) continue;      // 被别的节点压住：不画，免得飘在人家身上
+      } else {
+        domRow = false;
+        const w = (node.widgets || []).find((x) => x && x.name === r.c.input);
+        if (!w || typeof w.y !== "number") continue;
+        const ch = rowH(w);
+        if (!ch) continue;
+        const surf = w._visibility && w._visibility.surfaces;
+        if (surf && surf.vueNode === "hidden") continue;
+        const gyTop = node.pos[1] + w.y;
+        let topNode = null;
+        try { topNode = cv.graph.getNodeOnPos(node.pos[0] + 2, gyTop + ch / 2); } catch (_) { topNode = null; }
+        if (topNode && topNode !== node) continue;
+        rowLeft = (node.pos[0] + ox) * scale + cr.left;
+        rowTop = (gyTop + oy) * scale + cr.top;
+        rowPx = ch * scale;
+        rowW = (node.size ? node.size[0] : 200) * scale;
+      }
+
+      const hi = key === hoverKey || key === hoverBoxKey;
+      // 方框画在行首：Vue 卡片给每行留了一点左内边距（见下面的 CSS），方框正好落进去，
+      // 参数名整体右移，跟官方构建器一样；老渲染没有那列空白，就贴到节点左外侧。
+      const padPx = domRow ? Math.max(0, Math.min(KP_PICK_PAD * scale, rowPx)) : 0;
+      const size = Math.max(8, Math.min(16, domRow ? padPx - 3 : rowPx * 0.8));
+      const sx = domRow ? rowLeft + Math.max(1, (padPx - size) / 2) : rowLeft - size - 5;
+      const boxTop = rowTop + Math.max(0, Math.min((rowPx - size) / 2, (Math.min(rowPx, 26 * scale) - size) / 2));
+      if (sx < cr.left - 2 || sx > cr.right - size || rowTop < cr.top || rowTop + rowPx > cr.bottom) continue;
+      if (pr && sx + size > pr.left && sx < pr.right && rowTop + rowPx > pr.top && rowTop < pr.bottom) continue;
       seen.add(key);
+
       let it = layerNodes.get(key);
       if (!it) {
         const sel = document.createElement("div");
@@ -2454,23 +2629,28 @@ function openPackPanel(hostEl) {
           toggleRow(r);
           renderPick();
         };
+        box.onpointerenter = () => { hoverBoxKey = key; };
+        box.onpointerleave = () => { if (hoverBoxKey === key) hoverBoxKey = null; };
         layer.append(sel, box);
         it = { box, sel };
         layerNodes.set(key, it);
       }
       const on = !!r.cb.checked;
       it.box.classList.toggle("kp-on", on);
+      it.box.classList.toggle("kp-hi", hi);
       it.box.title = ((node.title || node.type || "") + " · " + (r.lab.value || r.c.label));
       it.box.style.left = sx + "px";
-      it.box.style.top = (sy - size / 2) + "px";
+      it.box.style.top = boxTop + "px";
       it.box.style.width = size + "px";
       it.box.style.height = size + "px";
-      if (on) {
+      // 勾中的行套蓝框；鼠标压着的那行给一圈虚框，跟方框对上号
+      if (on || hi) {
         it.sel.style.display = "";
-        it.sel.style.left = ((node.pos[0] + ox) * scale + cr.left) + "px";
-        it.sel.style.top = ((gyTop + oy) * scale + cr.top) + "px";
-        it.sel.style.width = ((node.size ? node.size[0] : 200) * scale) + "px";
-        it.sel.style.height = (w.height * scale) + "px";
+        it.sel.classList.toggle("kp-sel-hi", !on);
+        it.sel.style.left = rowLeft + "px";
+        it.sel.style.top = rowTop + "px";
+        it.sel.style.width = rowW + "px";
+        it.sel.style.height = rowPx + "px";
       } else {
         it.sel.style.display = "none";
       }
@@ -2493,6 +2673,7 @@ function openPackPanel(hostEl) {
   function paintLayerLive(on) {
     if (!on) { dropLayer(); return; }
     ensureLayer();
+    document.body.classList.add("kp-picking");
     if (!layerRaf) layerRaf = requestAnimationFrame(tickLayer);
   }
 
@@ -2579,6 +2760,10 @@ function openPackPanel(hostEl) {
       pickHooked = false;
       window.removeEventListener("pointerdown", onPickDown, true);
       window.removeEventListener("mousedown", onPickMouseDown, true);
+      window.removeEventListener("mouseup", onPickFollow, true);
+      window.removeEventListener("click", onPickFollow, true);
+      window.removeEventListener("pointermove", onPickMove, true);
+      lastPointer = null;
     }
     dropLayer();
   };
