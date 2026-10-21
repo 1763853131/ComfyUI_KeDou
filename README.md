@@ -373,6 +373,11 @@ Runway Gen-4 网页端用自己起的 `@名字`，所以这三种没放进下拉
 > 合集「comfyui 插件」里有这些节点的实际效果与踩坑记录，欢迎来聊。
 <!-- CONTACT:END -->
 
+### 多个 agent / 会话同改这个仓库
+
+规矩见 [docs/agent-collab.md](docs/agent-collab.md)。一句话：**提交不会互相覆盖，未提交的工作区会**。
+开工先看 `git status`、只按路径 `git add`、改前重读文件、收尾即提交；要真并行就各开一个 `git worktree`。
+
 ---
 
 ## License
