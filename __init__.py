@@ -30,29 +30,6 @@ PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIRECTORY = "./web"
 
 
-# ---------------------------------------------------------------- 路径解析垫片
-def _load_path_fix():
-    """加载同目录的 kedou_path_fix.py（import 即对 folder_paths 打补丁，幂等）。"""
-    p = os.path.join(PLUGIN_DIR, "kedou_path_fix.py")
-    if not os.path.exists(p):
-        return None
-    try:
-        import importlib.util as _ilu               # noqa: PLC0415
-        spec = _ilu.spec_from_file_location("kedou_path_fix", p)
-        m = _ilu.module_from_spec(spec)
-        spec.loader.exec_module(m)
-        return m
-    except Exception:                               # noqa: BLE001
-        return None
-
-
-try:
-    if _load_path_fix() is not None:
-        print("[KeDou] kedou_path_fix 已启用：根目录找不到的模型按文件名搜索子目录")
-except Exception:                                   # noqa: BLE001
-    pass
-
-
 # ---------------------------------------------------------------- 内部实现包
 def _load_bridge():
     """按文件路径加载 kedou_bridge/ 包。

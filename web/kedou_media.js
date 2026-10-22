@@ -13,7 +13,7 @@
 //    否则节点上的其它控件值会整体错位。
 
 import { app } from "../../scripts/app.js";
-import { t, initI18n, onLocaleChange, serverError } from "./i18n.js";
+import { t, locale, initI18n, onLocaleChange, serverError } from "./i18n.js";
 
 const NODE_CLASS = "KedouImageLoader";
 // 输出槽上限。ComfyUI 的 RETURN_TYPES 必须静态声明，所以「不限制数量」只能体现为
@@ -150,7 +150,7 @@ function ensureCss() {
     cssDone = true;
     return;
   }
-  console.log("[kedou] 前端扩展已加载 · build 2026-09-28c");
+  console.log("[kedou] 前端扩展已加载 · build 2026-10-22");
   const s = document.createElement("style");
   s.id = "kd-two-css";
   s.textContent = CSS;
@@ -185,9 +185,13 @@ function viewUrl(name, sub) {
 // 根本没有 resize），5120x8192 的图照样回 8.7MB，且全图解码同步跑在 async 处理函数里，
 // 一屏几十格能把事件循环堵死；参数末尾的 ";0.0" 也不会被当成质量（后端只认最后一段
 // 且要求纯数字），实际按 quality=90 出图。以前那套 "jpeg;50;0.0" 的写法两头都落空。
-function thumbUrl(name, sub, w, tab) {
-  return "/ps/thumb?" + new URLSearchParams(
-    { filename: name, subfolder: sub || "", type: tab || "input", w: String(w || 256) }).toString();
+function thumbUrl(name, sub, w, tab, mode) {
+  // mode="raw"：要原比例、不补边的图 —— 格子靠 CSS object-fit 决定裁切/完整。
+  // 后端默认出的是「补边成正方形」的版本（PS 面板要，UXP 会把 max-* 各自钳位拽变形），
+  // 那张图喂给 ComfyUI 会让 cover 失效、所有图看起来都变成全图显示。
+  const p = { filename: name, subfolder: sub || "", type: tab || "input", w: String(w || 256) };
+  if (mode) p.mode = mode;
+  return "/ps/thumb?" + new URLSearchParams(p).toString();
 }
 
 // ---- 悬浮放大预览（媒体库网格 + 图片加载器面板共用） ----
@@ -450,16 +454,21 @@ function syncOutputs(node) {
   // 空槽真正执行时由后端钩子剔除（/prompt 入口），下游不会收到 None，
   // 所以保留连线既不用重连，也不会再打挂 Batch Images。
   const state = readState(node);
-  const effN = effectiveImages(state).length;
-  const outN = state.batch ? (effN ? 1 : 0) : effN;
+  // 选择模式**已经选了**几张 = 这次真要输出的张数，必须有对应槽位（选 5 张就得有 5 个口）。
+  // 非选择模式、或选了但还没点任何图时不预铺 —— 否则面板里几十张图会一次性铺出几十个
+  // 空槽，用户看到的就是「刚打开多出来一堆」，点一下又缩回去。
+  // picked 里可能残留已删掉的文件名（删图时同步清理了，但旧工作流/外部写入不一定），
+  // 所以按 effectiveImages 过滤后的真实张数算，否则会照着一堆死名字多铺空槽。
+  const effList = effectiveImages(state);
+  const pickedN = (state.select && (state.picked || []).length) ? effList.length : 0;
   let hi = -1;
   node.outputs.forEach((o, i) => {
     if (linksOf(node, i).length) hi = i;   // .links 之外也认旧版/适配器的 .link
   });
-  // 在此基础上**始终多留一个空位点位**（没到上限时）：连上第 1 个就能马上看到
-  // 第 2 个可以接哪儿，不用先往面板里塞第二张图。
-  // 空位不会打挂下游 —— 真正执行时后端在 /prompt 入口把空槽的连线剔掉。
-  let n = Math.max(1, Math.min(IMG_SLOTS, Math.max(outN, hi + 1) + 1));
+  // 槽数 = 已连线数 + 1（永远给下一个留位，连一个才长一个），选图后至少铺到选中张数。
+  // 注意这里**不用图片总数**：面板有 24 张图但只连了 16 个口时，槽数就是 17，
+  // 而不是 25 —— 否则每次打开工作流槽数都会「长」回图片数。
+  let n = Math.max(1, Math.min(IMG_SLOTS, Math.max(hi + 2, pickedN)));
   // 工作流配置期间连线/控件可能还没恢复：只增不删，等下一次同步再收槽。
   if (node.__kdGrowOnly || app.configuringGraph) n = Math.max(n, node.outputs.length);
   let changed = false;
@@ -675,7 +684,7 @@ function openLibrary(onPick) {
     cell.className = "kd-cell";
     cell.dataset.kdKey = key;
     cell.style.outline = picked.has(key) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
-    const src = thumbUrl(it.name, it.subfolder, 256, it.tab);
+    const src = thumbUrl(it.name, it.subfolder, 256, it.tab, "raw");
     const img = document.createElement("img");
     img.loading = "lazy";
     img.draggable = false;                  // 禁原生图片拖拽（拖出去没意义还干扰框选）
@@ -687,7 +696,7 @@ function openLibrary(onPick) {
     no.textContent = it.name;
     cell.appendChild(no);
     // 悬浮层是 344px 见方，格子只有 ~100px：两者不能共用一张图，否则悬浮必糊
-    attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab));
+    attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab, "raw"));
     // 点击逻辑统一由 kdGesture 手势接管（tap 切换/Shift 范围），这里不再挂 onclick
     return cell;
   }
@@ -767,9 +776,18 @@ async function uploadFiles(files) {
 function renderPanel(node) {
   const ui = node._kdUI;
   if (!ui) return;
-  kdZoomHide();        // 重绘会销毁当前格子的 mouseleave 宿主，悬浮层必须一起收掉
   const state = readState(node);
-  syncOutputs(node);   // 输出槽按实际张数增长；已连线的槽保留，空槽由后端在运行时剔除
+  // 内容指纹：只有「图片列表 / 选择模式」变了才需要重建 DOM。
+  // 单纯改 picked（点选一张图）绝不该重建 —— 否则每格 <img> 都要重新创建、重新解码，
+  // 滚动位置还会归零，看起来就像整块面板被刷新了一遍。
+  // 这个短路是必须的：writeState 里的 w.callback() 会被 hookWidget 再排一次
+  // renderPanel（setTimeout 0），不挡住就是「点一次图、整块重建两遍」。
+  // 指纹要带上语言：切语言时 onLocaleChange 会调 renderPanel，若指纹只看图片和 select，
+  // 空面板时就会走短路分支直接返回，「No images yet…」永远停在旧语言。
+  const sig = JSON.stringify([state.images.map((it) => it.filename), !!state.select, locale()]);
+  const sameShape = node.__kdSig === sig && Array.isArray(node.__kdCells);
+  kdZoomHide();        // 重绘会销毁当前格子的 mouseleave 宿主，悬浮层必须一起收掉
+  const changed = syncOutputs(node);   // 输出槽按实际张数增长；已连线的槽保留，空槽由后端在运行时剔除
   ui.count.textContent = String(state.images.length);
   // 两个开关与按钮的状态跟随（赋值 checked 不会触发 onchange，安全）
   if (ui.swBatchCb) ui.swBatchCb.checked = !!state.batch;
@@ -781,6 +799,16 @@ function renderPanel(node) {
     ui.runBtn.textContent = t("▶ Run {n}", { n: effN });
     ui.runBtn.disabled = !effN;
   }
+  if (sameShape) {
+    // 结构没变：只刷徽标 / 描边 / 按钮，DOM 一个都不动
+    paintPicked(node);
+    if (changed) setTimeout(() => { resizeToContent(node); fitCard(node); }, 0);
+    return;
+  }
+  node.__kdSig = sig;
+  // 全量重建前记住滚动位置：否则图片一多，任何一次重绘（删图 / 上传 / 切开关）
+  // 都会把面板弹回顶部，看起来就像「整个刷新了一下」。
+  const keepScroll = ui.body.scrollTop || 0;
   ui.body.innerHTML = "";
 
   const sec = document.createElement("div");
@@ -792,6 +820,10 @@ function renderPanel(node) {
     d.textContent = t("No images yet — use \"Upload image\" or \"From library\" to add.");
     sec.appendChild(d);
     ui.body.appendChild(sec);
+    node.__kdCells = [];   // 清空引用，别让 paintPicked 摸到已销毁的旧格子
+    // 空态也要收一次高度：删掉最后一张图/点 Clear 后节点若保持原高度，下方会留一大片空白
+    fitCard(node);
+    setTimeout(() => { resizeToContent(node); fitCard(node); }, 0);
     return;
   }
 
@@ -802,6 +834,7 @@ function renderPanel(node) {
   const selMode = !!state.select;
   const pickOrder = {};
   (state.picked || []).forEach((f, idx) => { if (!(f in pickOrder)) pickOrder[f] = idx + 1; });
+  const cellRecs = [];   // 选择模式：{cell, no} 供 paintPicked 局部刷新用，避免整面板重建
   state.images.forEach((it, i) => {
     const cell = document.createElement("div");
     cell.className = "kd-cell";
@@ -812,7 +845,7 @@ function renderPanel(node) {
     // 先按 input 找，找不到再退到 output；悬浮预览要跟着用最终那个地址
     const fn = baseName(it.filename), sd = subOf(it.filename);
     let tab = "input";
-    const cellSrc = () => thumbUrl(fn, sd, 256, tab);
+    const cellSrc = () => thumbUrl(fn, sd, 256, tab, "raw");
     img.onerror = () => {
       if (tab === "output") {
         img.style.visibility = "hidden";
@@ -823,7 +856,7 @@ function renderPanel(node) {
     };
     img.src = cellSrc();
     cell.appendChild(img);
-    if (!selMode) attachZoom(cell, () => thumbUrl(fn, sd, 512, tab));
+    if (!selMode) attachZoom(cell, () => thumbUrl(fn, sd, 512, tab, "raw"));
     // 序号：普通模式 = 面板顺序；选择模式下选中的显示选择顺序号（主色徽标），未选中的变暗
     const pk = selMode ? (pickOrder[it.filename] || 0) : 0;
     const no = document.createElement("span");
@@ -849,26 +882,10 @@ function renderPanel(node) {
     cell.appendChild(x);
     if (selMode) {
       cell.classList.toggle("kd-picked", !!pk);
-      cell.onclick = (e) => {
-        const st2 = readState(node);
-        st2.picked = st2.picked || [];
-        if (e.shiftKey && typeof node.__kdAnchor === "number" && node.__kdAnchor >= 0
-            && node.__kdAnchor < state.images.length) {
-          // Shift 范围多选：从上次点击到本次，整段按面板顺序加入选择
-          const lo = Math.min(node.__kdAnchor, i), hi = Math.max(node.__kdAnchor, i);
-          for (let k = lo; k <= hi; k++) {
-            const fn = state.images[k].filename;
-            if (st2.picked.indexOf(fn) < 0) st2.picked.push(fn);
-          }
-        } else {
-          const at = st2.picked.indexOf(it.filename);
-          if (at >= 0) st2.picked.splice(at, 1);
-          else st2.picked.push(it.filename);
-        }
-        node.__kdAnchor = i;
-        writeState(node, st2);
-        renderPanel(node);
-      };
+      // 选择模式的点击统一由 kdGesture 接管（支持 Shift 范围 / 框选 / 点空白清空）。
+      // 这里**不再**单独挂 onclick —— 两套逻辑并存时一次点击会被 toggle 两回，
+      // 而且每回都走 renderPanel 全量重建，这正是「点一张图整块闪一下」的来源。
+      cellRecs.push({ cell, no });
     } else {
       cell.onclick = () => openBig(baseName(it.filename), subOf(it.filename));
     }
@@ -876,9 +893,45 @@ function renderPanel(node) {
   });
   sec.appendChild(grid);
   ui.body.appendChild(sec);
+  node.__kdCells = cellRecs;   // 点选走局部刷新，靠这份引用找格子（非选择模式为空数组）
   // 先把卡片顶满，再算节点高度，最后再顶一次（节点高度变了，容器高度也跟着变）
   fitCard(node);
-  setTimeout(() => { resizeToContent(node); fitCard(node); }, 0);
+  setTimeout(() => {
+    resizeToContent(node); fitCard(node);
+    if (keepScroll) ui.body.scrollTop = keepScroll;   // 布局定稳后再还原，否则会被 clamp
+  }, 0);
+}
+
+// 点选后的局部刷新：只改序号徽标 / 选中描边 / 运行按钮，**绝不重建 DOM**。
+// 走全量重建的话每格 <img> 都会重新创建、重新解码，滚动位置还会归零 ——
+// 那就是「点一张图整块闪一下」的真正原因。媒体库弹窗一直是这么做的，面板这边之前漏了。
+function paintPicked(node) {
+  const ui = node && node._kdUI;
+  const recs = node && node.__kdCells;
+  if (!ui || !Array.isArray(recs) || !recs.length) return;
+  const state = readState(node);
+  const pickOrder = {};
+  (state.picked || []).forEach((f, idx) => { if (!(f in pickOrder)) pickOrder[f] = idx + 1; });
+  recs.forEach((rec, i) => {
+    const it = state.images[i];
+    if (!rec || !rec.cell || !rec.no || !it) return;
+    const pk = pickOrder[it.filename] || 0;
+    rec.cell.classList.toggle("kd-picked", !!pk);
+    rec.no.textContent = pk ? String(pk) : String(i + 1);
+    rec.no.style.background = pk ? "var(--p-primary-color,#4a7dff)" : "";
+    rec.no.style.opacity = pk ? "" : ".35";
+  });
+  const effN = effectiveImages(state).length;
+  if (ui.runBtn) {
+    ui.runBtn.textContent = t("▶ Run {n}", { n: effN });
+    ui.runBtn.disabled = !effN;
+  }
+}
+
+// 一次点选的收尾：renderPanel 会按内容指纹自动短路成局部刷新，
+// 所以这里不用再单独维护一条「只刷局部」的路径 —— 单一入口不容易走岔。
+function afterPick(node) {
+  renderPanel(node);
 }
 
 async function uploadFilesWrapper(node, files) {
@@ -1419,14 +1472,14 @@ function build(node) {
       }
       node.__kdAnchor = idx;
       writeState(node, st);
-      renderPanel(node);
+      afterPick(node);          // 局部刷新：只改徽标/描边，不重建整块面板
     },
     onBlankTap() {
       const st = readState(node);
       if (!st.select || !(st.picked || []).length) return;
       st.picked = [];
       writeState(node, st);
-      renderPanel(node);
+      afterPick(node);
     },
     onMarquee(idxs) {
       const st = readState(node);
@@ -1437,7 +1490,7 @@ function build(node) {
         if (fn && st.picked.indexOf(fn) < 0) st.picked.push(fn);
       }
       writeState(node, st);
-      renderPanel(node);
+      afterPick(node);
     },
   });
   // 拖拽排序（普通模式）：拖格子换位置，顺序 = 输出槽顺序；选择模式禁拖（顺序由点击决定）
@@ -1523,19 +1576,39 @@ function build(node) {
   const onConn = node.onConnectionsChange;
   node.onConnectionsChange = function () {
     const r = typeof onConn === "function" ? onConn.apply(this, arguments) : undefined;
-    setTimeout(() => { syncOutputs(node); resizeToContent(node); }, 0);
+    setTimeout(() => {
+      // 配置过程中连线是一条条恢复的，此时收槽会把「还没恢复的连线」当成没连线而删掉，
+      // 下游直接断。所以只有确认配置结束才允许收；否则只重绘不收槽。
+      if (node.__kdGrowOnly && !app.configuringGraph) {
+        node.__kdGrowOnly = false;
+        node.__kdCfgToken = (node.__kdCfgToken || 0) + 1;   // 作废还在轮询的那条链
+      }
+      if (!node.__kdGrowOnly) syncOutputs(node);
+      resizeToContent(node);
+    }, 0);
     return r;
   };
   const onCfg = node.onConfigure;
   node.onConfigure = function () {
     const r = typeof onCfg === "function" ? onCfg.apply(this, arguments) : undefined;
-    // 配置同步阶段先只增不删（连线/控件可能还没恢复）；deferred 的这次 render
-    // 发生在整张图 configure 之后，此时再按实际图片数收槽、断开多余连线。
+    // 配置同步阶段先只增不删（连线/控件可能还没恢复）；等整张图 configure 完再收槽。
+    // app.configuringGraph 在 setTimeout(0) 时**往往还没落回 false**（整图 configure 跨好几个
+    // tick），所以轮询到它结束。到上限仍没结束就**保持只增不删**——宁可槽多，也绝不能
+    // 因为「连线还没恢复」而删掉有连线的槽（那会直接把下游断开）。
+    // 收尾交给 onConnectionsChange：连线恢复时它一定会触发，那时 configuringGraph 已为 false。
     node.__kdGrowOnly = true;
-    setTimeout(() => {
+    const token = (node.__kdCfgToken = (node.__kdCfgToken || 0) + 1);   // 新一轮加载作废旧轮询
+    let tries = 0;
+    const settle = () => {
+      if (node.__kdCfgToken !== token) return;          // 已被新一轮加载取代
+      if (app.configuringGraph) {
+        if (tries++ < 200) setTimeout(settle, 50);      // 最多等 10 秒
+        return;                                         // 还在配置：保持 growOnly，不冒险收槽
+      }
       node.__kdGrowOnly = false;
       renderPanel(node);
-    }, 0);
+    };
+    setTimeout(settle, 0);
     return r;
   };
   // 节点被删除时断开 ResizeObserver，否则观察着一个已移除的容器属于白占内存

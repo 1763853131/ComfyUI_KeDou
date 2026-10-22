@@ -4,7 +4,7 @@
 
 ComfyUI 本身没有"列出我的工作流和它们的参数"这样的接口，外部面板（启动器、Photoshop 面板等）拿不到数据。本插件补上这一层桥接：**列出应用 → 读取参数 → 持久化面板值（sidecar）→ 转成可直接提交的 API 格式 → 一键把工作流打包成应用包**。
 
-> 纯 Python 标准库实现，无第三方依赖，一个文件夹即装即用。
+> 除 ComfyUI 自带的 Pillow / numpy / aiohttp / PyYAML 外不额外安装任何依赖，一个文件夹即装即用。
 
 ---
 
@@ -27,7 +27,6 @@ custom_nodes/ComfyUI_KeDou/
 │   ├── nodes.py             # 两个自定义节点 + 空槽连线清理
 │   └── routes.py            # /ps/* HTTP 路由注册
 ├── ui_to_api.py             # 界面格式 → API 格式转换
-├── kedou_path_fix.py        # 模型裸文件名兜底查找
 ├── prompt_vault/            # vendored 提示词库实现
 ├── web/                     # 节点前端扩展（加载器 / 提示词框 / 打包面板）
 ├── locales/zh/main.json     # 中文文案

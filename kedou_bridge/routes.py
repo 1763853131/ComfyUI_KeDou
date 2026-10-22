@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -14,8 +15,15 @@ from . import apps, compat, image_sets, media, pack, paths, state
 
 LOCALE_DIR = os.path.join(paths.PLUGIN_DIR, "locales")
 _thumb_pruned = False
-# 缩略图文件名带源图指纹，内容变了 key 就变 → 可以让前端永久缓存
-_THUMB_CACHE_HEADER = {"Cache-Control": "public, max-age=31536000, immutable"}
+# 缩略图 URL 只带 filename/subfolder/w，**不带内容指纹** —— 源图被同名覆盖
+# （上传时 overwrite=true 是常态）后 URL 一字不变。所以绝不能给 immutable：
+# 那会让浏览器永远不再回源，缩略图永远停在旧图（服务端 key 带 mtime 也没用，
+# 浏览器根本不会来问）。改成协商缓存：FileResponse 自带 ETag/Last-Modified，
+# 命中回 304（几百字节），既不会看到旧图，开销也可以忽略。
+_THUMB_CACHE_HEADER = {"Cache-Control": "no-cache"}
+# 缩略图解码单独一个池：默认线程池是 min(32, cpu+4)，面板一屏几十格会瞬间塞满，
+# 8K 图单张解码上百 MB，低内存机器直接 OOM 或卡死几十秒。这里限 4 并发，其余排队。
+_thumb_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kedou-thumb")
 
 
 def register(routes):
@@ -265,6 +273,10 @@ def register(routes):
         fit = str(qq.get("fit") or "")
         if not media._thumb_box(fit, w):
             fit = ""                                        # 比例串不合法就按长边封顶出图
+        # mode=raw：保持原比例、不补边。ComfyUI 面板用它（格子靠 CSS cover 裁切、悬浮层靠
+        # contain 显示完整）；不传则沿用「补边成精确比例」，PS 面板要的就是那个（UXP 会把
+        # max-width/max-height 各自钳位，不给方图就会被拽变形）。
+        mode = "raw" if str(qq.get("mode") or "") == "raw" else ""
         src = media._media_file(qq.get("filename"), qq.get("subfolder"), tab)
         if not src:
             return compat.web.Response(status=404)
@@ -275,15 +287,20 @@ def register(routes):
             st = os.stat(src)
         except OSError:
             return compat.web.Response(status=404)
-        key = hashlib.sha1(("%s|%d|%d|%d|%s" % (src, st.st_mtime_ns, st.st_size, w, fit)
-                            ).encode("utf-8")).hexdigest()
+        # 指纹要带上 mode：同一个 w/fit 下「原比例」和「补边方图」是两份不同的文件，
+        # 不区分就会互相命中、拿到错的缓存。mode 为空时不拼进去，老缓存继续有效。
+        key_src = "%s|%d|%d|%d|%s" % (src, st.st_mtime_ns, st.st_size, w, fit)
+        if mode:
+            key_src += "|" + mode
+        key = hashlib.sha1(key_src.encode("utf-8")).hexdigest()
         for ext in media.THUMB_EXTS:                        # 同一指纹只会有一种扩展名落地
             hit = os.path.join(media.THUMB_DIR, key + ext)
             if os.path.isfile(hit):
                 return compat.web.FileResponse(hit, headers=_THUMB_CACHE_HEADER)
         base = os.path.join(media.THUMB_DIR, key)
         try:
-            dst = await asyncio.to_thread(media._make_thumb, src, base, w, fit)
+            dst = await asyncio.get_running_loop().run_in_executor(
+                _thumb_pool, media._make_thumb, src, base, w, fit, mode)
         except Exception:                              # noqa: BLE001
             return compat.web.Response(status=404)
         if not os.path.isfile(dst):

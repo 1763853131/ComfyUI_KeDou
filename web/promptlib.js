@@ -1925,8 +1925,10 @@ function refThumbUrl(filename, w, tab) {
   const i = raw.lastIndexOf("/");
   const name = i >= 0 ? raw.slice(i + 1) : raw;
   const sub = i >= 0 ? raw.slice(0, i) : "";
+  // mode=raw：要原比例、不补边的图。后端默认出的是「补边成正方形」的版本（PS 面板要），
+  // 那张图喂给这里的 object-fit:cover 会失效、缩略图四周多出一圈底色边。
   return "/ps/thumb?" + new URLSearchParams(
-    { filename: name, subfolder: sub, type: tab || "input", w: String(w || 64) }).toString();
+    { filename: name, subfolder: sub, type: tab || "input", w: String(w || 64), mode: "raw" }).toString();
 }
 
 // 切写法时把已写入的旧 token 全部换成新写法（只认本写法自己的模式，不动别的文字）。

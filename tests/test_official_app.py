@@ -21,7 +21,20 @@ import sys
 import tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WORKFLOWS = r"D:\ComfyUI_KeDou_v1\ComfyUI\user\default\workflows"
+
+
+def _guess_workflows():
+    """按「custom_nodes/<插件>/../../user/default/workflows」推断 ComfyUI 的工作流目录。
+
+    不写死盘符：这个测试会随插件分发，写死 D:\\ 的话在别人机器上必然找不到文件，
+    而缺文件时 run() 只是静默 return —— main() 照样打印「全部通过」，是假绿。
+    """
+    root = os.path.dirname(os.path.dirname(REPO))      # .../ComfyUI
+    cand = os.path.join(root, "user", "default", "workflows")
+    return cand if os.path.isdir(cand) else ""
+
+
+WORKFLOWS = os.environ.get("KEDOU_WORKFLOWS") or _guess_workflows()
 
 FAILS = []
 
@@ -53,6 +66,11 @@ def load_ui_to_api():
 
 
 def main():
+    # 没有工作流样本就没法对账 —— 明确报「跳过」并返回 2，绝不打印「全部通过」。
+    # （之前写死作者本机盘符，别人跑出来是绿的，等于没有测试。）
+    if not WORKFLOWS or not os.path.isdir(WORKFLOWS):
+        print("跳过：找不到工作流目录。用环境变量 KEDOU_WORKFLOWS=<ComfyUI>/user/default/workflows 指定")
+        return 2
     bridge = load_bridge()
     paths, pack, apps = bridge.paths, bridge.pack, bridge.apps
     common = bridge.common

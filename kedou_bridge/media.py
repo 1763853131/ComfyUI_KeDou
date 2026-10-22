@@ -150,11 +150,13 @@ def _media_file(name, sub, tab):
     return path
 
 
-def _make_thumb(src, base, w, fit=""):
+def _make_thumb(src, base, w, fit="", mode=""):
     """缩到 w 以内并落盘，返回真实写出的路径（base + .jpg/.png）。
 
     base 不带扩展名：扩展名要看完图才知道有没有 alpha，调用方拿返回值发文件即可。
     fit="3x4" 时整图缩进这个比例的盒子里、再用底色补边补成精确比例（不裁边）。
+    mode="raw" 时保持原比例、**不补边**（ComfyUI 面板要这个：格子里的 cover 裁切和
+    悬浮层的 contain 完整都由前端 CSS 决定，后端把图补成方图反而会让 cover 失效）。
     跑在 asyncio.to_thread 里，不碰事件循环。
     """
     from PIL import Image, ImageOps                        # noqa: PLC0415
@@ -178,9 +180,10 @@ def _make_thumb(src, base, w, fit=""):
             fmt, ext = "JPEG", ".jpg"
             if im.mode != "RGB":
                 im = im.convert("RGB")
+        raw = mode == "raw"
         box = _thumb_box(fit, w) or (w, w)
-        im.thumbnail(box)
-        if im.size != box:                                  # 补边：位图比例 == 盒子比例
+        im.thumbnail((w, w) if raw else box)
+        if not raw and im.size != box:                      # 补边：位图比例 == 盒子比例
             rgba = im.mode == "RGBA"
             canvas = Image.new(im.mode, box,
                                THUMB_PAD_RGB + ((255,) if rgba else ()))
