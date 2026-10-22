@@ -9,8 +9,8 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/1814772011/ComfyUI_KeDou"
-"Bug Tracker" = "https://github.com/1814772011/ComfyUI_KeDou/issues"
+Repository = "https://github.com/1763853131/ComfyUI_KeDou"
+"Bug Tracker" = "https://github.com/1763853131/ComfyUI_KeDou/issues"
 
 [tool.comfy]
 PublisherId = "1814772011"
