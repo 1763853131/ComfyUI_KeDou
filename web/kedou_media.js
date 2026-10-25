@@ -2118,7 +2118,7 @@ function openPackPanel(hostEl) {
   const openWfBtn = document.createElement("button");
   openWfBtn.className = "kp-tbtn";
   openWfBtn.textContent = t("Open its workflow");
-  openWfBtn.title = t("Switch the canvas to the workflow this app was packed from");
+  openWfBtn.title = t("Open the workflow this app was packed from in a tab");
   openWfBtn.style.display = "none";
   editRow.append(editSel, openWfBtn);
   editField.append(editLab, editRow);
@@ -3356,11 +3356,15 @@ function openPackPanel(hostEl) {
   //   ① 已经开着的页签里有 → 切过去（就是点页签，未保存的改动留在各自页签里）
   //   ② 磁盘工作流列表里有 → 开新页签
   //   ③ 列表里没有（刚建/刚改名）→ 读文件内容，作为临时工作流开新页签
-  // 老包没有 source 时把 .kapp.json 的路径丢给后端，由它按文件名扫一遍。
   openWfBtn.onclick = async () => {
     if (!editing) return;
-    const want = String((editing.kapp && editing.kapp.source) || editing.file || "").trim();
-    if (!want) return;
+    // 只认 kapp 里记的 source。别拿 editing.file（那是 .kapp.json 自己）顶，
+    // 拿它当源会绕成「打开应用包去找应用包」，只会报一个看不懂的错。
+    const want = String((editing.kapp && editing.kapp.source) || "").trim();
+    if (!want) {
+      err.textContent = t("This app was packed before the source workflow was recorded; re-pack it once and this button will work.");
+      return;
+    }
     openWfBtn.disabled = true;
     openWfBtn.textContent = t("Opening…");
     const restoreBtn = () => {
