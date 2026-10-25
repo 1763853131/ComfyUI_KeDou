@@ -41,16 +41,14 @@ const usageLabel = (u) => t(USAGE_LABELS[u] || u);
 // 依据（2026-10）：Seedance 2.x = @图片N / @Image N；MiniMax H3 = <Picture N>；
 // 万相 2.7 = 图 N / Image N；Vidu Q2+ = @图N；可灵 3.0 Omni API = <<<image_N>>>。
 // 参考写法表。n 一律传「第几张图」（1 基）；写法自己决定怎么写。
-// base: 0 表示这种写法从 0 开始数（Flux 3 的 {ref_image_0} 是第一张图），
-// 解析和跨写法替换都按 base 换算，所以 0 基写法能和 1 基写法互相切换。
 // 每种写法属于哪些用途。视频模型（Seedance / MiniMax H3 / Wan / Vidu / Kling）
 // 的 token 写进「图像编辑」的提示词里模型根本不认，所以按用途过滤下拉 ——
-// 别让用户在一堆用不上的选项里翻。不写 uses 表示所有用途都能用（Generic 就是兜底写法）。
+// 别让用户在一堆用不上的选项里翻。不写 uses 表示所有用途都能用（「通用」就是兜底写法）。
 // label 只写模型名：下拉里挂着「· @图片N」这种后缀太长，占地方又没用 ——
 // 具体插进去是什么格式由 token 决定，用户写的时候自然就看到结果了。
+// 顺序 = 下拉顺序。「通用」放最后：它不是具体模型，排第一会让人以为要选它。
 const VIDEO_REF_USAGES = ["图生视频", "参考生视频"];
 const REF_STYLES = [
-  { id: "generic", label: "Generic", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
   { id: "seedance-zh", label: "Seedance", uses: VIDEO_REF_USAGES,
     token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
   { id: "seedance-en", label: "Seedance EN", uses: VIDEO_REF_USAGES,
@@ -68,10 +66,14 @@ const REF_STYLES = [
   // Flux 3 / Kontext：参考图写作 {ref_image_0}，第一张图是 0 号。图像编辑专用。
   { id: "flux3", label: "Flux 3", base: 0, uses: ["图像编辑"],
     token: (n) => `{ref_image_${n - 1}}`, re: /\{ref_image_(\d+)\}/g },
+  // 兜底写法：不属于任何具体模型，插的就是最朴素的 @图片N。所有用途都能用。
+  { id: "generic", label: "通用", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
 ];
 const REF_STORE_KEY = "kedou_ref_style";
 function refStyle(id) {
-  return REF_STYLES.find((s) => s.id === id) || REF_STYLES[0];
+  return REF_STYLES.find((s) => s.id === id)
+    || REF_STYLES.find((s) => s.id === "generic")
+    || REF_STYLES[0];
 }
 // 某个用途下能用的写法（没写 uses 的算通用）。下拉和 @ 菜单都按这个筛。
 function refStylesFor(usage) {
@@ -89,7 +91,9 @@ function loadRefStyleId() {
     const v = localStorage.getItem(REF_STORE_KEY);
     if (REF_STYLES.some((s) => s.id === v)) return v;
   } catch (_) { /* ignore */ }
-  return REF_STYLES[0].id;
+  // 没存过就落到兜底写法（「通用」）。别用 REF_STYLES[0] —— 第一项现在是具体视频模型，
+  // 在「图像编辑」下用不了，会多绕一次回退。
+  return refStyle("generic").id;
 }
 function saveRefStyleId(id) {
   try { localStorage.setItem(REF_STORE_KEY, id); } catch (_) { /* ignore */ }
@@ -2214,9 +2218,13 @@ function buildPromptBox(node) {
   // 每个用途记住自己上次选的写法，切走再切回来能恢复（只在内存里，不进工作流）
   const refPick = {};
   let refSig = "";
-  // 上次明确选过的写法，套到所有能用它的用途上 —— 切用途时各自的写法才回得来
+  // 上次明确选过的写法，套到所有能用它的用途上 —— 切用途时各自的写法才回得来。
+  // 只认「用户真的选过」的值：没存过就别种，让每个用途落到它自己的第一项
+  // （图像编辑 = Flux 3，视频 = Seedance），别默认停在兜底的「通用」上。
   function seedRefPick() {
-    const saved = loadRefStyleId();
+    let saved = "";
+    try { saved = localStorage.getItem(REF_STORE_KEY) || ""; } catch (_) { /* ignore */ }
+    if (!REF_STYLES.some((s) => s.id === saved)) return;
     USAGES.forEach((u) => { if (refStyleAllowed(saved, u)) refPick[u] = saved; });
   }
   // 按当前用途重建下拉。可用集合没变就不动 DOM，免得每次切用途闪一下。
@@ -2240,13 +2248,13 @@ function buildPromptBox(node) {
         refSel.appendChild(o);
       });
     }
-    const want = [refPick[usage], oldId, list[0].id]
-      .find((id) => id && refStyleAllowed(id, usage));
-    if (!want) return;
+    // 落到哪个写法：用户在这个用途下明确选过就用它，否则用该用途的第一项
+    // （图像编辑 = Flux 3，视频 = Seedance）。兜底的「通用」排在最后，不该当默认。
+    const want = refPick[usage] || list[0].id;
     refSel.value = want;
     refSel.__kdPrev = want;
     if (want === oldId) return;
-    // 写法不同才改写：Generic 和 Seedance 的 token 一模一样，换过去不用动文本
+    // 写法不同才改写：「通用」和 Seedance 的 token 一模一样，换过去不用动文本
     if (doRewrite !== false && oldId && refToken(oldId, 1) !== refToken(want, 1)) {
       const n = rewriteRefTokens(ta, oldId, want);
       if (n) {

@@ -11,9 +11,10 @@
   `· @图片N`、`· <Picture N>` 这种后缀，太长、占地方。
 - **改法**：每种写法标上它属于哪些用途，下拉只列当前用途能用的；项里只写模型名，
   token 格式照旧由写法决定，插入时自动带对。
-  - 图像编辑：`Generic`、`Flux 3`
-  - 图生视频 / 参考生视频：`Generic` + `Seedance` / `Seedance EN` / `MiniMax H3` /
-    `Wan` / `Wan EN` / `Vidu` / `Kling Omni API`（不列 Flux 3）
+  - 图像编辑：`Flux 3`、`通用`
+  - 图生视频 / 参考生视频：`Seedance` / `Seedance EN` / `MiniMax H3` /
+    `Wan` / `Wan EN` / `Vidu` / `Kling Omni API` + 兜底的 `通用`（不列 Flux 3）
+- `通用` 放在最后一项：它不是具体模型，只是最朴素的 `@图片N` 写法，排第一会让人以为要先选它。
 - **换用途时会自动接上**：原来选的写法在新用途里用不了，就换成能用的那个，
   并把提示词里已经写好的 token 一起改掉（`图 1` ↔ `{ref_image_0}`）。
   每个用途各自记住上次选的写法，切走再切回来还是原来那个。
