@@ -40,6 +40,9 @@ const usageLabel = (u) => t(USAGE_LABELS[u] || u);
 // 只负责把「第 N 张」渲染成目标模型认识的 token；图片本身仍要按同样顺序接到模型。
 // 依据（2026-10）：Seedance 2.x = @图片N / @Image N；MiniMax H3 = <Picture N>；
 // 万相 2.7 = 图 N / Image N；Vidu Q2+ = @图N；可灵 3.0 Omni API = <<<image_N>>>。
+// 参考写法表。n 一律传「第几张图」（1 基）；写法自己决定怎么写。
+// base: 0 表示这种写法从 0 开始数（Flux 3 的 {ref_image_0} 是第一张图），
+// 解析和跨写法替换都按 base 换算，所以 0 基写法能和 1 基写法互相切换。
 const REF_STYLES = [
   { id: "generic", label: "Generic · @图片N", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
   { id: "seedance-zh", label: "Seedance · @图片N", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
@@ -49,6 +52,9 @@ const REF_STYLES = [
   { id: "wan-en", label: "Wan EN · Image N", token: (n) => `Image ${n}`, re: /Image (\d+)/g },
   { id: "vidu", label: "Vidu · @图N", token: (n) => `@图${n}`, re: /@图(\d+)/g },
   { id: "kling", label: "Kling Omni API · <<<image_N>>>", token: (n) => `<<<image_${n}>>>`, re: /<<<image_(\d+)>>>/g },
+  // Flux 3 / Kontext：参考图写作 {ref_image_0}，第一张图是 0 号
+  { id: "flux3", label: "Flux 3 · {ref_image_N}", base: 0,
+    token: (n) => `{ref_image_${n - 1}}`, re: /\{ref_image_(\d+)\}/g },
 ];
 const REF_STORE_KEY = "kedou_ref_style";
 function refStyle(id) {
@@ -195,6 +201,20 @@ const CSS = `
 .kd-pbox-reflab{font-size:10.5px;color:var(--fg-color,#888);white-space:nowrap;}
 .kd-pbox-ref{flex:1;min-width:150px;max-width:250px;font-size:11px;}
 .kd-pbox-refrow .kd-pbox-btn{padding:4px 8px;font-size:11px;}
+/* 元素行：从「创建边界框」读框，点一下插 <obj_N> */
+.kd-pbox-elrow{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.kd-pbox-elrow[hidden]{display:none !important;}
+.kd-pbox-el{display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:3px 9px;
+  border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#aaa);
+  font:inherit;font-size:11px;border-radius:999px;cursor:pointer;overflow:hidden;
+  transition:border-color .15s,color .15s,background .15s;}
+.kd-pbox-el:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}
+.kd-pbox-el .kd-elno{flex:none;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:10px;opacity:.62;}
+.kd-pbox-el .kd-eldesc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kd-pbox-el.kd-eltext{border-style:dashed;}
+.kd-pbox-el.kd-used{border-color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.16);
+  color:var(--p-primary-color,#8fb0ff);}
 .kd-pbox-btn{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#bbb);
   font:inherit;font-size:11px;padding:4px 10px;border-radius:7px;cursor:pointer;
   transition:border-color .15s,color .15s,transform .12s;}
@@ -1883,15 +1903,52 @@ function loaderImageList(node) {
   return list;
 }
 
+// ───────── 边界框元素（Flux 3 / 图像编辑点名） ─────────
+// 「创建边界框」节点把每个框存进 editor_state 控件，值是
+//   [{x, y, width, height, metadata: {type, text, desc, palette}}]
+// （像素坐标，顺序就是画布上 01/02/03 的编号）。这里只取「类型 + 描述 + 文字」，
+// 坐标用不上 —— 真正把框变成 layout 表的是 FLUX 3 Image Layout Prompt 节点。
+function bboxNodes() {
+  const nodes = (app.graph && app.graph._nodes) || [];
+  return nodes.filter((n) => {
+    if (!n || n.mode !== 0) return false;                       // 跳过静音/旁路节点
+    const cls = (n.constructor && n.constructor.comfyClass) || n.comfyClass || n.type || "";
+    return cls === "CreateBoundingBoxes";
+  });
+}
+
+function bboxElements() {
+  const node = bboxNodes()[0];
+  if (!node) return [];
+  const w = (node.widgets || []).find((x) => x && x.name === "editor_state");
+  const v = w && w.value;
+  if (!Array.isArray(v)) return [];
+  return v.filter((b) => b && typeof b === "object").map((b) => {
+    const m = (b.metadata && typeof b.metadata === "object") ? b.metadata : {};
+    const isText = m.type === "text";
+    return {
+      type: isText ? "text" : "obj",
+      text: isText ? String(m.text || "") : "",
+      desc: String(m.desc || ""),
+    };
+  });
+}
+
+// <obj_N> 里的 N 从 1 起，等于框在数组里的位置 + 1（Flux3LayoutPrompt 就是这么编的）
+function objTokenOf(n) {
+  return `<obj_${n}>`;
+}
+
 // 从提示词里找出所有已知写法的图片编号；长 token 优先，避免 "@Image 1" 又被 "Image 1" 匹配一次。
-function parseRefTokens(text) {
-  const src = String(text || "");
+function parseRefTokens(text) {  const src = String(text || "");
   const found = [];
   for (const style of REF_STYLES) {
     const re = new RegExp(style.re.source, "g");
     let m;
     while ((m = re.exec(src))) {
-      const n = Number(m[1]) || 0;
+      const raw = Number(m[1]) || 0;
+      // 0 基写法（Flux 3）换算成「第几张图」，和缩略图/输出槽的编号对齐
+      const n = style.base === 0 ? raw + 1 : raw;
       if (n > 0) found.push({ n, token: m[0], start: m.index, end: m.index + m[0].length });
     }
   }
@@ -1937,7 +1994,10 @@ function rewriteRefTokens(ta, oldId, newId) {
   if (!old.re || oldId === newId) return 0;
   let n = 0;
   ta.value = ta.value.replace(old.re, (m, digits) => {
-    const next = refToken(newId, digits);
+    const raw = Number(digits) || 0;
+    // 先按旧写法的 base 换算成「第几张图」，再交给新写法重新拼
+    const one = old.base === 0 ? raw + 1 : raw;
+    const next = refToken(newId, one);
     if (next === m) return m;
     n += 1;
     return next;
@@ -2143,6 +2203,7 @@ function buildPromptBox(node) {
       toast(t("Updated {n} reference tag(s)", { n }));
     }
     paintRefThumbs(true);
+    paintElements();          // 写法切换不影响 <obj_N>，但高亮要跟着文本重算
   };
   const atBtn = document.createElement("button");
   atBtn.type = "button"; atBtn.className = "kd-pbox-btn";
@@ -2152,12 +2213,17 @@ function buildPromptBox(node) {
   atBtn.onclick = (ev) => { ev.stopPropagation(); openRefMenu(ta, sync, null, refSel.value); };
   refRow.append(refLab, refSel, atBtn);
 
-  // @图片 对图生视频/参考生视频有意义（首帧、参考图都要点名）：其它用途整行隐藏，输入 @ 也不弹菜单。
+  // 参考行 / @ 菜单 / 元素行只在需要点名图片的用途下出现：
+  // 图生视频、参考生视频，以及现在的图像编辑（Flux 3 这类模型也开始按图里的元素点名了）。
+  const REF_USAGES = ["图像编辑", "图生视频", "参考生视频"];
+  function refOn() { return REF_USAGES.indexOf(useSel.value) !== -1; }
+
   function updateRefRow() {
-    const on = useSel.value === "参考生视频" || useSel.value === "图生视频";
+    const on = refOn();
     refRow.hidden = !on;
     if (!on && menuEl && menuEl.classList.contains("kd-ref-menu")) closeMenu();
     paintRefThumbs(true);
+    paintElements();
   }
 
   const ta = document.createElement("textarea");
@@ -2188,12 +2254,13 @@ function buildPromptBox(node) {
     usedT = setTimeout(() => {
       paintChips();
       paintRefThumbs();
+      paintElements();
       if (libOwner === node && libRepaint) libRepaint();
     }, 250);
   });
   // 输入 @ 立刻列出图片加载器里的图；继续输入别的字符就收掉菜单。
   ta.addEventListener("input", () => {
-    if (useSel.value !== "参考生视频" && useSel.value !== "图生视频") return;
+    if (!refOn()) return;
     const pos = typeof ta.selectionStart === "number" ? ta.selectionStart : 0;
     if (pos > 0 && ta.value.charAt(pos - 1) === "@") {
       openRefMenu(ta, sync, pos - 1, refSel.value);
@@ -2203,12 +2270,22 @@ function buildPromptBox(node) {
   });
   ta.addEventListener("pointerdown", (e) => e.stopPropagation());
   ta.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+  // 点进输入框就重读一次边界框：用户刚在「创建边界框」里加/删了框，回到这里立刻能看到
+  ta.addEventListener("focus", () => paintElements());
 
   // 提示词里出现的引用编号 -> 小缩略图，确认 @ 的到底是哪张图。
   const refThumbs = document.createElement("div");
   refThumbs.className = "kd-pbox-refthumbs";
   refThumbs.hidden = true;
-  card.append(top, refRow, ta, refThumbs);
+
+  // 元素行：画布上有「创建边界框」时，把每个框列出来，点一下插 <obj_N>。
+  // 编号就是框在节点里的顺序（画布上显示的 01/02/03），和 Flux3LayoutPrompt
+  // 拼 layout 表时的 obj_N 一一对应 —— 不用回头数第几个框。
+  const elRow = document.createElement("div");
+  elRow.className = "kd-pbox-elrow";
+  elRow.hidden = true;
+
+  card.append(top, refRow, ta, elRow, refThumbs);
   updateRefRow();
 
   // 快捷 chips：只放置顶语库。一个入口点一下就能插，不打开面板。
@@ -2274,7 +2351,7 @@ function buildPromptBox(node) {
 
   // 提示词里的引用 token -> 缩略图。签名不变就不重建，避免每次按键都重新请求图片。
   function paintRefThumbs(force) {
-    const on = useSel.value === "参考生视频" || useSel.value === "图生视频";
+    const on = refOn();
     const refs = on ? parseRefTokens(ta.value) : [];
     if (!on || !refs.length) {
       refThumbs.hidden = true;
@@ -2343,6 +2420,87 @@ function buildPromptBox(node) {
         } catch (_) { /* ignore */ }
       };
       refThumbs.appendChild(b);
+    });
+  }
+
+  // 元素 chip：点一下插 <obj_N>，再点一下去掉（跟词条 chip 一个手感）
+  function toggleObj(n) {
+    const tok = objTokenOf(n);
+    if (ta.value.indexOf(tok) !== -1) {
+      // 去掉时连同它前面多余的空白一起收，免得留下两个空格
+      ta.value = ta.value.replace(new RegExp("[ \\t]*" + tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "");
+      sync();
+      return "removed";
+    }
+    const st = typeof ta.selectionStart === "number" ? ta.selectionStart : ta.value.length;
+    const en = typeof ta.selectionEnd === "number" ? ta.selectionEnd : st;
+    const before = ta.value.slice(0, st);
+    const after = ta.value.slice(en);
+    // 只在需要时补空格：前后已经是空白/标点就不加
+    const pre = (before && !isSepChar(before.slice(-1))) ? " " : "";
+    const suf = (after && !isSepChar(after[0])) ? " " : "";
+    const text = pre + tok + suf;
+    if (typeof ta.setRangeText === "function") {
+      ta.setRangeText(text, st, en, "end");
+    } else {
+      ta.value = before + text + after;
+    }
+    sync();
+    return "inserted";
+  }
+
+  // 画布上没有「创建边界框」就整行隐藏，不影响现有的图生视频流程。
+  function paintElements() {
+    if (!elRow) return;
+    const els = refOn() ? bboxElements() : [];
+    if (!els.length) {
+      elRow.hidden = true;
+      elRow.innerHTML = "";
+      elRow.__sig = "";
+      return;
+    }
+    const used = els.map((_, i) => (ta.value.indexOf(objTokenOf(i + 1)) !== -1 ? 1 : 0));
+    const sig = JSON.stringify([els, used]);
+    if (elRow.__sig === sig) { elRow.hidden = false; return; }
+    elRow.__sig = sig;
+    elRow.hidden = false;
+    elRow.innerHTML = "";
+
+    const lab = document.createElement("span");
+    lab.className = "kd-pbox-reflab";
+    lab.textContent = t("Elements");
+    lab.title = t("Boxes from Create Bounding Boxes. Click to insert <obj_N>, click again to remove. Only works when the prompt goes into a FLUX 3 Image Layout Prompt node.");
+    elRow.appendChild(lab);
+
+    els.forEach((el, i) => {
+      const n = i + 1;
+      const tok = objTokenOf(n);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-pbox-el"
+        + (el.type === "text" ? " kd-eltext" : "")
+        + (used[i] ? " kd-used" : "");
+      const no = document.createElement("span");
+      no.className = "kd-elno";
+      no.textContent = String(n).padStart(2, "0");
+      const ds = document.createElement("span");
+      ds.className = "kd-eldesc";
+      ds.textContent = el.type === "text"
+        ? (el.text ? '"' + el.text + '"' : (el.desc || t("Text")))
+        : (el.desc || t("Object"));
+      b.append(no, ds);
+      b.title = t("Insert {token}", { token: tok })
+        + (el.desc ? "\n" + el.desc : "")
+        + (el.type === "text" ? "\n" + t("Text box") : "");
+      b.onpointerdown = (e) => e.stopPropagation();
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        const r = toggleObj(n);
+        if (!r) return;
+        paintElements();
+        try { ta.focus(); } catch (_) { /* ignore */ }
+      };
+      elRow.appendChild(b);
     });
   }
 
@@ -2428,13 +2586,20 @@ function buildPromptBox(node) {
     }
   };
 
-  // serialize 必须设在控件对象上：addDOMWidget 的第 4 个参数是 options，
-  // ComfyUI 只认 widget.serialize，写在 options 里不生效 ——
-  // 不生效时自绘控件会跟着进 widgets_values，白占一格 ""。
+  // 自绘控件要排除在序列化之外，但它有两条路，看的是两个不同字段：
+  //   ① 存进工作流 JSON 的 widgets_values —— litegraph 的 node.serialize()，读 widget.serialize
+  //   ② 提交给后端的 API 图 —— 前端 graphToPrompt()，读 widget.options.serialize
+  // 只设其中一个，另一条路上仍会多带一格 ""（后端会把它当无用输入）。
+  // 所以两个都设。
   const domW = node.addDOMWidget("kedou_promptbox", "div", card, {
     getMinHeight: () => 240, hideOnZoom: false,
   });
-  try { if (domW) domW.serialize = false; } catch (_) { /* ignore */ }
+  try {
+    if (domW) {
+      domW.serialize = false;
+      if (domW.options) domW.options.serialize = false;
+    }
+  } catch (_) { /* ignore */ }
   node._kdCard = card;
 
   const prevCfg = node.onConfigure;
@@ -2459,7 +2624,8 @@ function buildPromptBox(node) {
     return typeof prevRemoved === "function" ? prevRemoved.apply(this, arguments) : undefined;
   };
 
-  node.__kdPbox = { ta, sync, pw, useSel, refSel, atBtn, paintChips, paintRefThumbs, libBtn, phraseBtn, histBtn };
+  node.__kdPbox = { ta, sync, pw, useSel, refSel, atBtn, paintChips, paintRefThumbs,
+                    paintElements, libBtn, phraseBtn, histBtn };
   paintChips();
 }
 
@@ -2467,7 +2633,9 @@ function buildPromptBox(node) {
 function refreshAllPbox() {
   try {
     for (const n of app.graph._nodes) {
-      if (n.__kdPbox && n.__kdPbox.paintChips) n.__kdPbox.paintChips();
+      if (!n.__kdPbox) continue;
+      if (n.__kdPbox.paintChips) n.__kdPbox.paintChips();
+      if (n.__kdPbox.paintElements) n.__kdPbox.paintElements();
     }
   } catch (_) { /* ignore */ }
 }

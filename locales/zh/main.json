@@ -277,5 +277,10 @@
   "Name shown to users · #{node}:{input}": "用户看到的名称 · #{node}:{input}",
   "Name shown to users · #{node}:{input} · not in the current workflow": "用户看到的名称 · #{node}:{input} · 不在当前工作流里",
   "This parameter is not in the current workflow; it comes from the app package.": "这个参数不在当前工作流里，来自应用包本身。",
-  "No exposeable widgets in the current workflow (all nodes are connection-type?).": "当前工作流里没有可暴露的控件（是不是全都是连线型节点？）。"
+  "No exposeable widgets in the current workflow (all nodes are connection-type?).": "当前工作流里没有可暴露的控件（是不是全都是连线型节点？）。",
+  "Elements": "元素",
+  "Insert {token}": "插入 {token}",
+  "Object": "物体",
+  "Text box": "文字框",
+  "Boxes from Create Bounding Boxes. Click to insert <obj_N>, click again to remove. Only works when the prompt goes into a FLUX 3 Image Layout Prompt node.": "创建边界框里的框。点一下插入 <obj_N>，再点一下去掉。只在提示词接进 FLUX 3 Image Layout Prompt 节点时才有用。"
 }
