@@ -363,8 +363,20 @@ def list_apps() -> list:
     return apps
 
 
+def _wf_rel(p: str) -> str:
+    """相对工作流目录的路径 —— 打包面板的 target / source 都用这个口径。
+
+    不能用 paths._rel()（那是相对 ComfyUI 根）：用户目录被 --user-directory 指到
+    别处时两者对不上，前端拿它去回写或删除会落空。
+    """
+    try:
+        return os.path.relpath(p, paths.WORKFLOW_DIR).replace("\\", "/")
+    except Exception:                                # noqa: BLE001
+        return str(p).replace("\\", "/")
+
+
 def list_kapps() -> list:
-    """打包面板的「编辑已有应用」列表：只读 kapp 头信息，不解析参数规格。"""
+    """打包面板的「已打包的应用」列表：只读 kapp 头信息，不解析参数规格。"""
     out = []
     for p in find_app_files():
         if not p.lower().endswith(".kapp.json"):
@@ -373,18 +385,20 @@ def list_kapps() -> list:
             data = _load_kapp(p)
         except Exception as e:                       # noqa: BLE001
             out.append({"id": paths._stem(os.path.basename(p)), "name": os.path.basename(p),
-                        "file": paths._rel(p), "desc": "", "param_count": 0, "node_count": 0,
+                        "file": paths._rel(p), "target": _wf_rel(p), "desc": "",
+                        "param_count": 0, "node_count": 0,
                         "error": "%s: %s" % (type(e).__name__, e)})
             continue
         stem = paths._stem(os.path.basename(p))
         out.append({
             "id": stem,
             "name": str(data.get("name") or stem),
-            "file": paths._rel(p),
+            "file": paths._rel(p),                   # 展示用（相对 ComfyUI 根）
+            "target": _wf_rel(p),                    # 回写 / 删除用（相对工作流目录）
             "desc": str(data.get("desc") or ""),
             "param_count": len(data.get("params") or []),
             "node_count": len(data.get("graph") or {}),
-            # source 是打包时记下的源工作流（相对工作流目录）；老包没有，前端退回按文件名猜。
+            # source 是打包时记下的源工作流（相对工作流目录）；老包没有，前端把按钮置灰。
             "source": str(data.get("source") or ""),
         })
     out.sort(key=lambda x: str(x.get("name") or "").lower())

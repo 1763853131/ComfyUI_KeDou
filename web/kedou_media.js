@@ -1703,28 +1703,34 @@ const KPCSS = [
   ".kp-field select{background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);",
   "color:var(--fg-color,#e7e7ea);font:inherit;padding:6px 8px;border-radius:7px;outline:none;width:100%;box-sizing:border-box;}",
   ".kp-field input:focus,.kp-field textarea:focus,.kp-field select:focus{border-color:var(--p-primary-color,#4a7dff);}",
-  // 「编辑已打包的应用」下拉 + 「打开对应工作流」按钮并排：下拉吃掉剩余宽度，按钮不换行
-  ".kp-editrow{display:flex;gap:6px;align-items:center;}",
-  ".kp-editrow select{flex:1;min-width:0;}",
-  ".kp-editrow .kp-tbtn{flex:none;white-space:nowrap;padding:6px 9px;}",
+  // 「已打包的应用」列表：一行一个包，左边名字+规模，右边三个动作
+  ".kp-applist-hd{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-color,#e7e7ea);opacity:.62;}",
+  ".kp-applist-hd .kp-tbtn{margin-left:auto;flex:none;opacity:1;}",
+  // 列表限高自己滚：11 个包就有 11 行，不限高会把下面的表单和清单全挤出可视区
+  ".kp-applist{display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto;padding-right:2px;}",
+  ".kp-approw{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--interface-stroke,#3a3a44);",
+  "border-radius:8px;background:transparent;}",
+  ".kp-approw.kp-on{border-color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.10);}",
+  ".kp-appinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}",
+  ".kp-appname{font-size:12px;color:var(--fg-color,#e7e7ea);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".kp-appmeta{font-size:10.5px;color:var(--fg-color,#e7e7ea);opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".kp-appacts{display:flex;gap:4px;flex:none;}",
+  ".kp-appacts .kp-tbtn{padding:3px 7px;font-size:10.5px;opacity:.9;}",
+  ".kp-appacts .kp-tbtn[disabled]{opacity:.35;cursor:default;}",
+  ".kp-appacts .kp-tbtn[disabled]:hover{border-color:var(--interface-stroke,#3a3a44);color:var(--fg-color,#e7e7ea);}",
+  ".kp-appacts .kp-danger:hover{border-color:var(--error-text,#ff7a7a);color:var(--error-text,#ff7a7a);}",
+  ".kp-empty{font-size:11px;color:var(--fg-color,#e7e7ea);opacity:.55;padding:2px 0;}",
+  ".kp-edithint{color:var(--p-primary-color,#4a7dff);opacity:.85;}",
   ".kp-chk{display:flex;align-items:center;gap:6px;font-size:11.5px;cursor:pointer;user-select:none;opacity:.9;}",
   ".kp-chk input{width:14px;height:14px;accent-color:var(--p-primary-color,#4a7dff);cursor:pointer;flex:none;}",
-  ".kp-toolbar{display:flex;align-items:center;gap:8px;}",
   ".kp-tbtn{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:11px;",
   "padding:4px 10px;border-radius:7px;cursor:pointer;}",
   ".kp-tbtn:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
-  ".kp-count{margin-left:auto;font-size:11px;color:var(--fg-color,#e7e7ea);opacity:.62;}",
-  ".kp-row{display:flex;align-items:flex-start;gap:7px;padding:7px 8px;border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;",
-  "background:transparent;}",
-  ".kp-row input[type=checkbox]{width:15px;height:15px;accent-color:var(--p-primary-color,#4a7dff);cursor:pointer;margin-top:5px;flex:none;}",
-  ".kp-box{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}",
   ".kp-lab{background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);color:inherit;font:inherit;font-size:11.5px;",
   "padding:4px 6px;border-radius:6px;outline:none;width:100%;box-sizing:border-box;}",
   ".kp-lab:focus{border-color:var(--p-primary-color,#4a7dff);}",
   ".kp-sel{width:84px;flex:none;font-size:11px;padding:4px;background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);",
   "color:inherit;border-radius:6px;outline:none;align-self:center;}",
-  ".kp-sub{font-size:10.5px;color:var(--fg-color,#e7e7ea);opacity:.58;}",
-  ".kp-val{font-size:10.5px;color:var(--fg-color,#e7e7ea);opacity:.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
   ".kp-err{color:var(--error-text,#ff7a7a);font-size:11.5px;min-height:14px;}",
   ".kp-ft{padding:10px 12px;border-top:1px solid var(--interface-stroke,#3a3a44);}",
   ".kp-gen.kp-gen-off{opacity:.45;cursor:not-allowed;}",
@@ -1750,27 +1756,6 @@ const KPCSS = [
   // 「白底 + 浅字」隐形才涂黑，结果白色主题下变成一块黑砖；正解是底和字都跟着主题走。
   // 高度 auto —— 超长内容由页签容器滚动（openPackPanel 里会给宿主开 overflowY）
   ".kp-inset{position:static;width:auto;height:auto;max-height:none;border:0;border-radius:10px;box-shadow:none;background:var(--interface-panel-surface,rgba(28,28,34,.98));color:var(--fg-color,#e7e7ea);}",
-  // 参数按节点分组的折叠组
-  ".kp-grp{border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;background:transparent;overflow:hidden;}",
-  ".kp-ghead{display:flex;align-items:center;gap:6px;padding:7px 8px;cursor:pointer;user-select:none;}",
-  ".kp-ghead:hover{background:var(--content-bg,#e0e0e0);}",
-  ".kp-gcaret{font-size:9px;color:var(--fg-color,#e7e7ea);opacity:.6;transition:transform .15s;flex:none;}",
-  ".kp-gtitle{font-size:12px;font-weight:600;color:var(--fg-color,#e7e7ea);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
-  // 计数左、按钮右：计数靠 margin-left:auto 顶到右边，按钮跟在它后面贴最右。
-  // 按钮定宽 + 居中 —— 「全选」和「取消全选」字数不同，不定宽会让各行按钮左右参差。
-  ".kp-gcnt{margin-left:auto;font-size:10.5px;color:var(--fg-color,#e7e7ea);opacity:.6;flex:none;}",
-  ".kp-gsel{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);font:inherit;font-size:10.5px;padding:2px 7px;border-radius:6px;cursor:pointer;flex:none;min-width:60px;text-align:center;}",
-  // 顶部「全选/取消全选」同理定宽，切换时不挤动右邻居
-  ".kp-tbtn.kp-tall{min-width:66px;text-align:center;}",
-  ".kp-gsel:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
-  ".kp-gbody{display:flex;flex-direction:column;gap:7px;padding:8px;}",
-  ".kp-syncbtn.kp-on,.kp-tbtn.kp-on{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);background:rgba(74,125,255,.12);}",
-  // 子标签（点选 / 全部选项）：两页并排，默认点选
-  ".kp-tabs{display:flex;gap:4px;border-bottom:1px solid var(--interface-stroke,#3a3a44);}",
-  ".kp-tab{flex:1;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--fg-color,#e7e7ea);",
-  "font:inherit;font-size:12px;padding:7px 6px;cursor:pointer;opacity:.6;}",
-  ".kp-tab:hover{opacity:.85;}",
-  ".kp-tab.kp-on{opacity:1;border-bottom-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);font-weight:600;}",
   ".kp-pane{display:flex;flex-direction:column;gap:8px;}",
   ".kp-pickhint{font-size:11px;line-height:1.5;color:var(--fg-color,#e7e7ea);opacity:.62;}",
   ".kp-picklist{display:flex;flex-direction:column;gap:6px;}",
@@ -1786,6 +1771,9 @@ const KPCSS = [
   ".kp-drag{cursor:grab;flex:none;opacity:.4;font-size:11px;line-height:1;user-select:none;padding:2px 1px;}",
   ".kp-drag:hover{opacity:.85;}",
   ".kp-pickrow.kp-dragging{opacity:.55;border-style:dashed;}",
+  ".kp-pickrow.kp-orphan{border-style:dashed;}",
+  ".kp-orbadge{flex:none;width:13px;height:13px;border-radius:50%;font-size:9px;line-height:13px;text-align:center;",
+  "background:rgba(255,170,60,.22);color:#ffb454;font-weight:700;}",
   ".kp-pickfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;opacity:.62;}",
   ".kp-pclear{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:inherit;",
   "font:inherit;font-size:11px;padding:3px 7px;border-radius:6px;cursor:pointer;opacity:.8;}",
@@ -1848,7 +1836,6 @@ function ensurePackCss() {
 let kpOverlay = null;
 let kpUnsubRepaint = null;   // 面板常驻/浮层共用：关闭或重建时注销语言订阅
 let kpUnhookPick = null;     // 点选模式挂在 window 上的监听器（关面板时必须摘掉）
-let kpSyncTimer = null;      // 「画布点选」定时器（关闭/重建时必须清，否则泄漏累积）
 let kpRefreshTimer = null;   // 侧栏面板的工作流切换监视器
 let kpOpenGraph = "";        // 打开面板时的工作流 id；生成前复核，防止拿着旧候选打包
 // 切完源工作流后面板会整块重建（候选必须按新画布重新收集），重建完要自动回到原来那个应用。
@@ -1862,7 +1849,6 @@ function kpGraphKey() {
 }
 
 function stopPackPanelRuntime() {
-  if (kpSyncTimer) { clearInterval(kpSyncTimer); kpSyncTimer = null; }
   if (kpRefreshTimer) { clearInterval(kpRefreshTimer); kpRefreshTimer = null; }
   if (kpUnsubRepaint) { kpUnsubRepaint(); kpUnsubRepaint = null; }
   if (kpUnhookPick) { kpUnhookPick(); kpUnhookPick = null; }
@@ -2105,23 +2091,27 @@ function openPackPanel(hostEl) {
   const body = document.createElement("div");
   body.className = "kp-body";
 
-  const editField = document.createElement("div");
-  editField.className = "kp-field";
-  const editLab = document.createElement("label");
-  editLab.textContent = t("Edit packaged app");
-  const editRow = document.createElement("div");
-  editRow.className = "kp-editrow";
-  const editSel = document.createElement("select");
-  editSel.appendChild(new Option(t("New app"), ""));
-  // 编辑已有应用时画布很可能不是打包它的那张图 —— 参数会全掉进「当前工作流中不存在」。
-  // 这个按钮按 kapp 里记的 source 把画布切回去，切完重建面板并重新选中同一个应用。
-  const openWfBtn = document.createElement("button");
-  openWfBtn.className = "kp-tbtn";
-  openWfBtn.textContent = t("Open its workflow");
-  openWfBtn.title = t("Open the workflow this app was packed from in a tab");
-  openWfBtn.style.display = "none";
-  editRow.append(editSel, openWfBtn);
-  editField.append(editLab, editRow);
+  // ---- 已打包的应用列表 ----
+  // 原来是一个「编辑已有应用」下拉：看得到名字，看不到有几个参数，也没法删。
+  // 现在铺成列表，一行一个包，右边三个动作：工作流（在新页签打开它的来源图）、编辑、删除。
+  const listField = document.createElement("div");
+  listField.className = "kp-field";
+  const listHd = document.createElement("div");
+  listHd.className = "kp-applist-hd";
+  const appCount = document.createElement("span");
+  const newBtn = document.createElement("button");
+  newBtn.className = "kp-tbtn";
+  newBtn.textContent = t("New");
+  newBtn.title = t("Start a new app from the current workflow");
+  listHd.append(appCount, newBtn);
+  const appListEl = document.createElement("div");
+  appListEl.className = "kp-applist";
+  listField.append(listHd, appListEl);
+
+  // 编辑态提示：保存会写回原文件，跟「生成新包」是两回事，得说清楚
+  const editHint = document.createElement("div");
+  editHint.className = "kp-pickhint kp-edithint";
+  editHint.style.display = "none";
 
   const nameField = document.createElement("div");
   nameField.className = "kp-field";
@@ -2162,30 +2152,6 @@ function openPackPanel(hostEl) {
   graphSpan.textContent = t("Update graph from current workflow");
   graphField.append(graphCb, graphSpan);
 
-  const toolbar = document.createElement("div");
-  toolbar.className = "kp-toolbar";
-  const allBtn = document.createElement("button");
-  allBtn.className = "kp-tbtn kp-tall";
-  allBtn.textContent = t("Select all");
-  allBtn.title = t("Check all / uncheck all");
-  const cnt = document.createElement("span");
-  cnt.className = "kp-count";
-  cnt.textContent = t("Selected {n}", { n: 0 });
-  const syncBtn = document.createElement("button");
-  syncBtn.className = "kp-tbtn kp-syncbtn";
-  syncBtn.textContent = t("Pick on canvas");
-  syncBtn.title = t("When active, clicking a node on the canvas expands its parameters here");
-  const selOnlyBtn = document.createElement("button");
-  selOnlyBtn.className = "kp-tbtn";
-  selOnlyBtn.textContent = t("Selected only");
-  selOnlyBtn.title = t("Show only checked parameters");
-  toolbar.append(allBtn, syncBtn, selOnlyBtn, cnt);
-
-  const rowsWrap = document.createElement("div");
-  rowsWrap.style.display = "flex";
-  rowsWrap.style.flexDirection = "column";
-  rowsWrap.style.gap = "7px";
-
   const err = document.createElement("div");
   err.className = "kp-err";
 
@@ -2195,18 +2161,6 @@ function openPackPanel(hostEl) {
   gen.className = "kp-gen";
   gen.textContent = t("Generate app package");
   ft.appendChild(gen);
-
-  // 子标签：点选（默认）/ 全部选项。老的分组勾选表整个退到第二页，能力一点不丢，
-  // 只是不再是必经之路 —— 只在点不到（折叠节点、子图、被挡住）时才需要翻出来。
-  const tabBar = document.createElement("div");
-  tabBar.className = "kp-tabs";
-  const tabPick = document.createElement("button");
-  tabPick.className = "kp-tab";
-  tabPick.textContent = t("Point & click");
-  const tabList = document.createElement("button");
-  tabList.className = "kp-tab";
-  tabList.textContent = t("All options");
-  tabBar.append(tabPick, tabList);
 
   const pickPane = document.createElement("div");
   pickPane.className = "kp-pane";
@@ -2241,13 +2195,8 @@ function openPackPanel(hostEl) {
   });
   pickPane.append(pickSwitch, pickHint, pickList, pickFoot, previewEl);
 
-  const listPane = document.createElement("div");
-  listPane.className = "kp-pane";
-  listPane.style.display = "none";
-  listPane.append(toolbar, rowsWrap);
-
-  body.append(editField, fmtField, nameField, descField, graphField,
-              tabBar, pickPane, listPane, err);
+  body.append(listField, editHint, fmtField, nameField, descField, graphField,
+              pickPane, err);
   if (sidebar) {
     // 侧栏模式：无标题栏/遮罩/Esc，内容直接挂进页签
     panel.append(body, ft);
@@ -2268,11 +2217,11 @@ function openPackPanel(hostEl) {
     document.addEventListener("keydown", kpOnKey, true);
   }
 
-  // ---- 收集候选并渲染（按节点分组；官方构建模式同款节奏：点画布节点 -> 面板展开该组） ----
+  // ---- 收集候选 ----
+  // 「全部选项」那张分组勾选表已经删掉了：能力全在「点选」里（画布上点参数即加减，
+  // 清单里能改名 / 改控件 / 排序 / 删除）。那页只是同一批数据的第二份视图，纯负担。
   const candidates = collectCandidates();
   const rows = [];
-  const groups = [];
-  let onlySel = false;
 
   // 点选状态：pickOrder = 用户点选的先后顺序，kapp 里的参数就按它排。
   // syncPick / renderPick 在下面点选模块里赋值；updateCount 每变一次就刷新一遍。
@@ -2281,99 +2230,22 @@ function openPackPanel(hostEl) {
   let renderPick = () => {};
   let renderPreview = () => {};
 
-  // 「全选 / 取消全选」是同一个按钮的两态：全勾满了显示「取消全选」，否则显示「全选」。
-  // 任何勾选变化（单条、组全选、顶部全选）都会走 updateCount -> 这里，保持一致。
-  const syncToggleLabels = () => {
-    allBtn.textContent = (rows.length && rows.every((r) => r.cb.checked)) ? t("Unselect all") : t("Select all");
-    for (const g of groups) {
-      if (!g.selAllEl) continue;
-      g.selAllEl.textContent = (g.rows.length && g.rows.every((r) => r.cb.checked)) ? t("Unselect all") : t("Select all");
-    }
-  };
   const updateCount = () => {
-    cnt.textContent = t("Selected {n}", { n: rows.filter((r) => r.cb.checked).length });
-    for (const g of groups) {
-      const sel = g.rows.filter((r) => r.cb.checked).length;
-      g.cntEl.textContent = sel ? sel + "/" + g.rows.length : t("{n} items", { n: g.rows.length });
-    }
-    syncToggleLabels();
     syncPick();
     renderPick();
     // 一个参数都没勾时「生成」按钮变灰：省得点了才发现空清单
     gen.disabled = !rows.some((r) => r.cb.checked);
     gen.classList.toggle("kp-gen-off", gen.disabled);
   };
-  const applyFilter = () => {
-    for (const g of groups) {
-      const anyChecked = g.rows.some((r) => r.cb.checked);
-      g.grpEl.style.display = (!onlySel || anyChecked) ? "" : "none";
-      if (onlySel) {
-        if (anyChecked) g.open = true;
-        for (const r of g.rows) r.el.style.display = r.cb.checked ? "" : "none";
-      } else {
-        for (const r of g.rows) r.el.style.display = "";
-      }
-      g.bodyEl.style.display = (g.open && (!onlySel || anyChecked)) ? "" : "none";
-      g.caretEl.style.transform = g.open ? "rotate(90deg)" : "";
-    }
-  };
 
-  let emptyEl = null;
-  if (!candidates.length) {
-    const empty = document.createElement("div");
-    empty.style.color = "var(--fg-color,#9a9aa6)";
-    empty.style.opacity = ".62";
-    empty.style.fontSize = "11.5px";
-    empty.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
-    rowsWrap.appendChild(empty);
-    emptyEl = empty;
-  }
-
-  // 按节点分组（保持画布顺序）；默认全部收起 —— 用「点画布选」或点组标题展开
-  const byNode = new Map();
-  for (const c of candidates) {
-    if (!byNode.has(c.node)) byNode.set(c.node, []);
-    byNode.get(c.node).push(c);
-  }
-  const groupNames = {};   // 记住分组标题原文（非译文），语言切换时可重设
-
-  const openGroup = (g, scroll) => {
-    g.open = true;
-    g.bodyEl.style.display = "";
-    g.caretEl.style.transform = "rotate(90deg)";
-    if (scroll) {
-      try {
-        const scroller = sidebar ? hostEl : (rowsWrap.closest(".kp-ov") || rowsWrap.parentElement);
-        const top = g.headEl.getBoundingClientRect().top
-          - scroller.getBoundingClientRect().top + scroller.scrollTop - 6;
-        scroller.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-      } catch (_) { /* ignore */ }
-    }
-  };
-  const closeGroup = (g) => {
-    g.open = false;
-    g.bodyEl.style.display = "none";
-    g.caretEl.style.transform = "";
-  };
-
-  // 建一行参数（画布候选 / 已打包应用里的孤立参数共用）
-  const addRow = (c, g) => {
-    const row = document.createElement("div");
-    row.className = "kp-row";
+  // 一行参数的数据载体。删掉列表页后不再有行 DOM —— lab / sel 只当状态容器，
+  // 用户看到的输入框由 renderPick 每次重建（它会把值写回这里）。
+  const addRow = (c) => {
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    const box = document.createElement("div");
-    box.className = "kp-box";
     const lab = document.createElement("input");
     lab.className = "kp-lab";
     lab.value = c.label;
-    const sub = document.createElement("div");
-    sub.className = "kp-sub";
-    sub.textContent = "#" + c.node + " · " + c.input;
-    const val = document.createElement("div");
-    val.className = "kp-val";
-    val.textContent = t("Current value: {v}", { v: c.valuePreview });
-    box.append(lab, sub, val);
     const sel = document.createElement("select");
     sel.className = "kp-sel";
     for (const opt of KP_WIDGETS) {
@@ -2384,57 +2256,15 @@ function openPackPanel(hostEl) {
       sel.appendChild(o);
     }
     if (KP_WIDGETS.indexOf(c.widget) < 0) sel.value = "text";
-    row.append(cb, box, sel);
-    g.bodyEl.appendChild(row);
-    const entry = { cb, lab, sel, c, el: row, valEl: val, existingParam: null };
+    const entry = { cb, lab, sel, c, orphan: false, existingParam: null };
     rows.push(entry);
-    g.rows.push(entry);
-    cb.onchange = () => { updateCount(); if (onlySel) applyFilter(); };
+    cb.onchange = () => updateCount();
     return entry;
   };
-
-  for (const [nodeId, list] of byNode) {
-    const g = { node: nodeId, rows: [], open: false };
-    const grp = document.createElement("div");
-    grp.className = "kp-grp";
-    const head = document.createElement("div");
-    head.className = "kp-ghead";
-    const caret = document.createElement("span");
-    caret.className = "kp-gcaret";
-    caret.textContent = "▶";
-    const ttl = document.createElement("span");
-    ttl.className = "kp-gtitle";
-    const gName = list[0].node_title || list[0].node_type || t("Node {id}", { id: nodeId });
-    groupNames[nodeId] = gName;
-    ttl.textContent = gName;
-    ttl.title = ttl.textContent;
-    const selAll = document.createElement("button");
-    selAll.className = "kp-gsel";
-    selAll.textContent = t("Select all");
-    selAll.title = t("Select all / none for this node");
-    selAll.onclick = (e) => {
-      e.stopPropagation();
-      const all = g.rows.length > 0 && g.rows.every((r) => r.cb.checked);
-      g.rows.forEach((r) => { r.cb.checked = !all; });
-      updateCount(); applyFilter();
-    };
-    const gcnt = document.createElement("span");
-    gcnt.className = "kp-gcnt";
-    head.append(caret, ttl, gcnt, selAll);   // 计数在左、按钮贴最右，各行按钮才对齐
-    head.onclick = () => { g.open ? closeGroup(g) : openGroup(g, false); };
-    const bodyEl = document.createElement("div");
-    bodyEl.className = "kp-gbody";
-    bodyEl.style.display = "none";
-    grp.append(head, bodyEl);
-    rowsWrap.appendChild(grp);
-    Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp, ttlEl: ttl });
-
-    for (const c of list) addRow(c, g);
-    groups.push(g);
-  }
+  for (const c of candidates) addRow(c);
   updateCount();
 
-  // ---- 点选（默认页）：在画布上点参数即加/减，不用在列表里逐个比对 ----
+  // ---- 点选：在画布上点参数即加/减，不用在列表里逐个比对 ----
   //
   // 命中靠 litegraph 自己的命中测试：调整鼠标坐标后 graph.getNodeOnPos + node.getWidgetOnPos，
   // 和 ComfyUI 构建器判断“鼠标悬停在哪一项”用的是同一套，缩放/滚动都自动正确。
@@ -2460,7 +2290,6 @@ function openPackPanel(hostEl) {
   const toggleRow = (r) => {
     r.cb.checked = !r.cb.checked;
     updateCount();
-    if (onlySel) applyFilter();
     setTimeout(dropRowFocus, 0);
   };
 
@@ -2916,21 +2745,23 @@ function openPackPanel(hostEl) {
   renderPick = () => {
     const map = rowMap();
     const ordered = pickOrder.map((k) => map.get(k)).filter(Boolean);
-    tabPick.textContent = ordered.length ? t("Point & click ({n})", { n: ordered.length }) : t("Point & click");
     pickCount.textContent = ordered.length ? t("Top to bottom is the order users see") : "";
     pickClear.style.display = ordered.length ? "" : "none";
     pickList.innerHTML = "";
     if (!ordered.length) {
       const empty = document.createElement("div");
       empty.className = "kp-pickhint";
-      empty.textContent = t("Nothing picked yet — click a parameter on the canvas.");
+      // 这张图压根没有可暴露的控件时，再说「去画布上点一个」就是误导
+      empty.textContent = rows.length
+        ? t("Nothing picked yet — click a parameter on the canvas.")
+        : t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
       pickList.appendChild(empty);
       renderPreview();
       return;
     }
     ordered.forEach((r, i) => {
       const el = document.createElement("div");
-      el.className = "kp-pickrow";
+      el.className = "kp-pickrow" + (r.orphan ? " kp-orphan" : "");
       el.dataset.key = keyOf(r);
       const grip = document.createElement("span");
       grip.className = "kp-drag";
@@ -2939,7 +2770,10 @@ function openPackPanel(hostEl) {
       const lab = document.createElement("input");
       lab.className = "kp-lab";
       lab.value = r.lab.value || r.c.label;
-      lab.title = t("Name shown to users");
+      lab.title = r.orphan
+        ? t("Name shown to users · #{node}:{input} · not in the current workflow",
+            { node: r.c.node, input: r.c.input })
+        : t("Name shown to users · #{node}:{input}", { node: r.c.node, input: r.c.input });
       lab.oninput = () => { r.lab.value = lab.value; renderPreview(); };
       const sel = document.createElement("select");
       sel.className = "kp-sel";
@@ -2952,7 +2786,6 @@ function openPackPanel(hostEl) {
       }
       sel.onchange = () => {
         r.sel.value = sel.value;
-        r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, sel.value) });
         renderPreview();
       };
       const move = (dir) => {
@@ -2980,7 +2813,15 @@ function openPackPanel(hostEl) {
       del.textContent = "×";
       del.title = t("Remove");
       del.onclick = () => toggleRow(r);
-      el.append(grip, lab, sel, up, down, del);
+      el.append(grip);
+      if (r.orphan) {
+        const badge = document.createElement("span");
+        badge.className = "kp-orbadge";
+        badge.textContent = "!";
+        badge.title = t("This parameter is not in the current workflow; it comes from the app package.");
+        el.append(badge);
+      }
+      el.append(lab, sel, up, down, del);
       pickList.appendChild(el);
       if (dragKey && el.dataset.key === dragKey) el.classList.add("kp-dragging");
     });
@@ -3094,20 +2935,9 @@ function openPackPanel(hostEl) {
   nameInput.addEventListener("input", () => { if (typeof renderPreview === "function") renderPreview(); });
   descInput.addEventListener("input", () => { if (typeof renderPreview === "function") renderPreview(); });
 
-  const setTab = (tab) => {
-    const pick = tab !== "list";
-    tabPick.classList.toggle("kp-on", pick);
-    tabList.classList.toggle("kp-on", !pick);
-    pickPane.style.display = pick ? "" : "none";
-    listPane.style.display = pick ? "none" : "";
-    hookPick(pick && pickOn);
-    try { localStorage.setItem("kedou.pack.tab", pick ? "pick" : "list"); } catch (_) { /* ignore */ }
-  };
-  tabPick.onclick = () => setTab("pick");
-  tabList.onclick = () => setTab("list");
   pickSwitch.onclick = () => {
     pickOn = !pickOn;
-    hookPick(pickOn && pickPane.style.display !== "none");
+    hookPick(pickOn);
   };
   kpUnhookPick = () => {
     if (pickHooked) {
@@ -3123,17 +2953,11 @@ function openPackPanel(hostEl) {
   };
   syncPick();
   renderPick();
-  {
-    let saved = "pick";
-    try { saved = localStorage.getItem("kedou.pack.tab") || "pick"; } catch (_) { /* ignore */ }
-    setTab(saved);
-  }
 
   // ---- 编辑已打包应用 ----
-  // 选一个 .kapp.json 后，把它的参数映射回当前画布的候选行；当前画布不存在的
-  // 参数放进「Not in current workflow」组，仍可改标签/控件或取消勾选。
-  let editing = null;        // {file, kapp}
-  let orphanGroup = null;
+  // 从列表里点「编辑」后，把包里的参数映射回当前画布的候选行；当前画布没有的参数
+  // 仍然留在清单里（打 ! 标），可以改标签 / 控件类型，也可以取消勾选。
+  let editing = null;        // {id, file, kapp}
 
   const setPrimaryLabel = () => {
     if (editing) { gen.textContent = t("Save changes"); return; }
@@ -3150,65 +2974,22 @@ function openPackPanel(hostEl) {
   };
   fmtSel.onchange = syncFmt;
   syncFmt();
-  const removeOrphanGroup = () => {
-    if (!orphanGroup) return;
-    const gi = groups.indexOf(orphanGroup);
-    if (gi >= 0) groups.splice(gi, 1);
-    orphanGroup.grpEl.remove();
-    for (const r of orphanGroup.rows) {
-      const ri = rows.indexOf(r);
-      if (ri >= 0) rows.splice(ri, 1);
-    }
-    orphanGroup = null;
-    if (emptyEl) emptyEl.style.display = "";
-  };
+
   const resetRows = () => {
+    // 上一轮编辑旧包时补进来的孤立行（画布上根本没有这个节点）留着没用，直接丢掉，
+    // 否则换一个应用后它们还挂在 rows 里，看着像当前工作流的参数。
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].orphan) rows.splice(i, 1);
+    }
     for (const r of rows) {
       r.cb.checked = false;
       r.lab.value = r.c.label;
       r.sel.value = KP_WIDGETS.indexOf(r.c.widget) >= 0 ? r.c.widget : "text";
-      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(r.c.default, r.sel.value) });
+      r.orphan = false;
       r.existingParam = null;
     }
   };
-  const ensureOrphanGroup = () => {
-    if (orphanGroup) return orphanGroup;
-    const g = { node: "__orphan__", rows: [], open: true };
-    const grp = document.createElement("div");
-    grp.className = "kp-grp";
-    const head = document.createElement("div");
-    head.className = "kp-ghead";
-    const caret = document.createElement("span");
-    caret.className = "kp-gcaret";
-    caret.textContent = "▶";
-    caret.style.transform = "rotate(90deg)";
-    const ttl = document.createElement("span");
-    ttl.className = "kp-gtitle";
-    ttl.textContent = t("Not in current workflow");
-    const gcnt = document.createElement("span");
-    gcnt.className = "kp-gcnt";
-    const selAll = document.createElement("button");
-    selAll.className = "kp-gsel";
-    selAll.textContent = t("Unselect all");
-    selAll.title = t("Select all / none for this node");
-    selAll.onclick = (e) => {
-      e.stopPropagation();
-      const all = g.rows.length > 0 && g.rows.every((r) => r.cb.checked);
-      g.rows.forEach((r) => { r.cb.checked = !all; });
-      updateCount(); applyFilter();
-    };
-    head.append(caret, ttl, gcnt, selAll);
-    head.onclick = () => { g.open ? closeGroup(g) : openGroup(g, false); };
-    const bodyEl = document.createElement("div");
-    bodyEl.className = "kp-gbody";
-    grp.append(head, bodyEl);
-    rowsWrap.appendChild(grp);
-    Object.assign(g, { headEl: head, bodyEl, caretEl: caret, cntEl: gcnt, selAllEl: selAll, grpEl: grp, ttlEl: ttl });
-    groups.push(g);
-    orphanGroup = g;
-    if (emptyEl) emptyEl.style.display = "none";
-    return g;
-  };
+
   // 旧版打包把数值/布尔都存成了 text；重新打开时以当前控件识别结果为准。
   // 用户自己改过的类型（非 text）保留，不覆盖。
   const editedWidgetType = (saved, cand) => {
@@ -3226,11 +3007,10 @@ function openPackPanel(hostEl) {
     if (stale && cand && cand.label) return String(cand.label);
     return s || input;
   };
-  const applyEditing = (file, kapp) => {
-    editing = { file, kapp: kapp || {} };
+  const applyEditing = (file, kapp, id) => {
+    editing = { id: id || "", file, kapp: kapp || {} };
     fmtSel.value = "kapp";
     syncFmt();
-    removeOrphanGroup();
     resetRows();
     nameInput.value = String(editing.kapp.name || "");
     nameAuto = false;
@@ -3238,9 +3018,9 @@ function openPackPanel(hostEl) {
     descInput.value = String(editing.kapp.desc || "");
     graphCb.checked = false;
     graphField.style.display = "";
-    openWfBtn.style.display = "";
-    openWfBtn.disabled = false;
-    openWfBtn.textContent = t("Open its workflow");
+    editHint.textContent = t("Editing \"{name}\": saving writes back to that app file.",
+                             { name: editing.kapp.name || id || "" });
+    editHint.style.display = "";
     const params = Array.isArray(editing.kapp.params) ? editing.kapp.params : [];
     const labelCount = {};
     pickOrder = [];                  // 清单按包里原来的顺序重建，别被画布顺序打乱
@@ -3256,6 +3036,7 @@ function openPackPanel(hostEl) {
       const widget = editedWidgetType(p.widget, r ? r.c : null);
       const label = editedLabel(p.label, p, r ? r.c : null, labelCount);
       if (!r) {
+        // 当前画布上没有这个参数：仍然列出来（否则一编辑旧包就丢参数），标成 orphan
         r = addRow({
           node: nodeId, input, widget,
           default: p.default,
@@ -3268,25 +3049,23 @@ function openPackPanel(hostEl) {
           usage_input: p.usage_input,
           usage_options: p.usage_options,
           usage_default: p.usage_default,
-        }, ensureOrphanGroup());
+        });
+        r.orphan = true;
       }
       r.cb.checked = true;
       r.lab.value = label;
       r.sel.value = widget;
-      r.valEl.textContent = t("Current value: {v}", { v: kpPreview(p.default, widget) });
       r.existingParam = p;
       pickOrder.push(keyOf(r));
     }
     updateCount();
-    applyFilter();
     setPrimaryLabel();
-    for (const g of groups) if (g.rows.some((r) => r.cb.checked)) openGroup(g, false);
+    renderAppList();                 // 高亮正在编辑的这一行
     err.textContent = "";
   };
   const resetEditor = () => {
     editing = null;
     syncFmt();
-    removeOrphanGroup();
     resetRows();
     nameInput.value = defaultAppName();
     nameAuto = true;
@@ -3294,11 +3073,65 @@ function openPackPanel(hostEl) {
     descInput.value = "";
     graphCb.checked = false;
     graphField.style.display = "none";
-    openWfBtn.style.display = "none";
+    editHint.style.display = "none";
     updateCount();
-    applyFilter();
     setPrimaryLabel();
+    renderAppList();
     err.textContent = "";
+  };
+  newBtn.onclick = () => resetEditor();
+
+  // ---- 已打包的应用列表：拉取 + 渲染 ----
+  let appsData = [];
+  const renderAppList = () => {
+    appListEl.innerHTML = "";
+    appCount.textContent = appsData.length
+      ? t("Packaged apps ({n})", { n: appsData.length })
+      : t("Packaged apps");
+    if (!appsData.length) {
+      const empty = document.createElement("div");
+      empty.className = "kp-empty";
+      empty.textContent = t("No apps packed yet.");
+      appListEl.appendChild(empty);
+      return;
+    }
+    for (const a of appsData) {
+      const row = document.createElement("div");
+      row.className = "kp-approw" + (editing && editing.id === a.id ? " kp-on" : "");
+      const info = document.createElement("div");
+      info.className = "kp-appinfo";
+      const nm = document.createElement("div");
+      nm.className = "kp-appname";
+      nm.textContent = String(a.name || a.id);
+      nm.title = nm.textContent;
+      const meta = document.createElement("div");
+      meta.className = "kp-appmeta";
+      meta.textContent = t("{p} params · {n} nodes", { p: a.param_count || 0, n: a.node_count || 0 });
+      info.append(nm, meta);
+      const acts = document.createElement("div");
+      acts.className = "kp-appacts";
+      const wfB = document.createElement("button");
+      wfB.className = "kp-tbtn";
+      wfB.textContent = t("Workflow");
+      wfB.disabled = !a.source;
+      wfB.title = a.source
+        ? t("Open the workflow this app was packed from in a tab")
+        : t("This app was packed before the source workflow was recorded; re-pack it once and this button will work.");
+      wfB.onclick = () => openSourceWorkflow(a, wfB);
+      const edB = document.createElement("button");
+      edB.className = "kp-tbtn";
+      edB.textContent = t("Edit");
+      edB.title = t("Load this app's parameters into the panel");
+      edB.onclick = () => loadAppForEdit(a.id);
+      const delB = document.createElement("button");
+      delB.className = "kp-tbtn kp-danger";
+      delB.textContent = t("Delete");
+      delB.title = t("Move this app file to the recycle folder");
+      delB.onclick = () => deleteApp(a);
+      acts.append(wfB, edB, delB);
+      row.append(info, acts);
+      appListEl.appendChild(row);
+    }
   };
 
   const loadApps = async () => {
@@ -3307,34 +3140,33 @@ function openPackPanel(hostEl) {
       let j = null;
       try { j = await r.json(); } catch (_) { /* ignore */ }
       if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
-      const cur = editSel.value;
-      while (editSel.options.length > 1) editSel.remove(1);
-      for (const a of (j.apps || [])) {
-        if (!a || a.error || !a.id) continue;
-        const o = document.createElement("option");
-        o.value = a.id;
-        o.textContent = String(a.name || a.id) + (a.param_count ? " · " + a.param_count : "");
-        editSel.appendChild(o);
-      }
-      if (cur) editSel.value = cur;
-      // 切过源工作流：重建后自动选回原来那个应用，用户不用再点一次
+      appsData = (j.apps || []).filter((a) => a && !a.error && a.id);
+      renderAppList();
+      // 切过源工作流 / 存过新包：面板重建后自动回到原来那个应用，用户不用再点一次
       if (kpRestoreApp) {
         const want = kpRestoreApp;
         kpRestoreApp = "";
-        editSel.value = want;
-        if (editSel.value === want) editSel.onchange();
+        loadAppForEdit(want);
       }
     } catch (e) {
       console.warn("[kedou] 打包应用列表加载失败", e);
+      appsData = [];
+      appCount.textContent = t("Packaged apps");
+      appListEl.innerHTML = "";
+      const bad = document.createElement("div");
+      bad.className = "kp-empty";
+      bad.textContent = t("Failed to load the app list: {msg}",
+                          { msg: String((e && e.message) || e) });
+      appListEl.appendChild(bad);
     }
   };
   loadApps();
 
-  let editReq = 0;            // 快速切换下拉时，丢弃过期的读取结果
-  editSel.onchange = async () => {
-    const id = editSel.value;
-    const seq = ++editReq;
+  let editReq = 0;            // 连点两下时，丢弃过期的读取结果
+  const loadAppForEdit = async (id) => {
     if (!id) { resetEditor(); return; }
+    if (editing && editing.id === id) return;    // 正在编辑它，别把没保存的改动冲掉
+    const seq = ++editReq;
     err.textContent = "";
     try {
       const r = await fetch("/ps/apps/" + encodeURIComponent(id) + "/package");
@@ -3343,34 +3175,26 @@ function openPackPanel(hostEl) {
       if (seq !== editReq) return;
       if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
       // target 相对工作流目录，回写时原样传回；file 只是展示路径（相对 ComfyUI 根）
-      applyEditing(j.target || j.file, j.kapp);
+      applyEditing(j.target || j.file, j.kapp, id);
     } catch (e) {
       if (seq !== editReq) return;
       const msg = serverError(e && e.message ? e.message : String(e));
-      editSel.value = "";
       resetEditor();
       err.textContent = t("Failed to load app: {msg}", { msg });
     }
   };
-  // 「打开对应工作流」：全程走 ComfyUI 自己的页签机制，**绝不动当前画布**。
-  //   ① 已经开着的页签里有 → 切过去（就是点页签，未保存的改动留在各自页签里）
+
+  // 「工作流」：全程走 ComfyUI 自己的页签机制，**绝不动当前画布**。
+  //   ① 已经开着的页签里有 → 切过去（未保存的改动留在各自页签里）
   //   ② 磁盘工作流列表里有 → 开新页签
-  //   ③ 列表里没有（刚建/刚改名）→ 读文件内容，作为临时工作流开新页签
-  openWfBtn.onclick = async () => {
-    if (!editing) return;
-    // 只认 kapp 里记的 source。别拿 editing.file（那是 .kapp.json 自己）顶，
-    // 拿它当源会绕成「打开应用包去找应用包」，只会报一个看不懂的错。
-    const want = String((editing.kapp && editing.kapp.source) || "").trim();
-    if (!want) {
-      err.textContent = t("This app was packed before the source workflow was recorded; re-pack it once and this button will work.");
-      return;
-    }
-    openWfBtn.disabled = true;
-    openWfBtn.textContent = t("Opening…");
-    const restoreBtn = () => {
-      openWfBtn.disabled = false;
-      openWfBtn.textContent = t("Open its workflow");
-    };
+  //   ③ 列表里没有（刚建 / 刚改名）→ 读文件内容，作为临时工作流开新页签
+  const openSourceWorkflow = async (a, btn) => {
+    const want = String((a && a.source) || "").trim();
+    if (!want) return;
+    const old = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = t("Opening…");
+    const done = () => { btn.disabled = false; btn.textContent = old; };
     try {
       const mgr = app.extensionManager && app.extensionManager.workflow;
       if (!mgr || typeof mgr.openWorkflow !== "function") {
@@ -3387,14 +3211,14 @@ function openPackPanel(hostEl) {
         const p = norm(w.path);
         return rel === target || p === "workflows/" + target || p.endsWith("/" + target);
       };
-      kpRestoreApp = editSel.value || "";   // 切完面板会重建，把它选回来
+      kpRestoreApp = (editing && editing.id) || "";   // 切完面板会重建，把它选回来
 
       // ① 已打开的页签：直接切，画布内容由 ComfyUI 自己的页签机制接管
       const opened = listOf(mgr.openWorkflows).find(same);
       if (opened) {
         await mgr.openWorkflow(opened);
         kpToast(t("Switched to {name}", { name: opened.fullFilename || target }));
-        restoreBtn();
+        done();
         return;
       }
       // ② 磁盘上有这张：openWorkflow 发现它没开过就会新开一个页签
@@ -3402,7 +3226,7 @@ function openPackPanel(hostEl) {
       if (onDisk) {
         await mgr.openWorkflow(onDisk);
         kpToast(t("Opened {name} in a new tab", { name: onDisk.fullFilename || target }));
-        restoreBtn();
+        done();
         return;
       }
       // ③ 列表里没有：读文件内容，造一个临时工作流开新页签（同样不碰当前画布）
@@ -3413,73 +3237,40 @@ function openPackPanel(hostEl) {
       const tmp = mgr.createTemporary(target.split("/").pop(), j.workflow);
       await mgr.openWorkflow(tmp);
       kpToast(t("Opened {name} in a new tab", { name: j.file }));
-      restoreBtn();
+      done();
     } catch (e) {
-      restoreBtn();
+      done();
       err.textContent = serverError(e && e.message ? e.message : String(e));
     }
   };
 
-  let syncOn = false, lastSel = null;
-  syncBtn.onclick = () => {
-    syncOn = !syncOn;
-    syncBtn.classList.toggle("kp-on", syncOn);
-    syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
-    if (syncOn) {
-      lastSel = null;
-      kpSyncTimer = setInterval(() => {
-        try {
-          const sel = app.canvas && app.canvas.selected_nodes;
-          const ids = sel ? Object.keys(sel) : [];
-          if (ids.length !== 1 || ids[0] === lastSel) return;
-          lastSel = ids[0];
-          const g = groups.find((x) => x.node === ids[0]);
-          if (g) {
-            // 手风琴：展开选中的这组时顺手收起其他组，不然一眼看不出打开的是哪一个。
-            // 先收再开——收完布局定了，openGroup 的滚动定位才算得准。
-            for (const x of groups) if (x !== g && x.open) closeGroup(x);
-            openGroup(g, true);
-          }
-        } catch (_) { /* ignore */ }
-      }, 350);
-    } else {
-      if (kpSyncTimer) { clearInterval(kpSyncTimer); kpSyncTimer = null; }
+  // 「删除」= 移到 user/default/kedou_trash，不是真删 —— 手滑点错还能捞回来。
+  const deleteApp = async (a) => {
+    const label = String(a.name || a.id);
+    if (!window.confirm(t("Delete \"{name}\"? It moves to user/default/kedou_trash (not erased) and disappears from the launcher and the PS panel.", { name: label }))) return;
+    err.textContent = "";
+    try {
+      const r = await fetch("/ps/pack/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file: a.target || "" }),
+      });
+      let j = null;
+      try { j = await r.json(); } catch (_) { /* ignore */ }
+      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+      if (editing && editing.id === a.id) resetEditor();
+      kpToast(t("Deleted {name}", { name: label }));
+      await loadApps();
+    } catch (e) {
+      err.textContent = t("Delete failed: {msg}",
+                          { msg: serverError(e && e.message ? e.message : String(e)) });
     }
-  };
-
-  // 只看已选
-  selOnlyBtn.onclick = () => {
-    onlySel = !onlySel;
-    selOnlyBtn.classList.toggle("kp-on", onlySel);
-    if (onlySel) groups.forEach((g) => { if (g.rows.some((r) => r.cb.checked)) g.open = true; });
-    applyFilter();
-  };
-
-  // 顶部「全选 / 取消全选」：同一个按钮的两态（已全勾 -> 再点就是取消全选）
-  allBtn.onclick = () => {
-    const all = rows.length > 0 && rows.every((r) => r.cb.checked);
-    rows.forEach((r) => { r.cb.checked = !all; });
-    updateCount(); applyFilter();
-  };
-
-  // ---- 语言切换重绘：面板内的固定文案整体再 paint 一次（浮层关闭时注销订阅） ----
-  // 行下方的「当前值」：编辑已有应用且不更新图时，以应用里存的 default 为准，
-  // 否则显示画布上的值。控件类型被改过时按改后的类型预览。
-  const rowPreview = (r) => {
-    const src = (r.existingParam && !graphCb.checked) ? r.existingParam : null;
-    const v = (src && Object.prototype.hasOwnProperty.call(src, "default")) ? src.default : r.c.default;
-    return kpPreview(v, r.sel.value);
-  };
-
-  // 切「用当前工作流更新图」时，值预览的来源跟着切换（应用里存的 default ↔ 画布当前值）
-  graphCb.onchange = () => {
-    for (const r of rows) r.valEl.textContent = t("Current value: {v}", { v: rowPreview(r) });
   };
 
   const repaint = () => {
     titleEl.textContent = t("Pack app");
-    editLab.textContent = t("Edit packaged app");
-    editSel.options[0].textContent = t("New app");
+    newBtn.textContent = t("New");
+    newBtn.title = t("Start a new app from the current workflow");
     nameLab.textContent = t("App name");
     fmtLab.textContent = t("Output format");
     fmtSel.options[0].textContent = t("Kedou app package (.kapp.json)");
@@ -3487,23 +3278,19 @@ function openPackPanel(hostEl) {
     descLab.textContent = t("Description (optional)");
     descInput.placeholder = t("One sentence describing what this app does");
     nameInput.title = editing ? t("For an existing app, this only changes the display name; the file name stays.") : "";
+    if (editing) {
+      editHint.textContent = t("Editing \"{name}\": saving writes back to that app file.",
+                               { name: editing.kapp.name || editing.id || "" });
+    }
     graphSpan.textContent = t("Update graph from current workflow");
-    allBtn.title = t("Check all / uncheck all");
-    syncBtn.textContent = syncOn ? t("Syncing…") : t("Pick on canvas");
-    syncBtn.title = t("When active, clicking a node on the canvas expands its parameters here");
-    selOnlyBtn.textContent = t("Selected only");
-    selOnlyBtn.title = t("Show only checked parameters");
+    pickSwitch.textContent = pickOn ? t("Picking is on") : t("Picking is off");
+    pickSwitch.title = t("While on, clicking a parameter on the canvas adds or removes it");
+    pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.");
+    pickClear.textContent = t("Clear all");
+    pickClear.title = t("Remove every picked parameter; the canvas is untouched");
     if (!gen.disabled) setPrimaryLabel();
-    for (const g of groups) {
-      g.ttlEl.textContent = (g === orphanGroup) ? t("Not in current workflow") : groupNames[g.node];
-      g.ttlEl.title = g.ttlEl.textContent;
-      g.selAllEl.title = t("Select all / none for this node");
-    }
-    for (const r of rows) {
-      r.valEl.textContent = t("Current value: {v}", { v: rowPreview(r) });
-    }
-    if (emptyEl) emptyEl.textContent = t("No exposeable widgets in the current workflow (all nodes are connection-type?).");
-    updateCount();   // 计数与「全选/取消全选」两态文案随之刷新
+    renderAppList();     // 行内按钮文案也要跟着语言走
+    updateCount();       // 清单 + 预览随之重画
   };
   kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
 
@@ -3511,6 +3298,7 @@ function openPackPanel(hostEl) {
     nameInput, descInput, rows, err, gen, graphCb, fmtSel,
     order: () => pickOrder,
     editing: () => editing,
+    refreshList: () => loadApps(),
   });
 
   if (sidebar) {
@@ -3708,6 +3496,7 @@ async function doGenerate(ctx) {
       ctx.err.textContent = t(editing ? "Saving failed: {msg}" : "Generation failed: {msg}", { msg });
       kpToast(t(editing ? "Saving failed: {msg}" : "Generation failed: {msg}", { msg }), true);
     } else {
+      if (typeof ctx.refreshList === "function") ctx.refreshList();   // 列表里补上新包
       const warns = (j.warnings && j.warnings.length) ? j.warnings : [];
       if (warns.length) {
         // 有提醒（如缺输入但不影响打包）时留着面板，用户看完错误行再手动关

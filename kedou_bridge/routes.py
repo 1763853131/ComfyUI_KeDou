@@ -310,9 +310,25 @@ def register(routes):
 
     @routes.get("/ps/pack/apps")
     async def ps_pack_apps(request):
-        """打包面板「编辑已有应用」下拉：只列 .kapp.json。"""
+        """打包面板「已打包的应用」列表：只列 .kapp.json。"""
         return compat.web.json_response({"ok": True,
                                   "apps": await asyncio.to_thread(apps.list_kapps)})
+
+    @routes.post("/ps/pack/delete")
+    async def ps_pack_delete(request):
+        """POST /ps/pack/delete {file} —— 把应用包移到 user/default/kedou_trash。
+
+        file 是相对工作流目录的路径（列表里的 target）。不直接删：移到回收站，
+        手滑点错还能捞回来。
+        """
+        try:
+            body = await request.json()
+        except Exception:                            # noqa: BLE001
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        if not isinstance(body, dict):
+            return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
+        result = await asyncio.to_thread(pack.delete_kapp, body.get("file"))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
 
     @routes.get("/ps/pack/candidates")
     async def ps_pack_candidates(request):

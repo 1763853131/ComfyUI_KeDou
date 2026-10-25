@@ -4,6 +4,8 @@
 import json
 import os
 import re
+import shutil
+import time
 import urllib.parse
 import uuid
 
@@ -12,7 +14,7 @@ from .common import (_clean_label, _dom_handle, _panel_widget, _ref_parts,
                      _widget_values)
 from .registry import (build_object_info, widget_spec, _ctl_after_gen,
                        _declared_widgets, _find_spec, _widget_index)
-from .state import _load_app_state
+from .state import _load_app_state, _state_path
 
 
 def _find_workflow_file(name: str):
@@ -646,6 +648,48 @@ def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
     return {"ok": True, "file": paths._rel(out_path), "target": _pack_target(out_path),
             "param_count": len(params), "node_count": len(graph), "warnings": warns,
             "edited": bool(target)}
+
+
+def delete_kapp(target: str) -> dict:
+    """POST /ps/pack/delete —— 把打包面板列表里的一个应用包移到回收站。
+
+    不直接 os.remove：手滑点错就再也回不来了。改成移到 user/default/kedou_trash/，
+    文件名带时间戳，同一个包删几次都不会互相覆盖。
+    回收站不在工作流目录里，所以 /ps/apps、ComfyUI 工作流列表、启动器都扫不到它。
+
+    只认工作流目录内的 .kapp.json（与 save_kapp 的回写口径一致）：
+    官方 .app.json 不在打包面板的管辖范围，别让一个误传的路径删掉工作流。
+    """
+    p = _resolve_pack_target(target)
+    if p is None:
+        return {"ok": False,
+                "error": "目标不合法（必须是工作流目录内的 .kapp.json）：%s" % target}
+    if not os.path.isfile(p):
+        return {"ok": False, "error": "文件不存在：%s" % target}
+    base = os.path.basename(p)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    try:
+        os.makedirs(paths.TRASH_DIR, exist_ok=True)
+    except Exception as e:                           # noqa: BLE001
+        return {"ok": False, "error": "回收站目录不可写：%s" % e}
+    dst = os.path.join(paths.TRASH_DIR, "%s.%s" % (base, stamp))
+    n = 1
+    while os.path.exists(dst):                       # 同一秒删两个同名包
+        dst = os.path.join(paths.TRASH_DIR, "%s.%s-%d" % (base, stamp, n))
+        n += 1
+    try:
+        shutil.move(p, dst)
+    except Exception as e:                           # noqa: BLE001
+        return {"ok": False, "error": "移到回收站失败：%s" % e}
+    # sidecar 里存着这个应用在面板上改过的值，按相对路径 hash 存 —— 包没了还留着，
+    # 下次同名重新打包会莫名其妙继承旧值。一起挪进回收站。
+    try:
+        st = _state_path(p)
+        if os.path.isfile(st):
+            shutil.move(st, dst + ".state.json")
+    except Exception:                                # noqa: BLE001
+        pass                                         # 状态文件挪不动不影响删包
+    return {"ok": True, "file": paths._rel(p), "trash": paths._rel(dst), "name": base}
 
 
 # ---------------------------------------------------------------- 官方应用（.app.json）

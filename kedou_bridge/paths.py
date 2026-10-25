@@ -47,6 +47,9 @@ def _user_default_dir() -> str:
 
 
 WORKFLOW_DIR = os.path.join(_user_default_dir(), "workflows")
+# 删应用包时的回收站：故意放在工作流目录**外面**。
+# 放里面会被 find_app_files 的 os.walk 扫到（文件名不带点），删掉的应用又冒出来。
+TRASH_DIR = os.path.join(os.path.dirname(WORKFLOW_DIR), "kedou_trash")
 if not os.path.isdir(os.path.join(COMFY_ROOT, "custom_nodes")):
     # 启动自检：根目录推断错误时立即报出，避免应用列表为空却无任何提示
     print("[KeDou] 警告：ComfyUI 根目录推断可能不对 -> %s" % COMFY_ROOT)
