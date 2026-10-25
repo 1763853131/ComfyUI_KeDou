@@ -1703,6 +1703,10 @@ const KPCSS = [
   ".kp-field select{background:var(--content-bg,#e0e0e0);border:1px solid var(--interface-stroke,#3a3a44);",
   "color:var(--fg-color,#e7e7ea);font:inherit;padding:6px 8px;border-radius:7px;outline:none;width:100%;box-sizing:border-box;}",
   ".kp-field input:focus,.kp-field textarea:focus,.kp-field select:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  // 「编辑已打包的应用」下拉 + 「打开对应工作流」按钮并排：下拉吃掉剩余宽度，按钮不换行
+  ".kp-editrow{display:flex;gap:6px;align-items:center;}",
+  ".kp-editrow select{flex:1;min-width:0;}",
+  ".kp-editrow .kp-tbtn{flex:none;white-space:nowrap;padding:6px 9px;}",
   ".kp-chk{display:flex;align-items:center;gap:6px;font-size:11.5px;cursor:pointer;user-select:none;opacity:.9;}",
   ".kp-chk input{width:14px;height:14px;accent-color:var(--p-primary-color,#4a7dff);cursor:pointer;flex:none;}",
   ".kp-toolbar{display:flex;align-items:center;gap:8px;}",
@@ -1847,6 +1851,9 @@ let kpUnhookPick = null;     // 点选模式挂在 window 上的监听器（关�
 let kpSyncTimer = null;      // 「画布点选」定时器（关闭/重建时必须清，否则泄漏累积）
 let kpRefreshTimer = null;   // 侧栏面板的工作流切换监视器
 let kpOpenGraph = "";        // 打开面板时的工作流 id；生成前复核，防止拿着旧候选打包
+// 切完源工作流后面板会整块重建（候选必须按新画布重新收集），重建完要自动回到原来那个应用。
+// 这里存一下它的 id，由 loadApps 消费一次就清空。
+let kpRestoreApp = "";
 function kpOnKey(e) { if (e.key === "Escape") closePackPanel(); }
 
 function kpGraphKey() {
@@ -2048,6 +2055,24 @@ function defaultAppName() {
   return "untitled";
 }
 
+// 当前工作流文件相对「工作流目录」的路径 —— 写进 kapp 的 source，以后靠它切回画布。
+// ComfyUI 给的 path 形如 workflows/sub/x.json 或绝对路径，统一截掉 workflows/ 前缀，
+// 让后端能直接 join 到 WORKFLOW_DIR。未保存的新工作流没有路径，返回空串（就不写 source）。
+function currentWorkflowRel() {
+  try {
+    const mgr = app.extensionManager && app.extensionManager.workflow;
+    const wf = (mgr && mgr.activeWorkflow) || (app.workflowManager && app.workflowManager.activeWorkflow);
+    if (!wf) return "";
+    let p = String(wf.path || wf.fullFilename || wf.filename || "").replace(/\\/g, "/");
+    if (!p) return "";
+    const i = p.indexOf("workflows/");
+    if (i >= 0) p = p.slice(i + "workflows/".length);
+    return /^unsaved/i.test(p) ? "" : p;
+  } catch (_) {
+    return "";
+  }
+}
+
 function openPackPanel(hostEl) {
   ensurePackCss();
   const sidebar = !!hostEl;                         // 侧栏模式：内容直接挂进页签元素
@@ -2084,9 +2109,19 @@ function openPackPanel(hostEl) {
   editField.className = "kp-field";
   const editLab = document.createElement("label");
   editLab.textContent = t("Edit packaged app");
+  const editRow = document.createElement("div");
+  editRow.className = "kp-editrow";
   const editSel = document.createElement("select");
   editSel.appendChild(new Option(t("New app"), ""));
-  editField.append(editLab, editSel);
+  // 编辑已有应用时画布很可能不是打包它的那张图 —— 参数会全掉进「当前工作流中不存在」。
+  // 这个按钮按 kapp 里记的 source 把画布切回去，切完重建面板并重新选中同一个应用。
+  const openWfBtn = document.createElement("button");
+  openWfBtn.className = "kp-tbtn";
+  openWfBtn.textContent = t("Open its workflow");
+  openWfBtn.title = t("Switch the canvas to the workflow this app was packed from");
+  openWfBtn.style.display = "none";
+  editRow.append(editSel, openWfBtn);
+  editField.append(editLab, editRow);
 
   const nameField = document.createElement("div");
   nameField.className = "kp-field";
@@ -3203,6 +3238,9 @@ function openPackPanel(hostEl) {
     descInput.value = String(editing.kapp.desc || "");
     graphCb.checked = false;
     graphField.style.display = "";
+    openWfBtn.style.display = "";
+    openWfBtn.disabled = false;
+    openWfBtn.textContent = t("Open its workflow");
     const params = Array.isArray(editing.kapp.params) ? editing.kapp.params : [];
     const labelCount = {};
     pickOrder = [];                  // 清单按包里原来的顺序重建，别被画布顺序打乱
@@ -3256,6 +3294,7 @@ function openPackPanel(hostEl) {
     descInput.value = "";
     graphCb.checked = false;
     graphField.style.display = "none";
+    openWfBtn.style.display = "none";
     updateCount();
     applyFilter();
     setPrimaryLabel();
@@ -3278,6 +3317,13 @@ function openPackPanel(hostEl) {
         editSel.appendChild(o);
       }
       if (cur) editSel.value = cur;
+      // 切过源工作流：重建后自动选回原来那个应用，用户不用再点一次
+      if (kpRestoreApp) {
+        const want = kpRestoreApp;
+        kpRestoreApp = "";
+        editSel.value = want;
+        if (editSel.value === want) editSel.onchange();
+      }
     } catch (e) {
       console.warn("[kedou] 打包应用列表加载失败", e);
     }
@@ -3306,6 +3352,47 @@ function openPackPanel(hostEl) {
       err.textContent = t("Failed to load app: {msg}", { msg });
     }
   };
+  // 「打开对应工作流」：kapp 里记的 source 指到哪张，就把画布切回哪张。
+  // 老包没有 source 时把 .kapp.json 的路径丢给后端，由它按文件名扫一遍。
+  openWfBtn.onclick = async () => {
+    if (!editing) return;
+    const want = String((editing.kapp && editing.kapp.source) || editing.file || "").trim();
+    if (!want) return;
+    openWfBtn.disabled = true;
+    openWfBtn.textContent = t("Opening…");
+    const restoreBtn = () => {
+      openWfBtn.disabled = false;
+      openWfBtn.textContent = t("Open its workflow");
+    };
+    try {
+      const r = await fetch("/ps/pack/workflow?file=" + encodeURIComponent(want));
+      let j = null;
+      try { j = await r.json(); } catch (_) { /* ignore */ }
+      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+      // 这一步会整块替换画布：画布上有东西就先问一句，别把正在改的工作流冲掉
+      const hasNodes = !!(app.graph && app.graph._nodes && app.graph._nodes.length);
+      if (hasNodes) {
+        const ok = window.confirm(t("Replace the canvas with \"{name}\"? Unsaved changes in the current workflow will be lost.", { name: j.file }));
+        if (!ok) { restoreBtn(); return; }
+      }
+      kpRestoreApp = editSel.value || "";
+      await app.loadGraphData(j.workflow, true, true);
+      kpToast(t("Switched to {name}", { name: j.file }));
+      if (sidebar && hostEl) {
+        // 候选必须按新画布重新收集：骗一下那个 800ms 监视器，让它重建整个面板
+        hostEl.dataset.kpGraph = "__kedou_switch__";
+      } else {
+        // 浮层模式没有监视器，关掉重开（kpRestoreApp 会把它选回来）
+        closePackPanel();
+        openPackPanel();
+      }
+      restoreBtn();
+    } catch (e) {
+      restoreBtn();
+      err.textContent = serverError(e && e.message ? e.message : String(e));
+    }
+  };
+
   let syncOn = false, lastSel = null;
   syncBtn.onclick = () => {
     syncOn = !syncOn;
@@ -3573,6 +3660,12 @@ async function doGenerate(ctx) {
     params,
     outputs,
   });
+  // source 记「这包是从哪张工作流打的」，只为了以后能一键切回那张图。
+  // 新建、或勾了「用当前工作流更新图」时，源就是画布上现在这张，顺手刷新它。
+  if (updateGraph) {
+    const rel = currentWorkflowRel();
+    if (rel) kapp.source = rel;
+  }
   const payload = { name: kapp.name, desc: kapp.desc, kapp };
   if (editing) payload.target = editing.file;
   try {

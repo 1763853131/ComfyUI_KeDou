@@ -28,6 +28,58 @@ def _find_workflow_file(name: str):
     return None
 
 
+def _src_rel(p: str) -> str:
+    """kapp 的 source 一律存「相对工作流目录」的路径。
+
+    不存相对 ComfyUI 根（会变成 ../ComfyUI_xxx/...，换盘符/换机器就废），
+    也不存绝对路径。存成 `xxx.json` / `sub/xxx.json`，配 _resolve_workflow_rel 正好闭环。
+    """
+    try:
+        return os.path.relpath(p, paths.WORKFLOW_DIR).replace("\\", "/")
+    except Exception:                                # noqa: BLE001
+        return ""
+
+
+def _resolve_workflow_rel(rel: str):
+    """把 kapp 里的 source（相对工作流目录的路径）解析成绝对路径。
+
+    先按相对路径精确命中（子目录里同名文件不会认错），
+    老包 / 打包后改过名的再退回按文件名扫一遍。
+    结果必须落在 WORKFLOW_DIR 内，否则当不存在。
+    """
+    s = str(rel or "").strip().replace("\\", "/")
+    if not s:
+        return None
+    p = os.path.normpath(os.path.join(paths.WORKFLOW_DIR, s))
+    if paths._under(paths.WORKFLOW_DIR, p) and os.path.isfile(p):
+        # 应用包不是工作流：拿 .kapp.json 当源会把「切回工作流」变成一个死循环
+        if not p.lower().endswith(".kapp.json"):
+            return p
+    hit = _find_workflow_file(s)
+    if hit and hit.lower().endswith(".kapp.json"):
+        return None
+    return hit
+
+
+def load_workflow_file(rel: str) -> dict:
+    """GET /ps/pack/workflow —— 读工作流文件原文，给前端「切回对应工作流」用。
+
+    只认工作流目录内的真实文件；返回的是 **UI 格式**（nodes + links），
+    前端拿去直接喂 app.loadGraphData，不要在这里做任何转换。
+    """
+    p = _resolve_workflow_rel(rel)
+    if p is None:
+        return {"ok": False, "error": "找不到工作流文件：%s" % rel}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            wf = json.load(f)
+    except Exception as e:                           # noqa: BLE001
+        return {"ok": False, "error": "读取失败：%s" % e}
+    if not isinstance(wf, dict) or not isinstance(wf.get("nodes"), list):
+        return {"ok": False, "error": "不是 UI 格式工作流（缺 nodes）：%s" % rel}
+    return {"ok": True, "file": paths._rel(p), "workflow": wf}
+
+
 def _prompt_usage_of(class_type: str, name: str) -> str:
     """提示词主体输入 -> 同节点里承载「用途」的输入名（不是提示词主体则返回空串）。
 
@@ -165,11 +217,15 @@ def _param_value(node, object_info, ctype, name, saved=None, nid=""):
     return val
 
 
-def _build_kapp(wf, decls, name, desc, saved, object_info=None):
+def _build_kapp(wf, decls, name, desc, saved, object_info=None, source=""):
     """UI 工作流 + 参数声明 -> kapp 内容（不落盘）。
 
     pack_app（按文件打包）与 kapp_from_linear（按 App Builder 勾选打包）共用一套：
     同一张图、同一批声明，出来的包必须一模一样。
+
+    source 记「这张包是从哪个工作流文件打出来的」（相对工作流目录）。
+    它只服务于一件事：编辑已有应用时，面板能一键把画布切回那张工作流，
+    让参数重新映射到真实的节点行。没有它就只能靠文件名猜。
     """
     conv = apps._load_converter()
     if conv is None:
@@ -250,6 +306,9 @@ def _build_kapp(wf, decls, name, desc, saved, object_info=None):
         "params": kparams,
         "outputs": outputs,
     }
+    # source 只在知道时写：老包没有这个字段，前端会退回按文件名推断。
+    if source:
+        kapp["source"] = str(source)
     return {"ok": True, "kapp": kapp, "graph": graph, "params": kparams,
             "outputs": outputs, "warnings": warns}
 
@@ -275,7 +334,8 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         wf = json.load(f)
     saved = _load_app_state(path)                    # 打包时也带上面板保存值
     stem = paths._stem(os.path.basename(path))
-    built = _build_kapp(wf, decls, name or stem, desc, saved)
+    built = _build_kapp(wf, decls, name or stem, desc, saved,
+                        source=_src_rel(path))
     if not built["ok"]:
         return built
     out_path = os.path.join(os.path.dirname(path), stem + ".kapp.json")
@@ -289,7 +349,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
 
 
 def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
-                     object_info: dict = None) -> dict:
+                     object_info: dict = None, source: str = "") -> dict:
     """App Builder 的勾选结果 -> kapp（POST /ps/pack/linear）。
 
     官方构建器已经把「哪些参数、什么顺序、什么显示名」全定好了，kapp 不缺任何信息，
@@ -353,7 +413,8 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
         out_dir = paths.WORKFLOW_DIR
         out_path = os.path.join(out_dir, stem + ".kapp.json")
 
-    built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info)
+    built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info,
+                        source=source)
     if not built["ok"]:
         return built
     kapp = built["kapp"]
@@ -543,6 +604,16 @@ def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
     if not stem:
         return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
     warns = []
+    # source：前端记下的「这包是从哪个工作流打的」，只用于「切回工作流」。
+    # 不能拿它当路径直接用 —— 必须能解析到工作流目录里的真实文件，
+    # 解析不到就丢掉这个字段（宁可让前端退回按文件名猜，也不存一个永远点不动的指针）。
+    src = str(kapp.get("source") or "").strip()
+    if src:
+        ap = _resolve_workflow_rel(src)
+        if ap is None:
+            kapp = {k: v for k, v in kapp.items() if k != "source"}
+        else:
+            kapp = dict(kapp, source=_src_rel(ap))
     # 完整性校验：坏图坚决不落盘，把问题在人能看懂的地方说清楚
     vinfo = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()})) if compat.NODE_MAP else {}
     if vinfo:

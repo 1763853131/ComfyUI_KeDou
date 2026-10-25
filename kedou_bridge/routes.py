@@ -320,6 +320,17 @@ def register(routes):
         return compat.web.json_response(await asyncio.to_thread(
             pack.pack_candidates, request.query.get("source", "")))
 
+    @routes.get("/ps/pack/workflow")
+    async def ps_pack_workflow(request):
+        """GET /ps/pack/workflow?file=<相对工作流目录的路径> —— 读工作流原文。
+
+        给打包面板「打开对应工作流」用：kapp 里记的 source 指到哪张工作流，
+        就把那张 UI 图整份读出来，前端直接 app.loadGraphData。
+        只认工作流目录内的文件，越界一律当不存在。
+        """
+        return compat.web.json_response(await asyncio.to_thread(
+            pack.load_workflow_file, request.query.get("file", "")))
+
     @routes.post("/ps/pack")
     async def ps_pack(request):
         """POST /ps/pack {source, name?, desc?, params:[{node,input,label,widget}]}
@@ -391,5 +402,6 @@ def register(routes):
         result = await asyncio.to_thread(pack.kapp_from_linear,
                                          body.get("name"), body.get("workflow"),
                                          body.get("desc") or "",
-                                         body.get("target"))
+                                         body.get("target"), None,
+                                         str(body.get("source") or ""))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)

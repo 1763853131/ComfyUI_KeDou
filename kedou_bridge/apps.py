@@ -384,6 +384,8 @@ def list_kapps() -> list:
             "desc": str(data.get("desc") or ""),
             "param_count": len(data.get("params") or []),
             "node_count": len(data.get("graph") or {}),
+            # source 是打包时记下的源工作流（相对工作流目录）；老包没有，前端退回按文件名猜。
+            "source": str(data.get("source") or ""),
         })
     out.sort(key=lambda x: str(x.get("name") or "").lower())
     return out
