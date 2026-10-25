@@ -124,6 +124,11 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
         return "toggle"
     if decl == "COMBO":
         return "combo"
+    # 「创建边界框」那套框选控件（comfy_api 的 BOUNDING_BOX / BOUNDING_BOXES）。
+    # 值是 [{x,y,width,height,metadata}]，既不是数字也不是文本：给独立类型 bbox，
+    # 应用里渲染成能拖框的画布；认不出这个类型的老客户端会退回文本框，不会坏。
+    if decl in ("BOUNDING_BOX", "BOUNDING_BOXES"):
+        return "bbox"
     if isinstance(cfg, dict):
         ch = cfg.get("choices") or cfg.get("options")
         if isinstance(ch, (list, tuple)) and ch:
@@ -139,6 +144,8 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
             return "toggle"
         if t == "COMBO":
             return "combo"
+        if t in ("BOUNDING_BOX", "BOUNDING_BOXES"):
+            return "bbox"
         if t == "STRING":
             return "text"
         break
@@ -179,6 +186,9 @@ def pack_candidates(source: str) -> dict:
                 vi += 1                     # control_after_generate 隐藏格
             if name in absorbed:
                 continue
+            # 「创建边界框」画布的内部状态：只是「上次从上游吃到什么」，露出来纯噪音
+            if name == "last_incoming":
+                continue
             widget = _suggest_widget(object_info, ctype, name, node)
             item = {
                 "node": str(node.get("id")),
@@ -188,6 +198,14 @@ def pack_candidates(source: str) -> dict:
                 "widget": widget,
                 "default": default,
             }
+            if widget == "bbox":
+                # 画布比例要跟节点一致：框是像素坐标，比例不同画出来的框到节点里就歪了
+                for k in ("width", "height"):
+                    if k not in names:
+                        continue
+                    v2 = _param_value(node, object_info, ctype, k, saved, str(node.get("id")))
+                    if isinstance(v2, (int, float)):
+                        item["canvas_w" if k == "width" else "canvas_h"] = v2
             usage = _prompt_usage_of(ctype, name)
             if usage:
                 item["usage_input"] = usage
@@ -283,6 +301,20 @@ def _build_kapp(wf, decls, name, desc, saved, object_info=None, source=""):
             item["options"] = spec.get("options") or []
         if widget == "text" and spec.get("multiline"):
             item["multiline"] = True
+        if widget == "bbox":
+            # 画布尺寸：应用里画框按同比例，坐标才对得上节点。前端打包时已带上，
+            # 这里只兜底（手写参数 / 旧面板没传时从节点上补）。
+            for k, fld in (("width", "canvas_w"), ("height", "canvas_h")):
+                v = p.get(fld)
+                if not isinstance(v, (int, float)) and node:
+                    v = _param_value(node, object_info, ctype, k, saved, node_id)
+                if isinstance(v, (int, float)):
+                    item[fld] = v
+            # API 图里数组型控件值是 {"__value__": [...]}（执行器把裸 list 当连线）。
+            # kapp 的 default 存裸数组，读的一方不用猜这层包装。
+            _dv = item.get("default")
+            if isinstance(_dv, dict) and "__value__" in _dv:
+                item["default"] = _dv["__value__"]
         if widget == "prompt":
             usage = str(p.get("usage_input") or "")
             if not usage and node:

@@ -1667,14 +1667,15 @@ app.registerExtension({
 // 的 output 即 API 格式）与勾选参数 POST 到 /ps/pack/save。不依赖工作流先保存。
 // 这套逻辑与上面的 KedouImageLoader 面板完全独立，互不影响。
 
-const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media", "prompt"];
+const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media", "prompt", "bbox"];
 // 下拉里显示的名字：值是落进 kapp 的协议字段，不能翻；只有显示名走 t()。
 // 说明：toggle 在 PS 面板里渲染成真开关（spec.type == BOOLEAN → .sw），所以叫「开关」；
-// prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框。
+// prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框；
+// bbox 是「创建边界框」节点那套框选数据，启动器里渲染成能直接拖框的画布。
 const KP_WIDGET_LABEL = {
   text: "Text", number: "Number", toggle: "Switch",
   combo: "Dropdown", image: "Image", kedou_media: "Kedou image loader",
-  prompt: "Kedou prompt",
+  prompt: "Kedou prompt", bbox: "Bounding boxes",
 };
 // 主题适配（2026-09-28）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
 // 实测取自本机 comfyui_frontend_package 的 main-*.css：
@@ -1878,6 +1879,11 @@ function kpPreview(v, widget) {
     const s = String(v == null ? "" : v);
     return (s.split("/").pop() || t("(not selected)")).slice(0, 40);
   }
+  // 边界框：值是一串框对象，直接 JSON 出来是一屏括号，看不出有几个框
+  if (widget === "bbox") {
+    const n = Array.isArray(v) ? v.length : 0;
+    return n ? t("{n} box(es)", { n }) : t("(empty)");
+  }
   if (v === true || v === false) return String(v);
   if (v == null) return t("(empty)");
   let s = typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -1904,7 +1910,10 @@ const KP_WIDGET_KIND = {
   progresstext: null, textpreview: null, text_preview: null,
   audiorecord: null, audioui: null, audio_ui: null,
   load3d: null, load3dadvanced: null, camerainfo: null, cameraangle: null,
-  imagecrop: null, boundingbox: null, boundingboxes: null,
+  imagecrop: null,
+  // 「创建边界框」节点的框选控件：值是 [{x,y,width,height,metadata}]。
+  // 它既不是数字也不是文本，打包时给独立类型 bbox，应用里渲染成能拖框的画布。
+  boundingbox: "bbox", boundingboxes: "bbox",
   curve: null, painter: null, compositor: null, range: null, videoedit: null,
   colors: null, resolutionpreview: null,
   legacy: "",                    // 未知的旧控件：交给值/选项兜底
@@ -1961,6 +1970,9 @@ function collectCandidates() {
     for (const w of widgets) {
       if (!w || !w.name) continue;
       if (w.name === "control_after_generate" || w.type === "control_after_generate") continue;
+      // 「创建边界框」画布的内部状态：记录上一次从上游吃到什么，用来判断要不要重新初始化画布。
+      // 它跟着框数据一起序列化，但露到应用面板上就是个纯噪音参数（而且改了会让画布重置）。
+      if (w.name === "last_incoming") continue;
       if (absorbed.has(w.name)) continue;
       // DOM 控件是节点自绘的面板 UI 本身（图片选择器 / 提示词输入框），没有值，不能当参数
       if (w.type === "div" || w.name === "kedou_media" || w.name === "kedou_promptbox") continue;
@@ -2001,11 +2013,21 @@ function collectCandidates() {
       }
       // 控件自己的标题（本地化 label），不是节点标题；没有就用控件名
       const label = String(w.label || w.displayName || w.name || "").trim() || w.name;
+      // 边界框要连带画布尺寸：框是像素坐标，应用里按别的比例画完再交给节点，
+      // 坐标就全歪了。width/height 就在同一个节点上，顺手取。
+      let canvasW, canvasH;
+      if (widget === "bbox") {
+        const ww = widgets.find((x) => x && x.name === "width");
+        const wh = widgets.find((x) => x && x.name === "height");
+        if (ww && typeof ww.value === "number") canvasW = ww.value;
+        if (wh && typeof wh.value === "number") canvasH = wh.value;
+      }
       out.push({
         node: String(node.id), input: w.name, widget, default: w.value,
         node_type: ntype, node_title: title,
         min, max, step, options, multiline,
         usage_input: usageInput, usage_options: usageOptions, usage_default: usageDefault,
+        canvas_w: canvasW, canvas_h: canvasH,
         label,
         valuePreview: kpPreview(w.value, widget),
       });
@@ -3426,6 +3448,11 @@ async function doGenerate(ctx) {
       if (!p.usage_input && c.usage_input) p.usage_input = c.usage_input;
       if (!p.usage_options && c.usage_options) p.usage_options = c.usage_options;
       if (p.usage_default === undefined && c.usage_default !== undefined) p.usage_default = c.usage_default;
+    }
+    if (p.widget === "bbox") {
+      // 画布比例跟着节点的 width/height 走（换图时以画布当前值为准）
+      if (updateGraph || p.canvas_w == null) { if (c.canvas_w != null) p.canvas_w = c.canvas_w; }
+      if (updateGraph || p.canvas_h == null) { if (c.canvas_h != null) p.canvas_h = c.canvas_h; }
     }
     return p;
   });

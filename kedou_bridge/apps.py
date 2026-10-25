@@ -9,7 +9,7 @@ import os
 from . import compat, paths
 from .common import (DOM_HANDLE_KIND, KIND_CN, NOISE_INPUTS, _clean_label,
                      _kind_of, _panel_widget, _ref_parts, _widget_values)
-from .registry import (build_object_info, widget_spec, _unknown_in_ui,
+from .registry import (build_object_info, widget_spec, _find_spec, _unknown_in_ui,
                        _unknown_types, _widget_index)
 from .state import _load_app_state, _save_app_state
 
@@ -53,12 +53,15 @@ def find_app_files(root: str = None) -> list:
 # 打包：POST /ps/pack（source = 任意 UI 格式工作流，含 .app.json）。
 # 插件仍是纯通道：声明是什么就是什么，不针对任何应用做特判。
 
-_KAPP_WIDGETS = ("text", "number", "toggle", "combo", "image", "kedou_media", "prompt")
+_KAPP_WIDGETS = ("text", "number", "toggle", "combo", "image", "kedou_media", "prompt", "bbox")
 _KAPP_KIND = {"text": "text", "number": "number", "toggle": "bool",
               "combo": "combo", "image": "image", "kedou_media": "text",
               # prompt 是「提示词 + 用途」复合控件；kind 仍报 text，
               # 不认识新 widget 的旧客户端退回普通文本框，不会坏。
-              "prompt": "text"}
+              "prompt": "text",
+              # bbox 是「创建边界框」的框选数据，应用里渲染成能拖框的画布。
+              # 同样：认不出 bbox 的旧客户端按 widget 名兜底成 text，不会崩。
+              "bbox": "bbox"}
 
 
 def _is_kapp(path: str) -> bool:
@@ -125,6 +128,21 @@ def _kapp_param_item(entry: dict, object_info: dict) -> dict:
                 item["usage_options"] = [str(x) for x in uopts if str(x)]
             if entry.get("usage_default") is not None:
                 item["usage_default"] = entry.get("usage_default")
+    if widget == "bbox":
+        # 画布尺寸随声明走：应用里按同比例画框，像素坐标才对得上节点。
+        # 声明里没写就退回节点自己 width/height 的默认值（旧包 / 手写参数）。
+        for fld, src in (("canvas_w", "width"), ("canvas_h", "height")):
+            v = entry.get(fld)
+            if not isinstance(v, (int, float)):
+                _d, cfg2 = _find_spec(object_info or {}, ctype, src)
+                v = cfg2.get("default") if isinstance(cfg2, dict) else None
+            if isinstance(v, (int, float)):
+                item[fld] = v
+        # 默认值在 API 图里是 {"__value__": [...]}（执行器把裸 list 当连线，见 _inject_values）。
+        # 面板层不需要知道这层包装，拆成裸数组再给前端。
+        _dv = item.get("default")
+        if isinstance(_dv, dict) and "__value__" in _dv:
+            item["default"] = _dv["__value__"]
     if input_name in NOISE_INPUTS:
         item["hidden"] = True              # 管道参数，面板不显示
     return item
@@ -599,6 +617,13 @@ def _inject_values(graph: dict, values: dict):
         if (isinstance(cur, list) and len(cur) == 2 and isinstance(cur[0], str)):
             skipped.append({"key": key, "why": "该输入是连线，不能直接赋值"})
             continue
+        # 列表值必须包一层 __value__：ComfyUI 执行器（execution.py 的输入校验）把
+        # **任何 list 都当成节点连线** —— 期望 [节点id, 槽号]，长度不是 2 直接报
+        # bad_linked_input，长度正好是 2 还会去 prompt[val[0]] 里查节点然后崩。
+        # 前端 graphToPrompt() 对数组型控件包这一层就是这个原因，不是可选的格式糖。
+        # 边界框（editor_state）的默认值就是这样存进 kapp 的。
+        if isinstance(val, list):
+            val = {"__value__": val}
         node["inputs"][widget] = val
         applied.append(key)
     return applied, skipped, failed

@@ -60,7 +60,12 @@ def _unknown_in_ui(wf: dict) -> dict:
 
 
 # ---------------------------------------------------------------- 控件下标
-_WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"}
+# BOUNDING_BOX / BOUNDING_BOXES：「创建边界框」节点的框选控件（comfy_api 的 io 类型）。
+# 它们是**会序列化进 widgets_values 的控件**，不列进来就会整体错位 ——
+# 之前漏了这两种，editor_state 被当成纯输入过滤掉，打包面板上这个节点只剩
+# 「高度」「数字」两个参数（2026-10-26 用户报的正是这个）。
+_WIDGET_TYPES = {"INT", "FLOAT", "STRING", "BOOLEAN", "COMBO",
+                 "BOUNDING_BOX", "BOUNDING_BOXES"}
 
 
 def _is_widget_spec(spec) -> bool:

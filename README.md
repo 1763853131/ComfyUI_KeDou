@@ -420,6 +420,10 @@ mousedown / mouseup / click，不会顺手把参数带进输入状态。老渲�
   老工作流没有这个字段时仍按声明顺序取下标。
 - 自绘节点的 DOM 把手（`kedou_media` / `kedou_promptbox`）读回时还原成数据控件
   （`media_state` / `prompt_state`），类型按图像输入 / 提示词处理，默认值取真实控件那份。
+- `BOUNDING_BOX` / `BOUNDING_BOXES`（「创建边界框」的框选控件）识别成 **`bbox`**：
+  它是会写进 `widgets_values` 的真控件，漏掉会让同节点的参数下标整体错位；
+  应用里渲染成能直接拖框的画布，值是 `[{x, y, width, height, metadata}]`（像素坐标）。
+  同节点的 `last_incoming` 是画布内部状态，不列为候选。
 
 ---
 

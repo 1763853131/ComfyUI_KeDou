@@ -73,6 +73,8 @@
   "Image": "画布图像",
   "Kedou image loader": "蝌蚪图片加载器",
   "Kedou prompt": "蝌蚪提示词",
+  "Bounding boxes": "边界框",
+  "{n} box(es)": "{n} 个框",
   "Select at least one parameter": "请至少勾选一个参数",
   "Generating…": "生成中…",
   "Failed to get workflow: {msg}": "获取工作流失败：{msg}",
