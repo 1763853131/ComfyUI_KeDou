@@ -172,16 +172,19 @@ custom_nodes/ComfyUI_KeDou/
 先选模型，再输入 `@` 或点 **@ 图片**，从画布上的「蝌蚪图片加载器」里选一张插入；
 弹出的列表里每张图都带缩略图、输出槽号和文件名，不用靠文件名猜。
 下拉项把模型名放在前面（`Seedance · @图片N`、`MiniMax H3 · <Picture N>`…），找起来更快。
+下拉**按用途过滤**：选「图像编辑」时只列 `Generic` 和 `Flux 3`，视频模型的写法不会混进来；
+选视频用途时也不列 `Flux 3`。换用途时如果原来选的写法在新用途里用不了，
+会自动换成一个能用的，并把提示词里已经写好的 token 一起改掉（切回去能恢复）。
 **图片本身仍要接到模型**，这里只负责写对提示词。
 
-| 写法 | 模型 / 入口 | 示例 |
-|---|---|---|
-| `@图片N` / `@Image N` | Seedance 2.x | `@图片1 的人物作为主体` |
-| `<Picture N>` | MiniMax H3 | `<Subject 1> is the person in <Picture 1>` |
-| `图 N` / `Image N` | 万相 Wan 2.7 | `图 1 在图 2 里玩耍` |
-| `@图N` | Vidu Q2+（网页/Studio） | `@图3 骑着 @图1，在 @图2 上飞驰` |
-| `<<<image_N>>>` | 可灵 3.0 Omni（API） | `一只<<<image_1>>>在月光下奔跑` |
-| `{ref_image_N}` | Flux 3 / Kontext | `In {ref_image_0}, replace the earring` |
+| 写法 | 模型 / 入口 | 适用用途 | 示例 |
+|---|---|---|---|
+| `@图片N` / `@Image N` | Generic（兜底）/ Seedance 2.x | 全部 | `@图片1 的人物作为主体` |
+| `<Picture N>` | MiniMax H3 | 视频 | `<Subject 1> is the person in <Picture 1>` |
+| `图 N` / `Image N` | 万相 Wan 2.7 | 视频 | `图 1 在图 2 里玩耍` |
+| `@图N` | Vidu Q2+（网页/Studio） | 视频 | `@图3 骑着 @图1，在 @图2 上飞驰` |
+| `<<<image_N>>>` | 可灵 3.0 Omni（API） | 视频 | `一只<<<image_1>>>在月光下奔跑` |
+| `{ref_image_N}` | Flux 3 / Kontext | 图像编辑 | `In {ref_image_0}, replace the earring` |
 
 补充：可灵网页端输入 `@` 调用的是元素名；H3 还有 `<Video N>`、`<Audio N>`、`<Subject N>`；
 万相的中英文编号分别计数（`图 1` 与 `视频 1` 互不影响）；Veo 3.1 / Luma Ray3 不用编号 token，
