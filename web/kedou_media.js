@@ -3113,7 +3113,8 @@ function openPackPanel(hostEl) {
       const wfB = document.createElement("button");
       wfB.className = "kp-tbtn";
       wfB.textContent = t("Workflow");
-      wfB.disabled = !a.source;
+      // 不置灰：11 个老包全都没有 source，一排灰按钮看着像坏了。
+      // 点了如实说明「旧包没记来源，重新打包一次就好」，比灰着等人来猜强。
       wfB.title = a.source
         ? t("Open the workflow this app was packed from in a tab")
         : t("This app was packed before the source workflow was recorded; re-pack it once and this button will work.");
@@ -3190,7 +3191,10 @@ function openPackPanel(hostEl) {
   //   ③ 列表里没有（刚建 / 刚改名）→ 读文件内容，作为临时工作流开新页签
   const openSourceWorkflow = async (a, btn) => {
     const want = String((a && a.source) || "").trim();
-    if (!want) return;
+    if (!want) {
+      kpToast(t("This app was packed before the source workflow was recorded; re-pack it once and this button will work."), true);
+      return;
+    }
     const old = btn.textContent;
     btn.disabled = true;
     btn.textContent = t("Opening…");
