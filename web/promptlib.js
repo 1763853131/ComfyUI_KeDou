@@ -46,25 +46,27 @@ const usageLabel = (u) => t(USAGE_LABELS[u] || u);
 // 每种写法属于哪些用途。视频模型（Seedance / MiniMax H3 / Wan / Vidu / Kling）
 // 的 token 写进「图像编辑」的提示词里模型根本不认，所以按用途过滤下拉 ——
 // 别让用户在一堆用不上的选项里翻。不写 uses 表示所有用途都能用（Generic 就是兜底写法）。
+// label 只写模型名：下拉里挂着「· @图片N」这种后缀太长，占地方又没用 ——
+// 具体插进去是什么格式由 token 决定，用户写的时候自然就看到结果了。
 const VIDEO_REF_USAGES = ["图生视频", "参考生视频"];
 const REF_STYLES = [
-  { id: "generic", label: "Generic · @图片N", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
-  { id: "seedance-zh", label: "Seedance · @图片N", uses: VIDEO_REF_USAGES,
+  { id: "generic", label: "Generic", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
+  { id: "seedance-zh", label: "Seedance", uses: VIDEO_REF_USAGES,
     token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
-  { id: "seedance-en", label: "Seedance EN · @Image N", uses: VIDEO_REF_USAGES,
+  { id: "seedance-en", label: "Seedance EN", uses: VIDEO_REF_USAGES,
     token: (n) => `@Image ${n}`, re: /@Image (\d+)/g },
-  { id: "h3", label: "MiniMax H3 · <Picture N>", uses: VIDEO_REF_USAGES,
+  { id: "h3", label: "MiniMax H3", uses: VIDEO_REF_USAGES,
     token: (n) => `<Picture ${n}>`, re: /<Picture (\d+)>/g },
-  { id: "wan-zh", label: "Wan · 图 N", uses: VIDEO_REF_USAGES,
+  { id: "wan-zh", label: "Wan", uses: VIDEO_REF_USAGES,
     token: (n) => `图 ${n}`, re: /图 (\d+)/g },
-  { id: "wan-en", label: "Wan EN · Image N", uses: VIDEO_REF_USAGES,
+  { id: "wan-en", label: "Wan EN", uses: VIDEO_REF_USAGES,
     token: (n) => `Image ${n}`, re: /Image (\d+)/g },
-  { id: "vidu", label: "Vidu · @图N", uses: VIDEO_REF_USAGES,
+  { id: "vidu", label: "Vidu", uses: VIDEO_REF_USAGES,
     token: (n) => `@图${n}`, re: /@图(\d+)/g },
-  { id: "kling", label: "Kling Omni API · <<<image_N>>>", uses: VIDEO_REF_USAGES,
+  { id: "kling", label: "Kling Omni API", uses: VIDEO_REF_USAGES,
     token: (n) => `<<<image_${n}>>>`, re: /<<<image_(\d+)>>>/g },
   // Flux 3 / Kontext：参考图写作 {ref_image_0}，第一张图是 0 号。图像编辑专用。
-  { id: "flux3", label: "Flux 3 · {ref_image_N}", base: 0, uses: ["图像编辑"],
+  { id: "flux3", label: "Flux 3", base: 0, uses: ["图像编辑"],
     token: (n) => `{ref_image_${n - 1}}`, re: /\{ref_image_(\d+)\}/g },
 ];
 const REF_STORE_KEY = "kedou_ref_style";
@@ -2146,6 +2148,11 @@ function insertRefToken(ta, sync, styleId, n, triggerAt) {
 
 // ───────── KedouPromptBox 节点面板 ─────────
 function buildPromptBox(node) {
+  // 幂等保护：重复构建会多出一张卡片，而 ComfyUI 的 DOM 控件只认第一次注册的那个 ——
+  // 第二次建的卡片会被丢掉，但 node.__kdPbox 会指向被丢掉的那张，
+  // 于是界面显示的是卡片 A、代码读写的却是卡片 B。真发生时症状是「输入框里有字，提交上去是空」。
+  // 实测「新建节点」和「加载工作流」都只触发一次 nodeCreated，这里只是防着别的路径重复触发。
+  if (node.__kdPbox && (node.widgets || []).some((w) => w && w.name === "kedou_promptbox")) return;
   const pw = (node.widgets || []).find((w) => w.name === "prompt_state");
   const uw = (node.widgets || []).find((w) => w.name === "usage");
   if (!pw) return;
