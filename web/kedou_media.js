@@ -1673,8 +1673,8 @@ const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media",
 // prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框。
 const KP_WIDGET_LABEL = {
   text: "Text", number: "Number", toggle: "Switch",
-  combo: "Dropdown", image: "Image", kedou_media: "Kedou image set",
-  prompt: "Prompt box",
+  combo: "Dropdown", image: "Image", kedou_media: "Kedou image loader",
+  prompt: "Kedou prompt",
 };
 // 主题适配（2026-09-28）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
 // 实测取自本机 comfyui_frontend_package 的 main-*.css：
