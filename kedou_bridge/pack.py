@@ -107,6 +107,10 @@ def _ui_widget_names(node: dict) -> list:
     return out
 
 
+# 「创建边界框」框选控件的内部标题：这些名字对人没有信息量，打包时换成「边界框」
+_BBOX_INTERNAL_LABELS = ("编辑器状态", "边界框状态", "editor_state", "last_incoming", "editor state")
+
+
 def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = None) -> str:
     """打包候选的建议 widget（按节点声明推断，仅几处品牌特判：本家节点）。
     自定义类型名不按名称推断：声明 cfg 里带 choices/options 选项列表的即为下拉 ——
@@ -190,10 +194,15 @@ def pack_candidates(source: str) -> dict:
             if name == "last_incoming":
                 continue
             widget = _suggest_widget(object_info, ctype, name, node)
+            label = _clean_label(node, name)
+            # 「创建边界框」的框选控件标题是内部名字（真机是「编辑器状态」），
+            # 应用面板上换成类型名，否则用户看不出这个参数是让他画框的
+            if widget == "bbox" and label.strip().lower() in _BBOX_INTERNAL_LABELS:
+                label = "边界框"
             item = {
                 "node": str(node.get("id")),
                 "input": name,
-                "label": _clean_label(node, name),
+                "label": label,
                 "node_type": ctype,
                 "widget": widget,
                 "default": default,
@@ -283,6 +292,8 @@ def _build_kapp(wf, decls, name, desc, saved, object_info=None, source=""):
             label = str(p.get("label") or _clean_label(node, input_name))
         else:
             label = str(p.get("label") or input_name)
+        if widget == "bbox" and label.strip().lower() in _BBOX_INTERNAL_LABELS:
+            label = "边界框"
         spec = widget_spec(object_info, ctype, input_name)
         item = {
             "node": node_id,

@@ -1896,6 +1896,10 @@ function promptUsageOf(ntype, name) {
   return (ntype === "KedouPromptBox" && name === "prompt_state") ? "usage" : "";
 }
 
+// 「创建边界框」那几个控件的默认标题都是内部名字（真机是「编辑器状态」），
+// 打包时换成类型名 —— 应用面板上不该出现一个用户看不懂的参数名。
+const BBOX_INTERNAL_LABELS = /^(编辑器状态|边界框状态|editor_state|last_incoming|editor state)$/i;
+
 // ComfyUI 1.55 的控件 canonical 类型与别名（前端 vA 注册表）。
 // 真机 widget.type 是 "number"/"combo"/"toggle"/"customtext" 这类小写名，
 // 不是 INPUT_TYPES 里的 "INT"/"FLOAT"；旧版只认大写，数值框就会退化成文本。
@@ -1982,11 +1986,16 @@ function collectCandidates() {
       if (w.type === "converted-widget" && Array.isArray(node.inputs)
           && node.inputs.some((inp) => inp && inp.name === w.name && inp.link != null)) continue;
       const opt = w.options && typeof w.options === "object" ? w.options : {};
+      const kind0 = widgetKind(w.type);
       if (!special) {
         // 按钮 / 预览 / 曲线 / 3D 等专用控件不是参数；不进应用面板
-        if (widgetKind(w.type) === null) continue;
+        if (kind0 === null) continue;
         // 不随工作流序列化、只在画布或属性面板展示的控件也不适合打包
-        if (opt.serialize === false || opt.canvasOnly || opt.hideInPanel) continue;
+        if (opt.serialize === false || opt.canvasOnly) continue;
+        // hideInPanel 只是「别在节点的属性面板里显示」这个 UI 提示，**不等于这个值没用** ——
+        // 「创建边界框」的 editor_state 就带着它（真机实测 hideInPanel:true），
+        // 而它正是要打包的东西。只对 bbox 放行，其余保持原样。
+        if (opt.hideInPanel && kind0 !== "bbox") continue;
       }
       const widget = suggestWidget(node, w);
       // 能力采集与建议类型解耦：选项/范围/多行一律从真机控件对象取下来存进候选，
@@ -2012,7 +2021,9 @@ function collectCandidates() {
         usageDefault = uw ? uw.value : undefined;
       }
       // 控件自己的标题（本地化 label），不是节点标题；没有就用控件名
-      const label = String(w.label || w.displayName || w.name || "").trim() || w.name;
+      let label = String(w.label || w.displayName || w.name || "").trim() || w.name;
+      // 「编辑器状态」这种内部名字换成人话（边界框）
+      if (widget === "bbox" && BBOX_INTERNAL_LABELS.test(label)) label = t("Bounding boxes");
       // 边界框要连带画布尺寸：框是像素坐标，应用里按别的比例画完再交给节点，
       // 坐标就全歪了。width/height 就在同一个节点上，顺手取。
       let canvasW, canvasH;
