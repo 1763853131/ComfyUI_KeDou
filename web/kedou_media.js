@@ -3352,7 +3352,10 @@ function openPackPanel(hostEl) {
       err.textContent = t("Failed to load app: {msg}", { msg });
     }
   };
-  // 「打开对应工作流」：kapp 里记的 source 指到哪张，就把画布切回哪张。
+  // 「打开对应工作流」：全程走 ComfyUI 自己的页签机制，**绝不动当前画布**。
+  //   ① 已经开着的页签里有 → 切过去（就是点页签，未保存的改动留在各自页签里）
+  //   ② 磁盘工作流列表里有 → 开新页签
+  //   ③ 列表里没有（刚建/刚改名）→ 读文件内容，作为临时工作流开新页签
   // 老包没有 source 时把 .kapp.json 的路径丢给后端，由它按文件名扫一遍。
   openWfBtn.onclick = async () => {
     if (!editing) return;
@@ -3365,27 +3368,47 @@ function openPackPanel(hostEl) {
       openWfBtn.textContent = t("Open its workflow");
     };
     try {
+      const mgr = app.extensionManager && app.extensionManager.workflow;
+      if (!mgr || typeof mgr.openWorkflow !== "function") {
+        throw new Error(t("This ComfyUI frontend has no workflow tabs; update ComfyUI."));
+      }
+      // computed ref 和普通数组都兜住
+      const listOf = (x) => (x && x.value !== undefined ? x.value : x) || [];
+      const norm = (s) => String(s || "").replace(/\\/g, "/");
+      const target = norm(want);
+      // fullFilename 就是「相对工作流目录」的名字，正好和 kapp 里的 source 同格式
+      const same = (w) => {
+        if (!w) return false;
+        const rel = norm(w.fullFilename);
+        const p = norm(w.path);
+        return rel === target || p === "workflows/" + target || p.endsWith("/" + target);
+      };
+      kpRestoreApp = editSel.value || "";   // 切完面板会重建，把它选回来
+
+      // ① 已打开的页签：直接切，画布内容由 ComfyUI 自己的页签机制接管
+      const opened = listOf(mgr.openWorkflows).find(same);
+      if (opened) {
+        await mgr.openWorkflow(opened);
+        kpToast(t("Switched to {name}", { name: opened.fullFilename || target }));
+        restoreBtn();
+        return;
+      }
+      // ② 磁盘上有这张：openWorkflow 发现它没开过就会新开一个页签
+      const onDisk = listOf(mgr.workflows).find(same);
+      if (onDisk) {
+        await mgr.openWorkflow(onDisk);
+        kpToast(t("Opened {name} in a new tab", { name: onDisk.fullFilename || target }));
+        restoreBtn();
+        return;
+      }
+      // ③ 列表里没有：读文件内容，造一个临时工作流开新页签（同样不碰当前画布）
       const r = await fetch("/ps/pack/workflow?file=" + encodeURIComponent(want));
       let j = null;
       try { j = await r.json(); } catch (_) { /* ignore */ }
       if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
-      // 这一步会整块替换画布：画布上有东西就先问一句，别把正在改的工作流冲掉
-      const hasNodes = !!(app.graph && app.graph._nodes && app.graph._nodes.length);
-      if (hasNodes) {
-        const ok = window.confirm(t("Replace the canvas with \"{name}\"? Unsaved changes in the current workflow will be lost.", { name: j.file }));
-        if (!ok) { restoreBtn(); return; }
-      }
-      kpRestoreApp = editSel.value || "";
-      await app.loadGraphData(j.workflow, true, true);
-      kpToast(t("Switched to {name}", { name: j.file }));
-      if (sidebar && hostEl) {
-        // 候选必须按新画布重新收集：骗一下那个 800ms 监视器，让它重建整个面板
-        hostEl.dataset.kpGraph = "__kedou_switch__";
-      } else {
-        // 浮层模式没有监视器，关掉重开（kpRestoreApp 会把它选回来）
-        closePackPanel();
-        openPackPanel();
-      }
+      const tmp = mgr.createTemporary(target.split("/").pop(), j.workflow);
+      await mgr.openWorkflow(tmp);
+      kpToast(t("Opened {name} in a new tab", { name: j.file }));
       restoreBtn();
     } catch (e) {
       restoreBtn();
