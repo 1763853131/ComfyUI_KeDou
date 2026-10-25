@@ -2165,8 +2165,19 @@ function buildPromptBox(node) {
   ta.placeholder = t('Enter a prompt… open "Prompts" to insert / "Save" to store under the current usage');
   ta.value = String(pw.value || "");
 
+  // 每次现从 node.widgets 里找，不用闭包里那个 pw：
+  // ComfyUI 有几个时机（重建控件、把控件转成输入再转回来、节点定义重载）
+  // 会把 widgets 里的对象整个换掉，闭包里的老引用就成了孤儿 ——
+  // 往里写值不报错、界面照常显示，但提交时读到的是新对象，值是空。
+  // 表现就是「输入框里明明有字，跑出来却是空」。
+  function pwNow() {
+    const w = (node.widgets || []).find((x) => x && x.name === "prompt_state");
+    return w || pw;
+  }
   function sync() {
-    pw.value = ta.value;
+    const w = pwNow();
+    if (!w) return;
+    if (w.value !== ta.value) w.value = ta.value;
     try { node.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }
   }
   let usedT = null;
@@ -2417,16 +2428,20 @@ function buildPromptBox(node) {
     }
   };
 
-  node.addDOMWidget("kedou_promptbox", "div", card, {
-    getMinHeight: () => 240, serialize: false, hideOnZoom: false,
+  // serialize 必须设在控件对象上：addDOMWidget 的第 4 个参数是 options，
+  // ComfyUI 只认 widget.serialize，写在 options 里不生效 ——
+  // 不生效时自绘控件会跟着进 widgets_values，白占一格 ""。
+  const domW = node.addDOMWidget("kedou_promptbox", "div", card, {
+    getMinHeight: () => 240, hideOnZoom: false,
   });
+  try { if (domW) domW.serialize = false; } catch (_) { /* ignore */ }
   node._kdCard = card;
 
   const prevCfg = node.onConfigure;
   node.onConfigure = function () {
     const r = typeof prevCfg === "function" ? prevCfg.apply(this, arguments) : undefined;
     setTimeout(() => {
-      ta.value = String(pw.value || "");
+      ta.value = String((pwNow() || {}).value || "");
       ta.__kdIns = null;          // 工作流切换/重载：旧的插入记录不再可信
       useSel.value = String((uw && uw.value) || USAGES[0]);
       refSel.value = loadRefStyleId();
@@ -2455,6 +2470,43 @@ function refreshAllPbox() {
       if (n.__kdPbox && n.__kdPbox.paintChips) n.__kdPbox.paintChips();
     }
   } catch (_) { /* ignore */ }
+}
+
+// 提交前把所有提示词框的输入框内容强行写回控件。
+// 输入框是自绘的（数据控件被 hidden），两者只靠 input 事件同步：
+// 只要有一条输入路径没触发 input（或者控件对象被 ComfyUI 换过），
+// 就会出现「界面上有字、提交上去是空」。这里在唯一出口兜一次，
+// 保证「输入框里有字 = 提交的 prompt_state 有字」。
+function syncAllPbox() {
+  let fixed = 0;
+  try {
+    for (const n of ((app.graph && app.graph._nodes) || [])) {
+      const p = n.__kdPbox;
+      if (!p || !p.ta) continue;
+      const w = (n.widgets || []).find((x) => x && x.name === "prompt_state");
+      if (!w) continue;
+      if (w.value !== p.ta.value) { w.value = p.ta.value; fixed += 1; }
+    }
+  } catch (_) { /* ignore */ }
+  return fixed;
+}
+
+// 包住 graphToPrompt（执行前唯一一次「把画布变成 API 图」的出口）。
+// 只挂在 app 实例上，不碰原型，别的扩展不受影响。
+function hookSubmitSync(appObj) {
+  try {
+    if (!appObj || typeof appObj.graphToPrompt !== "function" || appObj.__kdSubmitSync) return false;
+    const orig = appObj.graphToPrompt;
+    appObj.graphToPrompt = async function () {
+      const n = syncAllPbox();
+      if (n) console.info("[kedou] 提交前补同步了 %d 个提示词框（界面有字、控件里是空的）", n);
+      return orig.apply(this, arguments);
+    };
+    appObj.__kdSubmitSync = true;
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 // 图片加载器增删/换序/改选中后，提示词框里的缩略图跟着刷新
@@ -2590,6 +2642,8 @@ app.registerExtension({
   name: "kedou.promptlib",
   async setup() {
     await initI18n(app);   // 保证建 UI 前语言包已就绪；重复调用只生效一次
+    // 提交前兜底同步提示词框（见 hookSubmitSync 的说明）
+    try { hookSubmitSync(app); } catch (_) { /* ignore */ }
     // 词库下拉列表 / 节点 chips 可重绘，接一下语言切换即时刷新；
     // 节点 widget 内部静态结构（<option>、按钮、标题）不接，下次建节点/重开面板生效。
     onLocaleChange(() => {
