@@ -3464,10 +3464,20 @@ function openPackPanel(hostEl) {
     }
   };
 
-  // 「工作流」：全程走 ComfyUI 自己的页签机制，**绝不动当前画布**。
-  //   ① 已经开着的页签里有 → 切过去（未保存的改动留在各自页签里）
-  //   ② 磁盘工作流列表里有 → 开新页签
-  //   ③ 列表里没有（刚建 / 刚改名）→ 读文件内容，作为临时工作流开新页签
+  // 「工作流」：把这张应用对应的源工作流**真的加载进画布**，走 ComfyUI 自己的页签。
+  //   ① 已经开着的页签里有 → 切过去（未保存的改动由前端存成草稿，不会丢）
+  //   ② 磁盘工作流列表里有 → 新开一个页签
+  //   ③ 列表里没有（刚建 / 刚改名 / 侧栏还没扫到）→ 读文件内容，造临时工作流开新页签
+  //
+  // ⚠️ 加载图这一步**必须**用 app.loadGraphData。
+  //   `app.extensionManager.workflow.openWorkflow` 是 **store** 上的方法，它只把
+  //   activeWorkflow 指针挪过去、push 一个页签路径，**从不把图灌进画布**
+  //   （见前端 workflowStore.ts 的 openWorkflow：只 workflow.load() + 赋值 activeWorkflow）。
+  //   真正加载图的是 useWorkflowService().openWorkflow，它内部干的就是
+  //   `workflow.load()` + `app.loadGraphData(state, true, true, workflow)`，
+  //   而那个 service 没暴露给扩展 —— 只能照它的写法自己调 loadGraphData。
+  //   2026-10-26 用户报的「点工作流只把当前画布重命名成应用名」就是踩了这个：
+  //   页签换成应用名了，画布还是原来那张。
   const openSourceWorkflow = async (a, btn) => {
     const want = String((a && a.source) || "").trim();
     if (!want) {
@@ -3480,51 +3490,66 @@ function openPackPanel(hostEl) {
     const done = () => { btn.disabled = false; btn.textContent = old; };
     try {
       const mgr = app.extensionManager && app.extensionManager.workflow;
-      if (!mgr || typeof mgr.openWorkflow !== "function") {
+      if (!mgr) {
+        throw new Error(t("This ComfyUI frontend has no workflow tabs; update ComfyUI."));
+      }
+      if (typeof app.loadGraphData !== "function") {
         throw new Error(t("This ComfyUI frontend has no workflow tabs; update ComfyUI."));
       }
       // computed ref 和普通数组都兜住
       const listOf = (x) => (x && x.value !== undefined ? x.value : x) || [];
       const norm = (s) => String(s || "").replace(/\\/g, "/");
       const target = norm(want);
-      // fullFilename 就是「相对工作流目录」的名字，正好和 kapp 里的 source 同格式
+      // fullFilename 是 basename（UserFile 里 getPathDetails 拆出来的），
+      // path 是「相对 user/ 目录」的全路径（workflows/xxx.json），所以按 path 比。
       const same = (w) => {
         if (!w) return false;
         const rel = norm(w.fullFilename);
         const p = norm(w.path);
         return rel === target || p === "workflows/" + target || p.endsWith("/" + target);
       };
-      kpRestoreApp = (editing && editing.id) || "";   // 切完面板会重建，把它选回来
+      kpRestoreApp = (editing && editing.id) || "";   // 加载完面板会重建，把它选回来
 
-      // ① 已打开的页签：直接切，画布内容由 ComfyUI 自己的页签机制接管
+      // ① 已经就是当前这张：什么都不用做，别白重载一次画布
       const opened = listOf(mgr.openWorkflows).find(same);
-      if (opened) {
-        await mgr.openWorkflow(opened);
-        kpToast(t("Switched to {name}", { name: opened.fullFilename || target }));
+      const onDisk = opened ? null : listOf(mgr.workflows).find(same);
+      let wf = opened || onDisk;
+      let label = (wf && (wf.fullFilename || target)) || target;
+
+      if (wf && typeof mgr.isActive === "function" && mgr.isActive(wf)) {
+        kpToast(t("Switched to {name}", { name: label }));
         done();
         return;
       }
-      // ② 磁盘上有这张：openWorkflow 发现它没开过就会新开一个页签
-      const onDisk = listOf(mgr.workflows).find(same);
-      if (onDisk) {
-        await mgr.openWorkflow(onDisk);
-        kpToast(t("Opened {name} in a new tab", { name: onDisk.fullFilename || target }));
-        done();
-        return;
+      if (!wf) {
+        // ③ 列表里没有：读文件内容，造一个临时工作流（同样会开新页签）
+        //    name 传**完整 target**（含 kedou_apps/ 前缀），不是 basename ——
+        //    ComfyUI 的 path 是 "workflows/" + name，传全路径后下次点同一个应用，
+        //    上面 ① 的 `p === "workflows/" + target` 就能命中、切到已开的页签；
+        //    传 basename 的话每次点都会新开一个，还因为撞上工作流目录里的同名文件
+        //    被自动加序号（显示成「xxx (2).json」，看着像另一个文件）。
+        if (typeof mgr.createTemporary !== "function") {
+          throw new Error(t("This ComfyUI frontend has no workflow tabs; update ComfyUI."));
+        }
+        const r = await fetch("/ps/pack/workflow?file=" + encodeURIComponent(want));
+        let j = null;
+        try { j = await r.json(); } catch (_) { /* ignore */ }
+        if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+        wf = mgr.createTemporary(target, j.workflow);
+        label = j.file || target;
       }
-      // ③ 列表里没有：读文件内容，造一个临时工作流开新页签（同样不碰当前画布）
-      //    name 传**完整 target**（含 kedou_apps/ 前缀），不是 basename ——
-      //    ComfyUI 的 path 是 "workflows/" + name，传全路径后下次点同一个应用，
-      //    上面 ① 的 `p === "workflows/" + target` 就能命中、切到已开的页签；
-      //    传 basename 的话每次点都会新开一个，还因为撞上工作流目录里的同名文件
-      //    被自动加序号（显示成「xxx (2).json」，看着像另一个文件）。
-      const r = await fetch("/ps/pack/workflow?file=" + encodeURIComponent(want));
-      let j = null;
-      try { j = await r.json(); } catch (_) { /* ignore */ }
-      if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
-      const tmp = mgr.createTemporary(target, j.workflow);
-      await mgr.openWorkflow(tmp);
-      kpToast(t("Opened {name} in a new tab", { name: j.file }));
+      // 内容还没取过就先取；已经加载过的（含未保存改动）直接用内存里那份，别冲掉
+      if (!wf.isLoaded || !wf.activeState) await wf.load();
+      const state = wf.activeState || (wf.content ? JSON.parse(wf.content) : null);
+      if (!state) throw new Error(t("Could not read the workflow \"{name}\".", { name: label }));
+      // 第 4 个参数传工作流实例：loadGraphData 收尾（afterLoadNewGraph）会自己
+      // 把它挂成 activeWorkflow、开好页签，不需要我们再调一次 openWorkflow。
+      const loaded = await app.loadGraphData(state, true, true, wf);
+      if (loaded === false) { done(); return; }   // 失败时前端已经弹过错误框了
+      kpToast(t("Opened {name} in a new tab", { name: label }));
+      // 候选是按旧画布收集的，必须重建：侧栏骗一下那个 800ms 监视器，浮层直接重开
+      if (sidebar && hostEl) hostEl.dataset.kpGraph = "__kedou_switch__";
+      else { closePackPanel(); openPackPanel(); }
       done();
     } catch (e) {
       done();

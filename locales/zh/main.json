@@ -14,6 +14,7 @@
   "Opening…": "打开中…",
   "Switched to {name}": "已切换到 {name}",
   "Opened {name} in a new tab": "已在新页签打开 {name}",
+  "Could not read the workflow \"{name}\".": "读不到工作流「{name}」的内容。",
   "This ComfyUI frontend has no workflow tabs; update ComfyUI.": "这个 ComfyUI 前端没有工作流页签，请更新 ComfyUI。",
   "This app was packed before the source workflow was recorded; re-pack it once and this button will work.": "这个应用是旧版打的包，没记下来源工作流；重新打包一次，这个按钮就能用了。",
   "Selected {n} items": "已选 {n} 个",
