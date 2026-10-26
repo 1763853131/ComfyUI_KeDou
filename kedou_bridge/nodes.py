@@ -2,6 +2,7 @@
 """自定义节点：蝌蚪图片加载器 / 蝌蚪提示词输入框，以及执行前的空槽连线清理。"""
 
 import json
+import math
 import os
 
 from . import compat, media, paths
@@ -30,8 +31,9 @@ from . import compat, media, paths
 
 IMG_SLOTS = 50
 IMG_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
-# 输出长边上限的允许范围（像素）；0 表示不限制。上限存在 media_state 里。
-MAX_SIDE_LIMIT = 16384
+# 分辨率桶：0 = 原尺寸；>0 表示把每张图对齐到该分辨率的「不动点」尺寸。
+# 上限对齐官方 TextEncodeQwenImage21 的 resolution（0~4096，步进 32）。
+BUCKET_MAX = 4096
 
 
 def _image_files() -> list:
@@ -55,17 +57,18 @@ def _media_state_value(value) -> dict:
             value = json.loads(value)
         except (TypeError, ValueError):
             value = {}
-    out = {"images": [], "batch": False, "cursor": 0, "select": False, "picked": [], "max_side": 0}
+    out = {"images": [], "batch": False, "cursor": 0, "select": False, "picked": [], "bucket": 0}
     if not isinstance(value, dict):
         return out
-    # 输出长边上限（2026-10-20）：0 = 原尺寸；只缩小不放大，宽高比不变。
-    # 放在 media_state 里而不是另开控件：自绘面板只有一个隐藏 widget，
-    # 旧工作流没有这个字段时按 0 处理，不会影响读取。
+    # 分辨率桶（2026-10-21）：0 = 原尺寸；>0 = 对齐到该分辨率的「不动点」尺寸。
+    # 旧字段 max_side（长边上限）沿用同一个数：它的取值范围本来就是 1024~4096 的预设，
+    # 直接当桶分辨率读，旧工作流不至于因为字段改名变回「原尺寸」。
+    # 放在 media_state 里而不是另开控件：自绘面板只有一个隐藏 widget。
     try:
-        max_side = int(value.get("max_side") or 0)
+        bucket = int(value.get("bucket", value.get("max_side")) or 0)
     except (TypeError, ValueError):
-        max_side = 0
-    out["max_side"] = max(0, min(max_side, MAX_SIDE_LIMIT))
+        bucket = 0
+    out["bucket"] = max(0, min(bucket, BUCKET_MAX))
     # 批次模式字段（2026-09-28）：batch 开关 + 游标，前端批次循环时逐份改 cursor 再排队
     out["batch"] = bool(value.get("batch"))
     try:
@@ -179,19 +182,69 @@ def _on_prompt_prune_empty_slots(json_data):
     return json_data
 
 
-def _load_image(filename: str, max_side: int = 0):
+def bucket_size(width: int, height: int, resolution: int):
+    """按官方编码器的取整公式，算出这张图对齐到该分辨率的尺寸（不动点）。
+
+    官方 comfy_extras/nodes_qwen.py::TextEncodeQwenImage21 对每张参考图做的是：
+        width  = round(sqrt(res^2 * w / h) / 32) * 32
+        height = round(sqrt(res^2 / (w / h)) / 32) * 32
+    尺寸恰好等于这个式子的输出时，它直接跳过缩放（``s = image``），空 latent 也按这张图
+    的尺寸建 —— 画布与图像严格对齐，不会有像素偏移。这里就是提前把图做成那个尺寸。
+
+    取整会轻微挪动比例，个别比例下式子的输出不是它自己；那就拿输出的比例再算一次，
+    迭代到稳定（最多 6 轮，取比例误差最小的一轮兜底）。
+    """
+    if resolution <= 0:
+        return int(width), int(height)
+    ratio = float(width) / float(height)
+
+    def once(r):
+        w = max(32, int(round(math.sqrt(resolution * resolution * r) / 32.0)) * 32)
+        h = max(32, int(round(math.sqrt(resolution * resolution / r) / 32.0)) * 32)
+        return w, h
+
+    best = None
+    for _ in range(6):
+        bw, bh = once(ratio)
+        new_ratio = float(bw) / float(bh)
+        err = abs(math.log(new_ratio / ratio))
+        if best is None or err < best[0]:
+            best = (err, (bw, bh))
+        if abs(new_ratio - ratio) < 1e-9:          # 已是不动点
+            break
+        ratio = new_ratio
+    return best[1]
+
+
+def _cover_to(im, tw: int, th: int):
+    """等比缩放到正好盖住 (tw, th) 再中心裁切；尺寸已经一致时原样返回（零重采样）。"""
+    from PIL import Image                                  # noqa: PLC0415
+    if im.size == (tw, th):
+        return im
+    scale = max(tw / float(im.width), th / float(im.height))
+    nw = max(tw, int(round(im.width * scale)))
+    nh = max(th, int(round(im.height * scale)))
+    resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    if (nw, nh) != im.size:
+        im = im.resize((nw, nh), resample)
+    left = (nw - tw) // 2
+    top = (nh - th) // 2
+    return im.crop((left, top, left + tw, top + th))
+
+
+def _load_image(filename: str, bucket: int = 0):
     """单图 -> (1,H,W,3) float32 张量，与官方 LoadImage 的输出形状一致。
 
-    max_side > 0 时按长边缩小，宽高比不变；只缩不放（比上限小的图保持原样）。
+    bucket > 0 时把图对齐到该分辨率的不动点尺寸（等比放大到盖满后中心裁切，
+    小图也会放大 —— 不放大就不是不动点，编码器那边仍会自己缩一遍）。
     """
     import numpy as np                                  # noqa: PLC0415
     import torch                                        # noqa: PLC0415
     from PIL import Image, ImageOps                     # noqa: PLC0415
     im = ImageOps.exif_transpose(Image.open(_media_input_path(filename))).convert("RGB")
-    limit = int(max_side or 0)
-    if 0 < limit < max(im.size):
-        resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-        im.thumbnail((limit, limit), resample)
+    res = int(bucket or 0)
+    if res > 0:
+        im = _cover_to(im, *bucket_size(im.width, im.height, res))
     arr = np.array(im).astype(np.float32) / 255.0
     return torch.from_numpy(arr)[None, ...]
 
@@ -208,8 +261,9 @@ class KedouImageLoader:
         "its own IMAGE output slot (up to %d). Unused slots emit None, so downstream "
         "multi-image nodes ignore that route. Turn on Select to output only the picked "
         "photos, in click order. Turn on Batch and press Run to queue the photos through "
-        "the workflow one by one. The long-side limit shrinks each output image (aspect "
-        "ratio kept, never upscales); 0 keeps the original size." % IMG_SLOTS
+        "the workflow one by one. The alignment resolution snaps each output image to the "
+        "size the Qwen-Image text encoder would use at that resolution (multiples of 32, "
+        "aspect ratio kept, cover-cropped); 0 keeps the original size." % IMG_SLOTS
     )
 
     @classmethod
@@ -233,8 +287,8 @@ class KedouImageLoader:
             sig.append(("batch", state.get("cursor")))
         # 选择模式同理：开关切换、选中集合变化、甚至只改选择顺序，输出都会变，都要进签名
         sig.append(("select", state.get("select"), tuple(state.get("picked") or [])))
-        # 长边上限变了，输出分辨率也变，必须重跑
-        sig.append(("max_side", state.get("max_side")))
+        # 对齐分辨率变了，输出尺寸也变，必须重跑
+        sig.append(("bucket", state.get("bucket")))
         return repr(sig)
 
     @classmethod
@@ -280,7 +334,7 @@ class KedouImageLoader:
             cur = max(0, min(int(state.get("cursor") or 0), len(imgs) - 1))
             entry = imgs[cur]
             try:
-                pick = _load_image(entry["filename"], state.get("max_side"))
+                pick = _load_image(entry["filename"], state.get("bucket"))
             except (OSError, ValueError) as e:
                 raise ValueError("Kedou Image Loader: cannot read batch image %d/%d (%s): %s"
                                  % (cur + 1, len(imgs), entry["filename"], e))
@@ -289,7 +343,7 @@ class KedouImageLoader:
             out = []
             for entry in imgs:
                 try:
-                    out.append(_load_image(entry["filename"], state.get("max_side")))
+                    out.append(_load_image(entry["filename"], state.get("bucket")))
                 except (OSError, ValueError) as e:
                     print("[kedou] 图片读不出来，该槽给空：%s（%s）" % (entry["filename"], e))
                     out.append(None)

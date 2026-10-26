@@ -21,8 +21,8 @@ const NODE_CLASS = "KedouImageLoader";
 // 槽数随实际会出图的张数增长（选择模式按 picked，批次模式 1 个），已连线的槽始终保留。
 // 空槽运行时由后端在 /prompt 入口剔除，既不用重连，也不会把 None 送进下游。
 const IMG_SLOTS = 50;
-// 输出长边上限允许范围；0 = 原尺寸（与后端 nodes.py 的 MAX_SIDE_LIMIT 保持一致）
-const MAX_SIDE_LIMIT = 16384;
+// 对齐分辨率（分辨率桶）允许范围；0 = 原尺寸（与后端 nodes.py 的 BUCKET_MAX 保持一致）
+const BUCKET_MAX = 4096;
 const IMG_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
 const VID_EXTS = [".mp4", ".mov", ".webm", ".avi", ".mkv"];
 const AUD_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
@@ -45,14 +45,41 @@ const CSS = [
   ".kd-sw input{display:none;}",
   ".kd-sw input:checked + i{background:var(--p-primary-color,#4a7dff);}",
   ".kd-sw input:checked + i::after{transform:translateX(12px);}",
-  // 输出长边缩放：嵌在节点底栏（与 KeDou 同一行），不额外占内容高度
-  ".kd-limitbar{margin-left:auto;display:flex;align-items:center;gap:4px;min-width:0;}",
-  ".kd-limitbar span{font-size:10px;white-space:nowrap;opacity:.85;flex:none;}",
-  ".kd-limitbar select{height:16px;font:inherit;font-size:10px;line-height:1;color:inherit;",
-  "background:transparent;border:1px solid var(--border-color,#3a3a44);border-radius:4px;",
-  "padding:0 2px;outline:none;cursor:pointer;flex:none;}",
-  ".kd-limitbar select:focus{border-color:var(--p-primary-color,#4a7dff);}",
-  ".kd-limitbar select option{background:var(--comfy-input-bg,#1b1b21);color:var(--fg-color,#ddd);}",
+  // 对齐分辨率：贴在节点底栏（与 KeDou 同一行），不额外占内容高度。
+  // 绝对定位而不是跟着 flex 排：底栏右端可能被前端追加别的按钮，跟着流走就会与上面的卡片对不齐；
+  // right 由 alignLimitBar() 按「卡片右边缘」实测得出（卡片比底栏内缩 12px）。
+  // top:0（不是垂直居中）：左边 KeDou 那个胶囊是 h-6，在 20px 底栏里是**顶对齐**、向下探 4px，
+  // 居中摆的话会比它高 2px，两者高度就对不上了。
+  ".kd-limitbar{position:absolute;right:12px;top:0;",
+  "display:flex;align-items:center;gap:6px;z-index:3;height:24px;}",
+  ".kd-limitbar span{font-size:11px;white-space:nowrap;opacity:.85;flex:none;}",
+  // 自绘下拉（外观照官方 combo）：原生 select 的弹层是系统画的，改不了圆角/搜索/勾选
+  ".kd-dd{display:flex;align-items:center;gap:4px;height:24px;min-width:88px;box-sizing:border-box;",
+  "padding:0 8px;font-size:12px;line-height:1;color:var(--fg-color,#ddd);",
+  "background:var(--comfy-input-bg,#1b1b21);border:1px solid var(--border-color,#3a3a44);border-radius:7px;",
+  "cursor:pointer;flex:none;user-select:none;outline:none;}",
+  ".kd-dd:hover{border-color:var(--interface-stroke,#555);}",
+  ".kd-dd.kd-open,.kd-dd:focus-visible{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kd-dd .kd-dd-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".kd-dd svg{flex:none;opacity:.7;}",
+  ".kd-dd-pop{position:fixed;z-index:100010;display:flex;flex-direction:column;padding:6px;",
+  "background:var(--interface-panel-surface,#20222a);border:1px solid var(--interface-stroke,#3a3a44);",
+  "border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.5);overflow:hidden;}",
+  ".kd-dd-search{position:relative;display:flex;align-items:center;margin:0 0 4px;}",
+  ".kd-dd-search svg{position:absolute;left:8px;opacity:.55;pointer-events:none;}",
+  ".kd-dd-search input{width:100%;height:28px;box-sizing:border-box;padding:0 8px 0 28px;font:inherit;font-size:12px;",
+  "color:var(--fg-color,#ddd);background:var(--comfy-input-bg,#16161c);",
+  "border:1px solid var(--interface-stroke,#3a3a44);border-radius:7px;outline:none;}",
+  ".kd-dd-search input:focus{border-color:var(--p-primary-color,#4a7dff);}",
+  ".kd-dd-list{overflow-y:auto;max-height:280px;display:flex;flex-direction:column;gap:1px;}",
+  ".kd-dd-group{font-size:10px;opacity:.55;padding:6px 8px 2px;}",
+  ".kd-dd-item{display:flex;align-items:center;gap:8px;border:none;background:none;text-align:left;",
+  "color:var(--fg-color,#ddd);font:inherit;font-size:12px;padding:6px 8px;border-radius:6px;cursor:pointer;}",
+  ".kd-dd-item:hover,.kd-dd-item.kd-hi{background:var(--content-bg,#2a2d36);}",
+  ".kd-dd-item.kd-on{background:rgba(74,125,255,.18);}",
+  ".kd-dd-item span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}",
+  ".kd-dd-item svg{flex:none;color:var(--p-primary-color,#5b8cff);}",
+  ".kd-dd-empty{padding:10px 8px;font-size:12px;opacity:.6;}",
   // 选择模式下的格子状态：选中的主色描边 + 顺序徽标；未选中的序号变暗
   ".kd-cell.kd-picked{border-color:var(--p-primary-color,#4a7dff);box-shadow:0 0 0 1px var(--p-primary-color,#4a7dff);}",
   ".kd-cell.kd-picked .kd-no{background:var(--p-primary-color,#4a7dff);color:#fff;font-weight:600;}",
@@ -339,8 +366,9 @@ function readState(node) {
     cursor: (obj && Number(obj.cursor)) || 0,
     select: !!(obj && obj.select),
     picked: (obj && Array.isArray(obj.picked)) ? obj.picked.filter((f) => typeof f === "string") : [],
-    // 输出长边上限（0 = 原尺寸）；旧工作流没有该字段时按 0 处理
-    max_side: Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(obj && obj.max_side) || 0))),
+    // 对齐分辨率（0 = 原尺寸）；旧工作流里叫 max_side，沿用同一个数
+    bucket: Math.max(0, Math.min(BUCKET_MAX,
+      Math.round(Number((obj && (obj.bucket != null ? obj.bucket : obj.max_side)) || 0)))),
   };
 }
 
@@ -355,7 +383,7 @@ function writeState(node, state) {
     cursor: Math.max(0, Number(state.cursor) || 0),
     select: !!state.select,
     picked: (state.picked || []).filter((f) => typeof f === "string"),
-    max_side: Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(state.max_side) || 0))),
+    bucket: Math.max(0, Math.min(BUCKET_MAX, Math.round(Number(state.bucket) || 0))),
   });
   try {
     if (typeof w.callback === "function") w.callback(w.value);
@@ -1233,10 +1261,15 @@ async function openSetsMenu(node, anchor) {
   await paintList();
 }
 
-// ---------------------------------------------------------------- 底栏：长边缩放
+// ---------------------------------------------------------------- 底栏：对齐分辨率
 // 放在节点原生底栏（与 KeDou 同一行），不额外占图片区域高度。
-// 常用尺寸 + 「原尺寸」；旧工作流里的非预设值也会临时列进下拉，不会被悄悄改掉。
-const MAX_SIDE_PRESETS = [0, 1024, 1280, 1536, 2048, 2560, 3072, 4096];
+// 选一个数值 = 把每张输出图对齐到官方 Qwen-Image 文本编码器在该分辨率下会用的尺寸
+// （边长 32 的倍数、比例不变、cover 裁切），编码器那边就跳过缩放，画布与像素严格对齐。
+// 「原尺寸」= 不处理；旧工作流里的非预设值也会临时列进下拉，不会被悄悄改掉。
+// 下拉分两组：常用档位在前，后面跟 64 步进的细分档（512~4096），找某个面积附近的值不用猜。
+const BUCKET_PRESETS = [0, 768, 1024, 1280, 1440, 1536, 2048, 2560, 3072, 4096];
+const BUCKET_STEP = 64;
+const BUCKET_MIN = 512;
 
 function nodeFooterEl(node) {
   const card = node._kdUI && node._kdUI.card;
@@ -1254,21 +1287,220 @@ function nodeFooterEl(node) {
   return null;
 }
 
-function fillLimitOptions(node) {
-  const sel = node.__kdLimitSel;
-  if (!sel) return;
-  const cur = readState(node).max_side || 0;
-  const values = MAX_SIDE_PRESETS.slice();
-  if (cur > 0 && values.indexOf(cur) < 0) values.push(cur);
-  values.sort((a, b) => a - b);
-  sel.innerHTML = "";
-  values.forEach((v) => {
-    const o = document.createElement("option");
-    o.value = String(v);
-    o.textContent = v ? String(v) : t("Original");
-    sel.appendChild(o);
+// ---------------------------------------------------------------- 分辨率下拉（自绘）
+// 原生 <select> 的弹层由系统绘制：方角、无搜索、勾选样式跟着操作系统走，跟官方 combo 差得远，
+// 所以这里自绘一个：闭合态是个小按钮，展开后是「搜索框 + 分组长列表 + 右侧勾选」，
+// 外观用与官方一致的 token（输入底色 / 面板底色 / 发丝边 / 主色）。弹层挂 body + fixed，
+// 不参与节点布局，也不会被节点的圆角或缩放裁切。
+const KD_CARET_SVG = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+const KD_CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const KD_SEARCH_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>';
+
+function bucketGroups(node) {
+  const cur = node ? (readState(node).bucket || 0) : 0;
+  const common = BUCKET_PRESETS.map((v) => ({ v, label: v ? String(v) : t("Original") }));
+  const inFine = cur >= BUCKET_MIN && cur <= BUCKET_MAX && cur % BUCKET_STEP === 0;
+  // 手改过、不在任何档位里的旧值：单列一条“当前值”，保证看得见也能选回去
+  if (cur > 0 && BUCKET_PRESETS.indexOf(cur) < 0 && !inFine) {
+    common.unshift({ v: cur, label: String(cur) });
+  }
+  const fine = [];
+  for (let v = BUCKET_MIN; v <= BUCKET_MAX; v += BUCKET_STEP) {
+    if (BUCKET_PRESETS.indexOf(v) >= 0) continue;
+    fine.push({ v, label: String(v) });
+  }
+  return [
+    { label: t("Common"), items: common },
+    { label: t("Finer steps ({n})", { n: BUCKET_STEP }), items: fine },
+  ].filter((g) => g.items.length);
+}
+
+function bucketLabel(node) {
+  const v = readState(node).bucket || 0;
+  return v ? String(v) : t("Original");
+}
+
+// 把选中的分辨率写回 media_state（只写状态，不重绘面板）
+function setBucket(node, v) {
+  v = Math.max(0, Math.min(BUCKET_MAX, Math.round(Number(v) || 0)));
+  const st = readState(node);
+  if (st.bucket === v) { syncBucketTrigger(node); return; }
+  st.bucket = v;
+  writeState(node, st);
+  syncBucketTrigger(node);
+}
+
+function syncBucketTrigger(node) {
+  const dd = node.__kdLimitDD;
+  if (!dd) return;
+  if (node.__kdLimitTxt) node.__kdLimitTxt.textContent = bucketLabel(node);
+  dd.title = t("Snap each output image to the size the Qwen-Image text encoder uses at this resolution (multiples of 32, aspect ratio kept, cover-cropped), so the canvas and the pixels line up exactly. Small images are enlarged to reach that size. Choose \"Original\" to leave images untouched.");
+}
+
+let bucketMenu = null;      // {node, pop, input, list, hi}
+
+function closeBucketMenu() {
+  if (!bucketMenu) return;
+  const { pop, node, onDoc, onKey } = bucketMenu;
+  document.removeEventListener("pointerdown", onDoc, true);
+  document.removeEventListener("keydown", onKey, true);
+  try { pop.remove(); } catch (_) { /* 已移除 */ }
+  if (node && node.__kdLimitDD) node.__kdLimitDD.classList.remove("kd-open");
+  bucketMenu = null;
+}
+
+function paintBucketMenu() {
+  if (!bucketMenu) return;
+  const { node, pop, input, list } = bucketMenu;
+  const cur = readState(node).bucket || 0;
+  const q = String(input.value || "").trim();
+  const groups = bucketGroups(node);
+  list.innerHTML = "";
+  const flat = [];
+  groups.forEach((g) => {
+    const items = g.items.filter((it) => !q || it.label.indexOf(q) >= 0 || String(it.v).indexOf(q) >= 0);
+    if (!items.length) return;
+    const h = document.createElement("div");
+    h.className = "kd-dd-group";
+    h.textContent = g.label;
+    list.appendChild(h);
+    items.forEach((it) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "kd-dd-item" + (it.v === cur ? " kd-on" : "");
+      const s = document.createElement("span");
+      s.textContent = it.label;
+      b.appendChild(s);
+      if (it.v === cur) {
+        const c = document.createElement("i");
+        c.innerHTML = KD_CHECK_SVG;
+        c.style.display = "flex";
+        b.appendChild(c);
+      }
+      b.onclick = (e) => { e.stopPropagation(); setBucket(node, it.v); closeBucketMenu(); };
+      // 悬停只换高亮，**不滚动列表**：鼠标扫过时列表跟着跑会完全没法看，
+      // 要滚动用滚轮（原生 overflow），键盘 ↑↓ 才带自动滚动。
+      b.onpointerenter = () => setBucketHi(flat.indexOf(b), false);
+      list.appendChild(b);
+      flat.push(b);
+    });
   });
-  sel.value = String(cur);
+  if (!flat.length) {
+    const e = document.createElement("div");
+    e.className = "kd-dd-empty";
+    e.textContent = t("No matches");
+    list.appendChild(e);
+  }
+  bucketMenu.flat = flat;
+  // 默认高亮当前值（没有就第一条）
+  const idx = flat.findIndex((b) => b.classList.contains("kd-on"));
+  setBucketHi(idx >= 0 ? idx : 0, false);
+}
+
+function setBucketHi(i, scroll) {
+  if (!bucketMenu) return;
+  const flat = bucketMenu.flat || [];
+  flat.forEach((b, k) => b.classList.toggle("kd-hi", k === i));
+  bucketMenu.hi = i;
+  // 直接算 scrollTop：scrollIntoView 在 fixed 弹层里只滚一小截，位置不可靠
+  const list = bucketMenu.list;
+  if (scroll !== false && list && flat[i]) {
+    const it = flat[i];
+    list.scrollTop = Math.max(0, it.offsetTop - Math.round((list.clientHeight - it.offsetHeight) / 2));
+  }
+}
+
+function openBucketMenu(node) {
+  closeBucketMenu();
+  const dd = node.__kdLimitDD;
+  if (!dd || !dd.isConnected || !document.body) return;
+  const pop = document.createElement("div");
+  pop.className = "kd-dd-pop";
+  // 滚轮只管滚列表，别传给画布（否则滚到尽头会把画布缩放掉）
+  pop.onwheel = (e) => e.stopPropagation();
+  const sw = document.createElement("div");
+  sw.className = "kd-dd-search";
+  const icon = document.createElement("i");
+  icon.innerHTML = KD_SEARCH_SVG;
+  icon.style.display = "contents";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = t("Search");
+  input.spellcheck = false;
+  sw.append(icon, input);
+  const list = document.createElement("div");
+  list.className = "kd-dd-list";
+  pop.append(sw, list);
+
+  const onDoc = (e) => {
+    if (pop.contains(e.target) || dd.contains(e.target)) return;
+    closeBucketMenu();
+  };
+  const onKey = (e) => {
+    if (!bucketMenu) return;
+    const flat = bucketMenu.flat || [];
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeBucketMenu(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); e.stopPropagation();
+      const cur = bucketMenu.hi >= 0 ? bucketMenu.hi : 0;
+      setBucketHi(Math.max(0, Math.min(flat.length - 1, cur + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (e.key === "Enter") {
+      e.preventDefault(); e.stopPropagation();
+      const b = flat[bucketMenu.hi];
+      if (b) b.click();
+    }
+  };
+  bucketMenu = { node, pop, input, list, hi: 0, flat: [], onDoc, onKey };
+  document.addEventListener("pointerdown", onDoc, true);
+  document.addEventListener("keydown", onKey, true);
+  dd.classList.add("kd-open");
+  input.oninput = () => paintBucketMenu();
+
+  // 先填好内容再定位：空列表量出来的高度会把弹层放歪（第一次就是这么放到视口下方的）
+  paintBucketMenu();
+  const r = dd.getBoundingClientRect();
+  const w = Math.max(200, Math.round(r.width));
+  pop.style.width = w + "px";
+  const spaceAbove = Math.round(r.top) - 12;
+  const spaceBelow = Math.round(window.innerHeight - r.bottom) - 12;
+  const wantUp = spaceAbove >= 220 || spaceAbove >= spaceBelow;
+  // 列表高度夹到可用空间里，保证整个弹层留在视口内
+  list.style.maxHeight = Math.max(140, Math.min(280, (wantUp ? spaceAbove : spaceBelow) - 46)) + "px";
+  document.body.appendChild(pop);
+  const ph = pop.getBoundingClientRect().height;
+  let top = wantUp ? Math.round(r.top - ph - 6) : Math.round(r.bottom + 6);
+  top = Math.max(8, Math.min(top, window.innerHeight - ph - 8));
+  let left = Math.round(r.right - w);
+  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+  pop.style.top = top + "px";
+  pop.style.left = left + "px";
+  // 选中项可能在中段，滚到中间（官方下拉也是打开就定位到当前值）。
+  // 用 setTimeout 而不是 rAF：弹层刚插入时列表还没滚动能力，rAF 里量出来的 scrollTop 是 0。
+  setTimeout(() => {
+    if (!bucketMenu) return;
+    const idx = (bucketMenu.flat || []).findIndex((b) => b.classList.contains("kd-on"));
+    if (idx >= 0) setBucketHi(idx, true);
+  }, 30);
+  setTimeout(() => { try { input.focus(); } catch (_) { /* ignore */ } }, 0);
+}
+
+
+// 底栏右端可能被前端追加别的按钮（跟着 flex 排就会被挤到左边），所以下拉框绝对定位，
+// right 按「卡片右边缘」实测。卡片比底栏窄（前端给控件区留了 12px 内缩），换算时要除掉画布缩放。
+function alignLimitBar(node) {
+  const bar = node.__kdLimitBar;
+  const card = node._kdUI && node._kdUI.card;
+  const foot = bar && bar.parentElement;
+  if (!bar || !card || !foot) return;
+  const fr = foot.getBoundingClientRect();
+  const cr = card.getBoundingClientRect();
+  const scale = card.offsetWidth ? (cr.width / card.offsetWidth) : 1;
+  let inset = scale > 0.2 ? Math.round((fr.right - cr.right) / scale) : 12;
+  if (!(inset >= 0 && inset <= 48)) inset = 12;      // 量不到时退回默认内缩
+  if (bar.dataset.inset !== String(inset)) {
+    bar.style.right = inset + "px";
+    bar.dataset.inset = String(inset);
+  }
 }
 
 function ensureLimitBar(node) {
@@ -1279,36 +1511,47 @@ function ensureLimitBar(node) {
     bar = document.createElement("div");
     bar.className = "kd-limitbar";
     const name = document.createElement("span");
-    const sel = document.createElement("select");
-    sel.onpointerdown = (e) => e.stopPropagation();
-    sel.onclick = (e) => e.stopPropagation();
-    sel.onkeydown = (e) => e.stopPropagation();
-    sel.onwheel = (e) => e.stopPropagation();
-    sel.onchange = () => {
-      const v = Math.max(0, Math.min(MAX_SIDE_LIMIT, Math.round(Number(sel.value) || 0)));
-      const st = readState(node);
-      if (st.max_side === v) return;
-      st.max_side = v;
-      writeState(node, st);       // 只写状态，不重绘面板
+    // 闭合态：只显示当前值 + 小箭头；展开后是自绘弹层（见 openBucketMenu）
+    const dd = document.createElement("div");
+    dd.className = "kd-dd";
+    dd.tabIndex = 0;
+    dd.setAttribute("role", "button");
+    const txt = document.createElement("span");
+    txt.className = "kd-dd-txt";
+    const caret = document.createElement("i");
+    caret.innerHTML = KD_CARET_SVG;
+    caret.style.display = "contents";
+    dd.append(txt, caret);
+    dd.onpointerdown = (e) => e.stopPropagation();
+    dd.onclick = (e) => {
+      e.stopPropagation();
+      if (bucketMenu && bucketMenu.node === node) closeBucketMenu();
+      else openBucketMenu(node);
     };
-    bar.append(name, sel);
+    dd.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        openBucketMenu(node);
+      }
+    };
+    dd.onwheel = (e) => e.stopPropagation();
+    bar.append(name, dd);
     node.__kdLimitBar = bar;
     node.__kdLimitName = name;
-    node.__kdLimitSel = sel;
+    node.__kdLimitDD = dd;
+    node.__kdLimitTxt = txt;
   }
   const foot = nodeFooterEl(node);
   if (!foot) return false;
   if (bar.parentElement !== foot) foot.appendChild(bar);
+  // 绝对定位的锚点：底栏本身要 relative（前端默认 static）
+  if (getComputedStyle(foot).position === "static") foot.style.position = "relative";
+  alignLimitBar(node);
 
   // 语言切换 / 外部改状态后同步文案和当前值
-  if (node.__kdLimitName) node.__kdLimitName.textContent = t("Long side scale");
-  const sel = node.__kdLimitSel;
-  if (sel) {
-    sel.title = t("Resize each output image so its longest side does not exceed this value. Aspect ratio is kept; images are never enlarged. Choose \"Original\" for no limit.");
-    const cur = String(readState(node).max_side || 0);
-    if (!Array.from(sel.options).some((o) => o.value === cur)) fillLimitOptions(node);
-    else sel.value = cur;
-  }
+  if (node.__kdLimitName) node.__kdLimitName.textContent = t("Alignment resolution");
+  syncBucketTrigger(node);
   return true;
 }
 
@@ -1614,6 +1857,7 @@ function build(node) {
   // 节点被删除时断开 ResizeObserver，否则观察着一个已移除的容器属于白占内存
   const onRm = node.onRemoved;
   node.onRemoved = function () {
+    if (bucketMenu && bucketMenu.node === node) closeBucketMenu();
     if (node.__kdRO) { node.__kdRO.disconnect(); node.__kdRO = null; }
     if (node.__kdLocaleUnsub) { node.__kdLocaleUnsub(); node.__kdLocaleUnsub = null; }
     return typeof onRm === "function" ? onRm.apply(this, arguments) : undefined;
@@ -1638,8 +1882,8 @@ window.addEventListener("kedou:media-apply", (ev) => {
     select: !!d.select,
     picked: Array.isArray(d.picked) ? d.picked : [],
     cursor: 0,
-    // 排列只还原图片和输出顺序；长边上限是节点设置，保持用户当前值
-    max_side: cur.max_side,
+    // 排列只还原图片和输出顺序；对齐分辨率是节点设置，保持用户当前值
+    bucket: cur.bucket,
   });
   renderPanel(node);
 });
