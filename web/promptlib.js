@@ -2677,6 +2677,11 @@ function buildPromptBox(node) {
   } catch (_) { /* ignore */ }
   node._kdCard = card;
 
+  // 默认尺寸：不给的话 ComfyUI 按控件列表算出来只有 270×82，DOM 卡片直接被裁掉大半，
+  // 每次拖出来都得先拉大。这里在 nodeCreated 里同步设，加载工作流时随后会被存档尺寸覆盖，
+  // 所以只影响新建节点。440 宽刚好让「用途 / 清除 / 保存 / 语库 / 词库 / 历史」排成一行。
+  node.setSize([Math.max(Number(node.size && node.size[0]) || 0, 440), 430]);
+
   const prevCfg = node.onConfigure;
   node.onConfigure = function () {
     const r = typeof prevCfg === "function" ? prevCfg.apply(this, arguments) : undefined;

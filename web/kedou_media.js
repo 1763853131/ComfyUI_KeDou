@@ -23,6 +23,17 @@ const NODE_CLASS = "KedouImageLoader";
 const IMG_SLOTS = 50;
 // 对齐分辨率（分辨率桶）允许范围；0 = 原尺寸（与后端 nodes.py 的 BUCKET_MAX 保持一致）
 const BUCKET_MAX = 4096;
+// 新节点的默认尺寸。必须在 nodeCreated 里**同步**设：
+// build() 要等 i18n，等它回来时 node.configure 早把存档尺寸写好了，那之后再设就会把
+// 用户存下来的尺寸覆盖掉。加载工作流时 nodeCreated 先跑、configure 随后覆盖 —— 所以
+// 这里设的「默认值」只对新建节点生效，动不到已有工作流的布局。
+// 360 宽时工具行四个按钮塞不下，会被 flex 压成一字一行（2026-10-26 实机截图）；
+// 实测 440 仍会折成两行，460 才能一行放完，所以默认 460×380。
+const KD_DEFAULT_W = 460;
+const KD_DEFAULT_H = 380;
+function applyDefaultSize(node) {
+  try { node.setSize([KD_DEFAULT_W, KD_DEFAULT_H]); } catch (e) { /* 极老前端没有 setSize */ }
+}
 const IMG_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
 const VID_EXTS = [".mp4", ".mov", ".webm", ".avi", ".mkv"];
 const AUD_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
@@ -34,7 +45,7 @@ const CSS = [
   // 注意：右侧输出槽栏不能碰，卡片宽度靠父容器留给它的空间，这里不设宽度。
   ".kd-card{border:1px solid var(--border-color,#3a3a44);border-radius:10px;overflow:hidden;",
   "background:var(--comfy-input-bg,rgba(0,0,0,.28));display:flex;flex-direction:column;height:100%;}",
-  ".kd-top{display:flex;align-items:center;gap:8px;padding:7px 10px;flex:none;",
+  ".kd-top{display:flex;align-items:center;gap:8px;row-gap:6px;padding:7px 10px;flex:none;flex-wrap:wrap;",
   "border-bottom:1px solid var(--border-color,#3a3a44);}",
   ".kd-top b{font-size:12px;font-weight:600;}",
   ".kd-top em{font-style:normal;font-size:11px;color:var(--descrip-text,#9a9aa6);}",
@@ -93,9 +104,11 @@ const CSS = [
   // 拖拽排序的目标高亮
   ".kd-cell.drag-over{outline:2px dashed var(--p-primary-color,#4a7dff);outline-offset:-2px;}",
   ".kd-cell.kd-skip .kd-no{opacity:.35;}",
-  ".kd-btns{margin-left:auto;display:flex;gap:6px;}",
+  // 按钮不许被 flex 压缩：宽度不够时让整组换到第二行（`.kd-top` 可换行），
+  // 而不是把「媒体库」压成一字一行 —— 360 宽的老节点上就是这么显示错的。
+  ".kd-btns{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}",
   ".kd-btn{border:1px solid var(--border-color,#3a3a44);background:transparent;color:var(--fg-color,#e7e7ea);",
-  "font:inherit;font-size:11px;padding:3px 10px;border-radius:7px;cursor:pointer;}",
+  "font:inherit;font-size:11px;padding:3px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;flex:none;}",
   ".kd-btn:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
   ".kd-btn.kd-p{border-color:transparent;background:var(--p-primary-color,#4a7dff);color:#fff;font-weight:600;}",
   ".kd-btn[disabled]{opacity:.45;cursor:default;}",
@@ -427,8 +440,11 @@ function resizeToContent(node) {
   const measured = node.computeSize();
   if (!Array.isArray(measured) || !Number.isFinite(Number(measured[1]))) return;
   const w = Math.max(300, Number(node.size && node.size[0]) || 0, Number(measured[0]) || 0);
-  const h = Math.max(1, Math.ceil(Number(measured[1])));
-  if (Math.abs((Number(node.size && node.size[1]) || 0) - h) > 1) node.setSize([w, h]);
+  // **只增不减**：内容比当前矮时保留当前高度。以前无条件按内容高度 setSize，
+  // 用户拉大 → 存盘 → 下次加载第一次重绘又缩回去，只能反复拉。
+  // 真要缩只有一处：图片被删光时由空态分支明确设回默认高度。
+  const h = Math.max(1, Math.ceil(Number(measured[1])), Number(node.size && node.size[1]) || 0);
+  if (h > (Number(node.size && node.size[1]) || 0) + 1) node.setSize([w, h]);
 }
 
 // 兜底：直接把高度写给卡片。为什么需要它——ComfyUI 不一定把卡片直接放进宿主容器，
@@ -814,6 +830,9 @@ function renderPanel(node) {
   // 空面板时就会走短路分支直接返回，「No images yet…」永远停在旧语言。
   const sig = JSON.stringify([state.images.map((it) => it.filename), !!state.select, locale()]);
   const sameShape = node.__kdSig === sig && Array.isArray(node.__kdCells);
+  // 记住「这个节点手里确实有图」：只有这种情况下的空态才该收高度（用户把图删光了）。
+  // 新建 / 加载一个空加载器也走空态分支，跟着收就会把默认高度或存下来的高度压掉。
+  if (state.images.length) node.__kdHadImages = true;
   kdZoomHide();        // 重绘会销毁当前格子的 mouseleave 宿主，悬浮层必须一起收掉
   const changed = syncOutputs(node);   // 输出槽按实际张数增长；已连线的槽保留，空槽由后端在运行时剔除
   ui.count.textContent = String(state.images.length);
@@ -849,7 +868,12 @@ function renderPanel(node) {
     sec.appendChild(d);
     ui.body.appendChild(sec);
     node.__kdCells = [];   // 清空引用，别让 paintPicked 摸到已销毁的旧格子
-    // 空态也要收一次高度：删掉最后一张图/点 Clear 后节点若保持原高度，下方会留一大片空白
+    // 只有「刚把图删光」才回到默认高度（否则下方留一大片空白）；
+    // 新建 / 加载工作流也走这里，但那不是删除动作，不能把默认/存下来的高度吃掉。
+    if (node.__kdHadImages) {
+      node.__kdHadImages = false;
+      try { node.setSize([Math.max(300, Number(node.size[0]) || 0), KD_DEFAULT_H]); } catch (e) { /* ignore */ }
+    }
     fitCard(node);
     setTimeout(() => { resizeToContent(node); fitCard(node); }, 0);
     return;
@@ -1862,8 +1886,6 @@ function build(node) {
     if (node.__kdLocaleUnsub) { node.__kdLocaleUnsub(); node.__kdLocaleUnsub = null; }
     return typeof onRm === "function" ? onRm.apply(this, arguments) : undefined;
   };
-  const size = node.size || [360, 320];
-  node.setSize([Math.max(Number(size[0]) || 0, 360), Math.max(Number(size[1]) || 0, 320)]);
   renderPanel(node);
   attachLimitBar(node);      // 原生底栏可能比卡片晚几帧挂上，用退避重试补上
   startLimitWatchdog();      // 大工作流/节点在视口外时底栏可能还没渲染，看门狗兜底
@@ -1893,6 +1915,9 @@ app.registerExtension({
   async nodeCreated(node) {
     const cls = (node.constructor && node.constructor.comfyClass) || node.comfyClass || "";
     if (cls !== NODE_CLASS) return;
+    // 尺寸必须在 await 之前设（见 applyDefaultSize 的说明）：加载工作流时 nodeCreated
+    // 先跑、configure 随后用存档尺寸覆盖，所以这里只影响新建节点。
+    applyDefaultSize(node);
     await initI18n(app);   // 语言包就绪后再构建界面（重复调用只生效一次）
     try {
       build(node);
@@ -2003,6 +2028,17 @@ const KPCSS = [
   ".kp-inset{position:static;width:auto;height:auto;max-height:none;border:0;border-radius:10px;box-shadow:none;background:var(--interface-panel-surface,rgba(28,28,34,.98));color:var(--fg-color,#e7e7ea);}",
   ".kp-pane{display:flex;flex-direction:column;gap:8px;}",
   ".kp-pickhint{font-size:11px;line-height:1.5;color:var(--fg-color,#e7e7ea);opacity:.62;}",
+  // 开关按钮 + 悬浮说明：说明默认 display:none（不占位），hover 按钮才浮出来
+  ".kp-picktop{position:relative;display:flex;}",
+  ".kp-picktop>.kp-tbtn{flex:1;}",
+  // 开启时按钮亮起来：默认是关的，光靠「已开启/已关闭」四个字看不出状态
+  ".kp-picktop>.kp-tbtn.kp-on{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);",
+  "background:rgba(74,125,255,.12);}",
+  ".kp-picktip{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:7;",
+  "padding:7px 9px;border-radius:9px;border:1px solid var(--interface-stroke,#3a3a44);",
+  "background:var(--interface-panel-surface,#2a2a33);box-shadow:0 8px 22px rgba(0,0,0,.45);",
+  "opacity:1;pointer-events:none;}",
+  ".kp-picktop:hover .kp-picktip{display:block;}",
   ".kp-picklist{display:flex;flex-direction:column;gap:6px;}",
   ".kp-pickrow{display:flex;align-items:center;gap:6px;padding:6px 7px;border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;}",
   ".kp-pickrow .kp-lab{flex:1;min-width:0;}",
@@ -2046,7 +2082,6 @@ const KPCSS = [
   "text-align:center;font-size:11px;opacity:.6;}",
   ".kp-pv-run{border:1px solid var(--p-primary-color,#4a7dff);background:var(--p-primary-color,#4a7dff);",
   "color:#fff;border-radius:8px;padding:7px;text-align:center;font-size:11.5px;opacity:.85;margin-top:2px;}",
-  ".kp-pv-empty{font-size:11px;opacity:.55;}",
   // 画布上的勾选框层（照官方 App Builder 的样子）：一层透明蒙层，里面每个参数一格小方框
   ".kp-layer{position:fixed;inset:0;pointer-events:none;z-index:40;}",
   // 点选时给每个参数行让出左侧一条：方框落在这条里，参数名整体右移，和官方构建器一致
@@ -2441,13 +2476,23 @@ function openPackPanel(hostEl) {
 
   const pickPane = document.createElement("div");
   pickPane.className = "kp-pane";
+  // 点选状态：打开面板时**默认关**，用户自己点一下才开（2026-10-26 用户要求）。
+  // 状态只有这一个源头 —— 按钮文案 / 高亮 / 画布蒙层都从它派生。
+  // 以前这里写死 `t("Picking is on")` 而 hookPick 又从没在开面板时调过：
+  // 按钮说「已开启」、实际点画布没反应，点一下反倒变「已关闭」。
+  let pickOn = false;
+  let pickHooked = false;
+  // 开关按钮 + 用法说明：说明默认收起来，鼠标悬浮在按钮上才浮出来。
+  // 原来是常驻一行灰字，占地方又吵 —— 2026-10-26 用户要求改成悬浮显示。
+  const pickTop = document.createElement("div");
+  pickTop.className = "kp-picktop";
   const pickSwitch = document.createElement("button");
   pickSwitch.className = "kp-tbtn";
-  pickSwitch.textContent = t("Picking is on");
-  pickSwitch.title = t("While on, clicking a parameter on the canvas adds or removes it");
+  pickSwitch.textContent = pickOn ? t("Picking is on") : t("Picking is off");
   const pickHint = document.createElement("div");
-  pickHint.className = "kp-pickhint";
+  pickHint.className = "kp-pickhint kp-picktip";
   pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.");
+  pickTop.append(pickSwitch, pickHint);
   const pickList = document.createElement("div");
   pickList.className = "kp-picklist";
   // 清单底下：几条 + 一键清空
@@ -2470,7 +2515,7 @@ function openPackPanel(hostEl) {
   previewEl.addEventListener("toggle", () => {
     try { localStorage.setItem("kedou.pack.pv", previewEl.open ? "1" : "0"); } catch (_) { /* ignore */ }
   });
-  pickPane.append(pickSwitch, pickHint, pickList, pickFoot, previewEl);
+  pickPane.append(pickTop, pickList, pickFoot, previewEl);
 
   body.append(listField, editHint, fmtField, nameField, descField, graphField,
               pickPane, err);
@@ -2561,8 +2606,7 @@ function openPackPanel(hostEl) {
     for (const k of keys) if (pickOrder.indexOf(k) < 0) pickOrder.push(k);
   };
 
-  let pickOn = true;
-  let pickHooked = false;
+  // pickOn / pickHooked 在创建开关按钮那里就声明了（默认关），这里不再重复声明
 
   const toggleRow = (r) => {
     r.cb.checked = !r.cb.checked;
@@ -2818,7 +2862,6 @@ function openPackPanel(hostEl) {
   const hookPick = (on) => {
     pickSwitch.classList.toggle("kp-on", !!on);
     pickSwitch.textContent = on ? t("Picking is on") : t("Picking is off");
-    pickHint.style.opacity = on ? ".62" : ".4";
     if (on === pickHooked) return;
     pickHooked = on;
     if (on) {
@@ -3150,21 +3193,15 @@ function openPackPanel(hostEl) {
     updateCount();
   };
 
-  // 「用户看到的样子」：按清单顺序摆一遍应用的样子（只画，不接任何操作）
+  // 预览：按清单顺序摆一遍应用的样子（只画，不接任何操作）
   renderPreview = () => {
     const map = rowMap();
     const ordered = pickOrder.map((k) => map.get(k)).filter(Boolean);
-    previewSum.textContent = ordered.length
-      ? t("What users will see ({n} fields)", { n: ordered.length })
-      : t("What users will see");
+    previewSum.textContent = t("Preview");
     previewBody.innerHTML = "";
-    if (!ordered.length) {
-      const empty = document.createElement("div");
-      empty.className = "kp-pv-empty";
-      empty.textContent = t("Pick some parameters and they show up here, arranged like the app.");
-      previewBody.appendChild(empty);
-      return;
-    }
+    // 一项没勾时预览区就空着 —— 原来那句「勾几个参数，这里就按应用的样子排出来。」
+    // 被用户点名删掉（2026-10-26），也不要悬浮版
+    if (!ordered.length) return;
     const head = document.createElement("div");
     const nm = document.createElement("div");
     nm.className = "kp-pv-name";
@@ -3565,7 +3602,6 @@ function openPackPanel(hostEl) {
     }
     graphSpan.textContent = t("Update graph from current workflow");
     pickSwitch.textContent = pickOn ? t("Picking is on") : t("Picking is off");
-    pickSwitch.title = t("While on, clicking a parameter on the canvas adds or removes it");
     pickHint.textContent = t("Click a parameter on the canvas to add it; click again to remove it. Or tick the little box on its left.");
     pickClear.textContent = t("Clear all");
     pickClear.title = t("Remove every picked parameter; the canvas is untouched");
