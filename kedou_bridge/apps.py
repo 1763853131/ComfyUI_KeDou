@@ -23,22 +23,36 @@ def is_app_workflow(data: dict, filename: str = "") -> bool:
 
 
 def find_app_files(root: str = None) -> list:
-    root = root or paths.WORKFLOW_DIR
+    """扫应用包：应用归档目录（新位置）+ 工作流目录（老包还在这儿）。
+
+    两个根都必须扫：打包后 kapp 已经搬到 ``user/default/kedou_apps`` 了，
+    只扫工作流目录会让「已打包的应用」列表整个空掉，而且不报错（最难查的那种）。
+    显式传 root 时只扫那一个（给自检 / 测试用）。
+    """
+    roots = [root] if root else [paths.WORKFLOW_DIR, paths.APPS_DIR]
     out = []
-    for r, _dirs, files in os.walk(root):
-        for fn in files:
-            if fn.startswith(".") or not fn.lower().endswith(".json"):
-                continue
-            low = fn.lower()
-            if low.endswith(".kapp.json") or low.endswith(".app.json"):
-                out.append(os.path.join(r, fn))
-    # 同 stem 同时有 .kapp.json 与 .app.json：kapp 优先（自研格式遮蔽官方格式）
+    for base in roots:
+        if not os.path.isdir(base):
+            continue
+        for r, _dirs, files in os.walk(base):
+            for fn in files:
+                if fn.startswith(".") or not fn.lower().endswith(".json"):
+                    continue
+                low = fn.lower()
+                if low.endswith(".kapp.json") or low.endswith(".app.json"):
+                    out.append(os.path.join(r, fn))
+
+    def _rank(p: str):
+        # 同一个 stem 有多份时：应用归档目录里的优先（新家），同目录内 kapp 优先
+        # （自研格式遮蔽官方格式）。
+        return (0 if paths._under(paths.APPS_DIR, p) else 1,
+                0 if p.lower().endswith(".kapp.json") else 1)
+
     by_stem = {}
     for p in out:
         stem = paths._stem(os.path.basename(p)).lower()
         prev = by_stem.get(stem)
-        if prev is None or (p.lower().endswith(".kapp.json")
-                            and not prev.lower().endswith(".kapp.json")):
+        if prev is None or _rank(p) < _rank(prev):
             by_stem[stem] = p
     return sorted(by_stem.values())
 
@@ -382,15 +396,15 @@ def list_apps() -> list:
 
 
 def _wf_rel(p: str) -> str:
-    """相对工作流目录的路径 —— 打包面板的 target / source 都用这个口径。
+    """打包面板的 target / source 口径 —— 统一走 paths.pack_rel。
+
+    * 应用归档目录里的包 → ``kedou_apps/<名>.kapp.json``
+    * 工作流目录里的老包 → ``修图/<名>.kapp.json``
 
     不能用 paths._rel()（那是相对 ComfyUI 根）：用户目录被 --user-directory 指到
     别处时两者对不上，前端拿它去回写或删除会落空。
     """
-    try:
-        return os.path.relpath(p, paths.WORKFLOW_DIR).replace("\\", "/")
-    except Exception:                                # noqa: BLE001
-        return str(p).replace("\\", "/")
+    return paths.pack_rel(p)
 
 
 def list_kapps() -> list:

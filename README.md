@@ -43,7 +43,7 @@ ComfyUI 本身没有「列出我的工作流和它们的参数」这样的接口
 custom_nodes/ComfyUI_KeDou/
 ├── __init__.py              # 入口：加载内部包、注册路由/钩子、导出节点
 ├── kedou_bridge/            # 后端实现（按职责拆分）
-│   ├── paths.py             # 根目录 / 用户目录 / 工作流目录 / 越界检查
+│   ├── paths.py             # 根目录 / 用户目录 / 工作流目录 / 应用归档目录 / 越界检查
 │   ├── common.py            # 应用解析共用常量与纯函数
 │   ├── registry.py          # object_info、控件声明顺序与控件规格
 │   ├── state.py             # sidecar 状态 + 写接口令牌/来源鉴权
@@ -79,12 +79,12 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
 | `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256&fit=3x4`，按源图指纹落盘缓存；不透明出 JPEG、带透明出 PNG（**不能用 webp —— PS 面板的 `<img>` 走 Adobe 解码器，解不出来就是一片空白**）；`fit=<宽x高>` 把整图缩进这个比例再按 `#1a1a1a` 补边（**不裁边**，缩略图要让人认出画面；UXP 的 `max-*` 不锁宽高比，所以位图比例必须严格等于面板格子）；ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡 |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
-| `/ps/pack` | POST | 按已有工作流文件生成 `<stem>.kapp.json` 应用包 |
-| `/ps/pack/apps` | GET | 列出工作流目录里所有 `.kapp.json`（打包面板的「已打包的应用」列表用），带 `target`（回写/删除口径）与 `source`（来源工作流） |
+| `/ps/pack` | POST | 按已有工作流文件生成应用包：`<stem>.kapp.json` + 同名工作流副本，都放进 `user/default/kedou_apps/` |
+| `/ps/pack/apps` | GET | 列出**应用归档目录 + 工作流目录**里所有 `.kapp.json`（打包面板的「已打包的应用」列表用），带 `target`（回写/删除口径）与 `source`（来源工作流） |
 | `/ps/apps/{app_id}/package` | GET | 取原始 kapp 包（`graph` + `params` + `outputs`），供打包面板回填编辑 |
-| `/ps/pack/workflow` | GET | `?file=<相对工作流目录>` 读工作流原文，给「打开对应工作流」的兜底分支用；越界一律当不存在 |
-| `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘；带 `target` 时回写同一个 `.kapp.json` |
-| `/ps/pack/delete` | POST | `{file}` 把应用包移到 `user/default/kedou_trash/`（带时间戳，可捞回）；只认工作流目录内的 `.kapp.json` |
+| `/ps/pack/workflow` | GET | `?file=<kedou_apps/x.json 或 相对工作流目录的路径>` 读工作流原文，给「打开对应工作流」用；越界一律当不存在 |
+| `/ps/pack/save` | POST | 打包面板专用：前端已构好 API 图，这里只校验 + 落盘；带 `workflow`（画布 UI 图）时另存一份 `<应用名>.json` 到应用归档目录并让 `source` 指向它；带 `target` 时回写同一个 `.kapp.json` |
+| `/ps/pack/delete` | POST | `{file}` 把应用包**连同同名工作流副本**移到 `user/default/kedou_trash/`（带时间戳，可捞回）；只认 `.kapp.json` |
 | `/ps/pack/app` | POST | 按 **ComfyUI 官方 App Mode 格式**写 `<stem>.app.json`（UI 图 + `extra.linearMode` / `extra.linearData`）；带 `target` 时回写同一个官方包 |
 | `/ps/pack/linear` | POST | 按 **官方 App Builder 的勾选结果**（`extra.linearData`）直接生成 `.kapp.json`，不需要二次勾选；带 `target` 时回写同一个包（面板暂无入口，接口保留） |
 | `/ps/prompts` | GET | **语库**清单（只含主动保存的 `.md`，不含历史），连**实际读取的目录和它的来源**一起返回：`?use=文生图&q=关键词` |
@@ -300,8 +300,10 @@ Flux 3 除了参考图，还能按**图里的具体元素**下指令：`replace 
 }
 ```
 
-`source` 记打包时那张工作流的文件名（相对工作流目录，可含子目录），只服务于
-「编辑时一键切回原图」。老包没有这个字段也能用，只是切回时要靠文件名猜。
+`source` 记这包是从哪个工作流打的，只服务于「编辑时一键切回原图」。
+新包固定是 `kedou_apps/<应用名>.json`（打包时自动另存的那份副本，相对 `user/default`）；
+老包是 `修图/x.json` 这种相对工作流目录的写法，两种都能反解。老包没有这个字段也能用，
+只是切回时只能靠文件名猜。
 
 > 设计取舍：官方应用模式有三笔"税"——参数靠勾选、`widgets_values` 按位置对位、每次运行都要翻译一遍。
 > 应用包把这三样全部显式化，插件本身保持**纯通道**：声明是什么就是什么，不对任何具体应用做特判。
@@ -354,13 +356,38 @@ Flux 3 除了参考图，还能按**图里的具体元素**下指令：`replace 
 
 #### 已打包的应用
 
-列表列出工作流目录里所有 `.kapp.json`，一行一个：名字、`N 个参数 · M 个节点`，右边三个动作：
+**打包 = 归档。** 点「生成应用包」时，插件做两件事：
+
+1. 把**画布上这一刻的工作流另存一份**到 `user/default/kedou_apps/<应用名>.json`；
+2. 应用包写成 `user/default/kedou_apps/<应用名>.kapp.json`，`source` 指向上面那份副本。
+
+```
+user/default/
+├── workflows/          ← ComfyUI 自己的工作流列表，应用相关的东西一样都不放
+└── kedou_apps/         ← 应用归档（ComfyUI 扫不到）
+    ├── Flux3单图编辑.json        ← 工作流副本，可在画布上改
+    ├── Flux3单图编辑.kapp.json   ← 应用包
+    ├── flux2-9b-单图编辑.json
+    └── flux2-9b-单图编辑.kapp.json
+```
+
+为什么另存：以前只记「ComfyUI 当前打开的是哪个文件」，新建的画布还没存过盘，
+这个值就是空的 → 包里没有 `source` → 「工作流」按钮永远点不动。现在不问 ComfyUI
+存没存过，我们自己存，所以**每个包都一定带得回工作流**。
+
+代价：副本不在 ComfyUI 的扫描路径里，ComfyUI 自己的「打开工作流」看不到它，
+只能从这个面板的「工作流」按钮打开。
+
+删除时 `.kapp.json` 和同名 `.json` 副本一起进回收站（`user/default/kedou_trash/`）——
+副本是打包时自动生成的归档件，包没了留着也没人认领。
+
+列表列出这两个目录里所有 `.kapp.json`，一行一个：名字、`N 个参数 · M 个节点`，右边三个动作：
 
 | 按钮 | 做什么 |
 |---|---|
-| **工作流** | 按包里记的 `source` 打开打包它的那张图。全程走 ComfyUI 自己的页签机制，**不会覆盖当前画布** —— 已经开着就切过去，磁盘上有就开新页签，列表里找不到（刚建/刚改名）才读文件内容当临时工作流开新页签。老包没记 `source` 时这个按钮是灰的（重新打包一次就会记上）。 |
+| **工作流** | 按包里记的 `source` 打开打包它的那张图。全程走 ComfyUI 自己的页签机制，**不会覆盖当前画布** —— 已经开着就切过去，磁盘上有就开新页签，都没有（刚建/刚改名/归档副本）才读文件内容当临时工作流开新页签。老包没记 `source` 时按钮**不置灰**，点了会如实提示「重新打包一次就能用」。 |
 | **编辑** | 把这个应用的参数读进下面的清单，进入编辑态：这一行高亮、底部按钮变成「保存修改」、上方出现「正在编辑…」提示。 |
-| **删除** | 二次确认后把 `.kapp.json` 移到 `user/default/kedou_trash/`，文件名带时间戳。**不是真删**，手滑点错还能捞回来；回收站故意放在工作流目录外面，所以启动器、PS 面板、ComfyUI 工作流列表都不会再看到它。 |
+| **删除** | 二次确认后把 `.kapp.json` 和同名工作流副本移到 `user/default/kedou_trash/`，文件名带时间戳。**不是真删**，手滑点错还能捞回来；回收站故意放在工作流目录外面，所以启动器、PS 面板、ComfyUI 工作流列表都不会再看到它。 |
 
 右上角 **「新建」** 回到新建态（清空清单，名字跟回当前工作流）。
 

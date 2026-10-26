@@ -363,10 +363,13 @@ def register(routes):
 
     @routes.post("/ps/pack/save")
     async def ps_pack_save(request):
-        """POST /ps/pack/save {name, desc?, kapp, target?}
+        """POST /ps/pack/save {name, desc?, kapp, target?, workflow?}
         —— kapp 打包面板专用：前端已用 graphToPrompt() 构好 API 图，这里只校验+落盘。
         不依赖工作流文件先保存（与 /ps/pack 按文件打包区分）。
-        带 target（工作流目录内相对路径）时回写该 .kapp.json，用于「编辑已打包的应用」。"""
+        workflow 是画布序列化结果（UI 格式）：带上它就另存一份 <应用名>.json 到应用归档目录，
+        kapp 的 source 指向这份副本 —— 「以后一定能切回工作流」靠的就是它。
+        带 target（相对路径，kedou_apps/ 或工作流目录内）时回写该 .kapp.json，
+        用于「编辑已打包的应用」。"""
         try:
             body = await request.json()
         except Exception:                            # noqa: BLE001
@@ -375,7 +378,7 @@ def register(routes):
             return compat.web.json_response({"ok": False, "error": "bad json"}, status=400)
         result = await asyncio.to_thread(pack.save_kapp, body.get("name"),
                                          body.get("desc"), body.get("kapp"),
-                                         body.get("target"))
+                                         body.get("target"), body.get("workflow"))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
 
     @routes.post("/ps/pack/app")

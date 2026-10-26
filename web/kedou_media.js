@@ -2353,23 +2353,10 @@ function defaultAppName() {
   return "untitled";
 }
 
-// 当前工作流文件相对「工作流目录」的路径 —— 写进 kapp 的 source，以后靠它切回画布。
-// ComfyUI 给的 path 形如 workflows/sub/x.json 或绝对路径，统一截掉 workflows/ 前缀，
-// 让后端能直接 join 到 WORKFLOW_DIR。未保存的新工作流没有路径，返回空串（就不写 source）。
-function currentWorkflowRel() {
-  try {
-    const mgr = app.extensionManager && app.extensionManager.workflow;
-    const wf = (mgr && mgr.activeWorkflow) || (app.workflowManager && app.workflowManager.activeWorkflow);
-    if (!wf) return "";
-    let p = String(wf.path || wf.fullFilename || wf.filename || "").replace(/\\/g, "/");
-    if (!p) return "";
-    const i = p.indexOf("workflows/");
-    if (i >= 0) p = p.slice(i + "workflows/".length);
-    return /^unsaved/i.test(p) ? "" : p;
-  } catch (_) {
-    return "";
-  }
-}
+// 这里原来有个 currentWorkflowRel()：读 ComfyUI 的 activeWorkflow.path 来记 kapp 的 source。
+// 2026-10-26 删掉 —— 它只对「已经存成磁盘文件」的工作流有值，新建画布直接打包拿到空串，
+// 包就永远不记得自己从哪来。现在改成打包时自己把画布另存一份到应用归档目录，
+// 不再问 ComfyUI「你这张图存过盘没有」。
 
 function openPackPanel(hostEl) {
   ensurePackCss();
@@ -3548,11 +3535,16 @@ function openPackPanel(hostEl) {
         return;
       }
       // ③ 列表里没有：读文件内容，造一个临时工作流开新页签（同样不碰当前画布）
+      //    name 传**完整 target**（含 kedou_apps/ 前缀），不是 basename ——
+      //    ComfyUI 的 path 是 "workflows/" + name，传全路径后下次点同一个应用，
+      //    上面 ① 的 `p === "workflows/" + target` 就能命中、切到已开的页签；
+      //    传 basename 的话每次点都会新开一个，还因为撞上工作流目录里的同名文件
+      //    被自动加序号（显示成「xxx (2).json」，看着像另一个文件）。
       const r = await fetch("/ps/pack/workflow?file=" + encodeURIComponent(want));
       let j = null;
       try { j = await r.json(); } catch (_) { /* ignore */ }
       if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
-      const tmp = mgr.createTemporary(target.split("/").pop(), j.workflow);
+      const tmp = mgr.createTemporary(target, j.workflow);
       await mgr.openWorkflow(tmp);
       kpToast(t("Opened {name} in a new tab", { name: j.file }));
       done();
@@ -3797,13 +3789,19 @@ async function doGenerate(ctx) {
     params,
     outputs,
   });
-  // source 记「这包是从哪张工作流打的」，只为了以后能一键切回那张图。
-  // 新建、或勾了「用当前工作流更新图」时，源就是画布上现在这张，顺手刷新它。
+  // 打包 = 归档：把画布这一刻另存一份 **UI 格式**工作流（app.graph.serialize()），
+  // 后端写到 user/default/kedou_apps/<应用名>.json，和应用包并排放，source 指向它。
+  //
+  // 原来这里是 currentWorkflowRel() —— 读 ComfyUI 的 activeWorkflow.path，
+  // 只有工作流已经存成磁盘文件才有值。新建的画布直接打包拿到空串 → 包里没有 source
+  // → 「切回工作流」永远是灰的（用户 2026-10-26 那三个应用就是这么丢的）。
+  // 现在不依赖 ComfyUI 存没存过：我们自己存。
+  let uiWf = null;
   if (updateGraph) {
-    const rel = currentWorkflowRel();
-    if (rel) kapp.source = rel;
+    try { uiWf = app.graph.serialize(); } catch (_) { uiWf = null; }
   }
   const payload = { name: kapp.name, desc: kapp.desc, kapp };
+  if (uiWf && Array.isArray(uiWf.nodes) && uiWf.nodes.length) payload.workflow = uiWf;
   if (editing) payload.target = editing.file;
   try {
     const resp = await fetch("/ps/pack/save", {

@@ -18,43 +18,60 @@ from .state import _load_app_state, _state_path
 
 
 def _find_workflow_file(name: str):
-    """按文件名或 stem 在 paths.WORKFLOW_DIR 里找工作流（打包的 source）。"""
+    """按文件名或 stem 找工作流（打包的 source）。
+
+    两个根都找：工作流目录 + 应用归档目录（打包后副本就存在那儿，从面板「切回工作流」
+    打开的正是它，再打包时还得能按名字找回它）。
+    """
     want = os.path.basename(str(name or ""))
     if not want or not paths._safe_id(want):
         return None
+    roots = [r for r in (paths.WORKFLOW_DIR, paths.APPS_DIR) if os.path.isdir(r)]
+    # 先按完整文件名精确命中。应用归档里 `x.json` 与 `x.kapp.json` 的 stem 都是 x，
+    # 靠 stem 猜会随机拿到 kapp —— 那就是「拿应用包当工作流」的死循环。
+    for root in roots:
+        for r, _dirs, files in os.walk(root):
+            if want in files:
+                return os.path.join(r, want)
     stem = paths._stem(want).lower()
-    for r, _dirs, files in os.walk(paths.WORKFLOW_DIR):
-        for fn in files:
-            if fn == want or paths._stem(fn).lower() == stem:
-                return os.path.join(r, fn)
+    for root in roots:
+        for r, _dirs, files in os.walk(root):
+            for fn in files:
+                if fn.lower().endswith(".kapp.json"):
+                    continue
+                if paths._stem(fn).lower() == stem:
+                    return os.path.join(r, fn)
     return None
 
 
 def _src_rel(p: str) -> str:
-    """kapp 的 source 一律存「相对工作流目录」的路径。
+    """kapp 的 source 一律存「能反解回来的相对路径」。
 
-    不存相对 ComfyUI 根（会变成 ../ComfyUI_xxx/...，换盘符/换机器就废），
-    也不存绝对路径。存成 `xxx.json` / `sub/xxx.json`，配 _resolve_workflow_rel 正好闭环。
+    * 应用归档目录里的副本 → ``kedou_apps/<名>.json``
+    * 工作流目录里的文件   → ``修图/x.json``（老口径）
+
+    不存相对 ComfyUI 根（会变成 ../ComfyUI_xxx/...，换盘符/换机器就废），也不存绝对路径。
     """
-    try:
-        return os.path.relpath(p, paths.WORKFLOW_DIR).replace("\\", "/")
-    except Exception:                                # noqa: BLE001
-        return ""
+    return paths.pack_rel(p)
 
 
 def _resolve_workflow_rel(rel: str):
-    """把 kapp 里的 source（相对工作流目录的路径）解析成绝对路径。
+    """把 kapp 里的 source 解析成绝对路径。
 
-    先按相对路径精确命中（子目录里同名文件不会认错），
-    老包 / 打包后改过名的再退回按文件名扫一遍。
-    结果必须落在 WORKFLOW_DIR 内，否则当不存在。
+    先认 ``kedou_apps/`` 前缀（应用归档），再按相对工作流目录精确命中（子目录里同名文件
+    不会认错），老包 / 打包后改过名的最后退回按文件名扫一遍。
     """
     s = str(rel or "").strip().replace("\\", "/")
     if not s:
         return None
+    if s.startswith(paths.APPS_PREFIX):
+        p = os.path.normpath(os.path.join(paths.APPS_DIR, s[len(paths.APPS_PREFIX):]))
+        if not paths._under(paths.APPS_DIR, p) or not os.path.isfile(p):
+            return None
+        # 应用包不是工作流：拿 .kapp.json 当源会把「切回工作流」变成一个死循环
+        return None if p.lower().endswith(".kapp.json") else p
     p = os.path.normpath(os.path.join(paths.WORKFLOW_DIR, s))
     if paths._under(paths.WORKFLOW_DIR, p) and os.path.isfile(p):
-        # 应用包不是工作流：拿 .kapp.json 当源会把「切回工作流」变成一个死循环
         if not p.lower().endswith(".kapp.json"):
             return p
     hit = _find_workflow_file(s)
@@ -378,12 +395,23 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
     saved = _load_app_state(path)                    # 打包时也带上面板保存值
-    stem = paths._stem(os.path.basename(path))
-    built = _build_kapp(wf, decls, name or stem, desc, saved,
-                        source=_src_rel(path))
+    # 应用名即文件名（用户 2026-10-26 要求：工作流副本和应用同名）。
+    raw = str(name or "").strip()
+    stem = paths._stem(raw) if raw else paths._stem(os.path.basename(path))
+    if not stem or not paths._safe_id(stem):
+        return {"ok": False, "error": "应用名含非法字符（不能含 / \\ .. 或 :）"}
+    # 归档：工作流副本 + 应用包并排放在应用目录里（工作流目录之外，ComfyUI 扫不到）
+    wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
+    try:
+        os.makedirs(paths.APPS_DIR, exist_ok=True)
+        paths._dump_json_atomic(wf_path, wf, indent=2)
+    except Exception as e:                       # noqa: BLE001
+        return {"ok": False, "error": "工作流副本写入失败：%s" % e}
+    built = _build_kapp(wf, decls, raw or stem, desc, saved,
+                        source=_src_rel(wf_path))
     if not built["ok"]:
         return built
-    out_path = os.path.join(os.path.dirname(path), stem + ".kapp.json")
+    out_path = os.path.join(paths.APPS_DIR, stem + ".kapp.json")
     try:
         paths._dump_json_atomic(out_path, built["kapp"], indent=1)
     except Exception as e:                       # noqa: BLE001
@@ -442,7 +470,7 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
     if target:
         out_path = _resolve_pack_target(target)
         if out_path is None:
-            return {"ok": False, "error": "目标路径不合法（必须是工作流目录内的 .kapp.json）：%s" % target}
+            return {"ok": False, "error": "目标路径不合法（必须是 .kapp.json）：%s" % target}
         stem = paths._stem(os.path.basename(out_path))
         out_dir = os.path.dirname(out_path)
     else:
@@ -455,8 +483,17 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
             stem = stem[: -len(".kapp")]
         if not stem:
             return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
-        out_dir = paths.WORKFLOW_DIR
+        out_dir = paths.APPS_DIR
         out_path = os.path.join(out_dir, stem + ".kapp.json")
+
+    # 归档：工作流副本和应用包并排放在应用目录（与 /ps/pack/save 同一套规矩）
+    wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
+    try:
+        os.makedirs(paths.APPS_DIR, exist_ok=True)
+        paths._dump_json_atomic(wf_path, workflow, indent=2)
+    except Exception as e:                       # noqa: BLE001
+        return {"ok": False, "error": "工作流副本写入失败：%s" % e}
+    source = _src_rel(wf_path)
 
     built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info,
                         source=source)
@@ -473,9 +510,9 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
     try:
         os.makedirs(out_dir, exist_ok=True)
     except Exception as e:                        # noqa: BLE001
-        return {"ok": False, "error": "工作流目录不可写：%s" % e}
+        return {"ok": False, "error": "应用归档目录不可写：%s" % e}
     if not paths._under(out_dir, out_path):
-        return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
+        return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
         paths._dump_json_atomic(out_path, kapp, indent=1)
     except Exception as e:                       # noqa: BLE001
@@ -575,42 +612,47 @@ def _kapp_validate(graph: dict, params: list, object_info: dict):
 
 
 def _pack_target(path: str) -> str:
-    """打包面板回写用的 target：相对工作流目录的路径（跨盘符时退回绝对路径，前端会原样传回）。
+    """打包面板回写用的 target：应用归档 → ``kedou_apps/<名>``，工作流目录 → 相对工作流目录。
 
     不能直接用 paths._rel()：那是相对 ComfyUI 根的路径，用户目录被 --user-directory
     指到别处时两者对不上，回写会落到错误的目录。
     """
-    try:
-        return os.path.relpath(path, paths.WORKFLOW_DIR).replace("\\", "/")
-    except Exception:                                # noqa: BLE001
-        return str(path).replace("\\", "/")
+    return paths.pack_rel(path)
 
 
 def _resolve_pack_target(target: str):
-    """打包面板回写目标：工作流目录内的相对路径。"""
+    """打包面板回写目标：只认两个根里的 .kapp.json。
+
+    ``kedou_apps/<名>.kapp.json`` → 应用归档目录（新包都在这儿）；
+    ``修图/<名>.kapp.json``       → 工作流目录（老包还在那儿，不能让它失联）。
+    """
     t = str(target or "").strip().replace("\\", "/")
     if not t or "\x00" in t or t.startswith("/") or re.match(r"^[A-Za-z]:", t):
         return None
-    parts = [p for p in t.split("/") if p and p != "."]
+    if t.startswith(paths.APPS_PREFIX):
+        base, rest = paths.APPS_DIR, t[len(paths.APPS_PREFIX):]
+    else:
+        base, rest = paths.WORKFLOW_DIR, t
+    parts = [p for p in rest.split("/") if p and p != "."]
     if not parts or any(p == ".." for p in parts):
         return None
-    path = os.path.join(paths.WORKFLOW_DIR, *parts)
-    if not paths._under(paths.WORKFLOW_DIR, path) or not path.lower().endswith(".kapp.json"):
+    path = os.path.join(base, *parts)
+    if not paths._under(base, path) or not path.lower().endswith(".kapp.json"):
         return None
     return path
 
 
-def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
+def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
     """kapp 打包面板专用（POST /ps/pack/save）。
 
     校验 + 落盘：
-      * kapp 必须是 dict，且 kedou_app == 1；
+      * kapp 必须是 dict，且 kedou_app = 1；
       * graph 必须是非空 dict（API 格式工作流）；
       * params 必须是 list，且每一条 widget 在 apps._KAPP_WIDGETS 内；
       * name 经 _safe_id 防穿越 + _stem 去 .kapp.json/.app.json/.json 后缀清洗；
-      * 写前用 _under（realpath + commonpath）复核最终路径仍落在工作流目录内；
-      * 新建：<工作流目录>/<stem>.kapp.json；
-        编辑：target 指定已有 .kapp.json（同样必须在 paths.WORKFLOW_DIR 内），原文件回写。
+      * 写前用 _under（realpath + commonpath）复核最终路径仍落在允许的目录内；
+      * 新建：<应用归档目录>/<stem>.kapp.json，并把画布工作流另存一份 <stem>.json；
+        编辑：target 指定已有 .kapp.json，原文件回写。
     不合法如实返回中文错误，绝不静默。
     """
     if not isinstance(kapp, dict):
@@ -649,16 +691,48 @@ def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
     if not stem:
         return {"ok": False, "error": "应用名清洗后为空（请换个名字）"}
     warns = []
-    # source：前端记下的「这包是从哪个工作流打的」，只用于「切回工作流」。
-    # 不能拿它当路径直接用 —— 必须能解析到工作流目录里的真实文件，
-    # 解析不到就丢掉这个字段（宁可让前端退回按文件名猜，也不存一个永远点不动的指针）。
-    src = str(kapp.get("source") or "").strip()
-    if src:
-        ap = _resolve_workflow_rel(src)
-        if ap is None:
-            kapp = {k: v for k, v in kapp.items() if k != "source"}
-        else:
-            kapp = dict(kapp, source=_src_rel(ap))
+    # 目标：新包一律进应用归档目录（工作流目录之外，ComfyUI 扫不到）；
+    # 编辑已有包时原地回写 —— 老包还在工作流目录里，就地改不搬家，
+    # 免得前端手里的 target 突然失效。
+    if target:
+        out_path = _resolve_pack_target(target)
+        if out_path is None:
+            return {"ok": False, "error": "目标应用路径不合法（必须是 .kapp.json）：%s"
+                                          % target}
+        out_dir = os.path.dirname(out_path)
+    else:
+        out_dir = paths.APPS_DIR
+        out_path = os.path.join(out_dir, stem + ".kapp.json")
+
+    # 工作流副本：把打包这一刻的画布另存成 <应用名>.json，和应用包并排放。
+    # 有它，source 就一定有值 —— 不再依赖「工作流已经存过盘」这个前提。
+    # （原来是读 ComfyUI 的 activeWorkflow.path，新建/未保存的画布拿到空串，
+    #   包就永远不记得自己从哪来，用户 2026-10-26 就是被这个坑的。）
+    ui_wf = workflow if isinstance(workflow, dict) else None
+    if ui_wf is not None and not isinstance(ui_wf.get("nodes"), list):
+        return {"ok": False, "error": "workflow 必须是画布序列化结果（需含 nodes 列表）"}
+    if ui_wf is not None:
+        # 副本名跟随 kapp 文件名的 stem，不跟 name —— 编辑时改了应用名也不至于
+        # 让副本和应用包变成两个名字。
+        file_stem = paths._stem(os.path.basename(out_path))
+        wf_path = os.path.join(paths.APPS_DIR, file_stem + ".json")
+        try:
+            os.makedirs(paths.APPS_DIR, exist_ok=True)
+            paths._dump_json_atomic(wf_path, ui_wf, indent=2)
+        except Exception as e:                        # noqa: BLE001
+            return {"ok": False, "error": "工作流副本写入失败：%s" % e}
+        kapp = dict(kapp, source=_src_rel(wf_path))
+    else:
+        # source：前端记下的「这包是从哪个工作流打的」，只用于「切回工作流」。
+        # 不能拿它当路径直接用 —— 必须能解析到真实文件，
+        # 解析不到就丢掉这个字段（宁可让前端退回按文件名猜，也不存一个永远点不动的指针）。
+        src = str(kapp.get("source") or "").strip()
+        if src:
+            ap = _resolve_workflow_rel(src)
+            if ap is None:
+                kapp = {k: v for k, v in kapp.items() if k != "source"}
+            else:
+                kapp = dict(kapp, source=_src_rel(ap))
     # 完整性校验：坏图坚决不落盘，把问题在人能看懂的地方说清楚
     vinfo = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()})) if compat.NODE_MAP else {}
     if vinfo:
@@ -669,21 +743,12 @@ def save_kapp(name: str, desc, kapp, target: str = None) -> dict:
             return {"ok": False,
                     "error": "打包图完整性校验未通过，共 %d 个问题：%s%s"
                              % (len(errs), "；".join(head), more)}
-    if target:
-        out_path = _resolve_pack_target(target)
-        if out_path is None:
-            return {"ok": False, "error": "目标应用路径不合法（必须是工作流目录内的 .kapp.json）：%s"
-                                          % target}
-        out_dir = os.path.dirname(out_path)
-    else:
-        out_dir = paths.WORKFLOW_DIR
-        out_path = os.path.join(out_dir, stem + ".kapp.json")
     try:
         os.makedirs(out_dir, exist_ok=True)
     except Exception as e:                        # noqa: BLE001
-        return {"ok": False, "error": "工作流目录不可写：%s" % e}
-    if not paths._under(out_dir, out_path):              # 落盘前按真实路径复核，绝不出工作流目录
-        return {"ok": False, "error": "应用名解析后落在工作流目录之外，已拒绝写入：%s" % name}
+        return {"ok": False, "error": "应用归档目录不可写：%s" % e}
+    if not paths._under(out_dir, out_path):              # 落盘前按真实路径复核
+        return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
         paths._dump_json_atomic(out_path, kapp, indent=1)
     except Exception as e:                        # noqa: BLE001
@@ -700,13 +765,16 @@ def delete_kapp(target: str) -> dict:
     文件名带时间戳，同一个包删几次都不会互相覆盖。
     回收站不在工作流目录里，所以 /ps/apps、ComfyUI 工作流列表、启动器都扫不到它。
 
-    只认工作流目录内的 .kapp.json（与 save_kapp 的回写口径一致）：
+    只认两个根里的 .kapp.json（应用归档目录 / 工作流目录，与 save_kapp 的回写口径一致）：
     官方 .app.json 不在打包面板的管辖范围，别让一个误传的路径删掉工作流。
+
+    同名工作流副本一并进回收站：它是打包时自动生成的归档件，包没了留着也没人认领。
+    只是移到回收站，捞得回来。
     """
     p = _resolve_pack_target(target)
     if p is None:
         return {"ok": False,
-                "error": "目标不合法（必须是工作流目录内的 .kapp.json）：%s" % target}
+                "error": "目标不合法（必须是 .kapp.json）：%s" % target}
     if not os.path.isfile(p):
         return {"ok": False, "error": "文件不存在：%s" % target}
     base = os.path.basename(p)
@@ -715,15 +783,29 @@ def delete_kapp(target: str) -> dict:
         os.makedirs(paths.TRASH_DIR, exist_ok=True)
     except Exception as e:                           # noqa: BLE001
         return {"ok": False, "error": "回收站目录不可写：%s" % e}
-    dst = os.path.join(paths.TRASH_DIR, "%s.%s" % (base, stamp))
-    n = 1
-    while os.path.exists(dst):                       # 同一秒删两个同名包
-        dst = os.path.join(paths.TRASH_DIR, "%s.%s-%d" % (base, stamp, n))
-        n += 1
+
+    def _trash_name(name: str) -> str:
+        dst = os.path.join(paths.TRASH_DIR, "%s.%s" % (name, stamp))
+        n = 1
+        while os.path.exists(dst):                   # 同一秒删两个同名包
+            dst = os.path.join(paths.TRASH_DIR, "%s.%s-%d" % (name, stamp, n))
+            n += 1
+        return dst
+
+    dst = _trash_name(base)
     try:
         shutil.move(p, dst)
     except Exception as e:                           # noqa: BLE001
         return {"ok": False, "error": "移到回收站失败：%s" % e}
+    # 工作流副本（应用归档目录里的 <同名>.json）
+    wf_moved = ""
+    wf_src = os.path.join(paths.APPS_DIR, paths._stem(base) + ".json")
+    try:
+        if os.path.isfile(wf_src):
+            shutil.move(wf_src, _trash_name(os.path.basename(wf_src)))
+            wf_moved = paths._rel(wf_src)
+    except Exception:                                # noqa: BLE001
+        pass                                         # 副本挪不动不影响删包
     # sidecar 里存着这个应用在面板上改过的值，按相对路径 hash 存 —— 包没了还留着，
     # 下次同名重新打包会莫名其妙继承旧值。一起挪进回收站。
     try:
@@ -732,7 +814,8 @@ def delete_kapp(target: str) -> dict:
             shutil.move(st, dst + ".state.json")
     except Exception:                                # noqa: BLE001
         pass                                         # 状态文件挪不动不影响删包
-    return {"ok": True, "file": paths._rel(p), "trash": paths._rel(dst), "name": base}
+    return {"ok": True, "file": paths._rel(p), "trash": paths._rel(dst), "name": base,
+            "workflow": wf_moved}
 
 
 # ---------------------------------------------------------------- 官方应用（.app.json）

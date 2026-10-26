@@ -46,10 +46,25 @@ def _user_default_dir() -> str:
     return os.path.join(COMFY_ROOT, "user", "default")
 
 
-WORKFLOW_DIR = os.path.join(_user_default_dir(), "workflows")
+_USER_DEFAULT = _user_default_dir()
+WORKFLOW_DIR = os.path.join(_USER_DEFAULT, "workflows")
+
+# 应用归档目录：一个应用 = 一个 .kapp.json + 一份同名工作流副本，都放这里。
+#
+# 为什么放在工作流目录**外面**（用户 2026-10-26 要求）：
+#   * 工作流目录里已经有几十个文件，应用包混进去后用户分不清哪个是「拿来改的工作流」、
+#     哪个是「应用的归档副本」；
+#   * ComfyUI 自己的工作流列表只扫 user/default/workflows，放外面就彻底不碍眼。
+# 代价：ComfyUI 自己的「打开工作流」看不到副本，改应用只能走打包面板的「切回工作流」。
+#
+# 目录是扁平的（<名>.kapp.json 与 <名>.json 并列），和用户确认过：一眼看全最省事。
+APPS_DIR = os.path.join(_USER_DEFAULT, "kedou_apps")
+# 回写口径里代表应用归档目录的前缀（相对 user/default）。
+APPS_PREFIX = "kedou_apps/"
+
 # 删应用包时的回收站：故意放在工作流目录**外面**。
 # 放里面会被 find_app_files 的 os.walk 扫到（文件名不带点），删掉的应用又冒出来。
-TRASH_DIR = os.path.join(os.path.dirname(WORKFLOW_DIR), "kedou_trash")
+TRASH_DIR = os.path.join(_USER_DEFAULT, "kedou_trash")
 if not os.path.isdir(os.path.join(COMFY_ROOT, "custom_nodes")):
     # 启动自检：根目录推断错误时立即报出，避免应用列表为空却无任何提示
     print("[KeDou] 警告：ComfyUI 根目录推断可能不对 -> %s" % COMFY_ROOT)
@@ -87,6 +102,25 @@ def _stem(filename: str) -> str:
     if low.endswith(".json"):
         return filename[:-len(".json")]
     return filename
+
+
+def pack_rel(path: str) -> str:
+    """应用包 / 工作流副本的「回写口径」（kapp 的 source、列表的 target 都用它）。
+
+    两种形态，前端原样传回、后端能反解：
+      * 应用归档目录里的文件 → ``kedou_apps/<名>.json``（相对 user/default）
+      * 工作流目录里的文件   → ``修图/x.json``（相对工作流目录，老口径，已有包都是这个）
+
+    不能统一成一种：老包存的 source/target 是相对工作流目录的，改了前缀它们就全部解析不到
+    （表现是「切回工作流」按钮全灰、删除报目标不合法）。带 ``kedou_apps/`` 前缀天然能区分。
+    """
+    if _under(APPS_DIR, path):
+        rel = os.path.relpath(path, APPS_DIR).replace("\\", "/")
+        return APPS_PREFIX + rel
+    try:
+        return os.path.relpath(path, WORKFLOW_DIR).replace("\\", "/")
+    except Exception:                                # noqa: BLE001
+        return str(path).replace("\\", "/")
 
 
 def _rel(path: str) -> str:
