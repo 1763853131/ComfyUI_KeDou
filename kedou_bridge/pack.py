@@ -127,6 +127,33 @@ def _ui_widget_names(node: dict) -> list:
 # 「创建边界框」框选控件的内部标题：这些名字对人没有信息量，打包时换成「边界框」
 _BBOX_INTERNAL_LABELS = ("编辑器状态", "边界框状态", "editor_state", "last_incoming", "editor state")
 
+# 视频 / 音频素材控件的后缀表（打包时按 COMBO 的选项猜 widget，见 _media_kind_of_choices）
+_VIDEO_EXTS = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv")
+_AUDIO_EXTS = (".flac", ".wav", ".mp3", ".ogg", ".m4a", ".opus", ".aac")
+
+
+def _media_kind_of_choices(cfg) -> str:
+    """COMBO 的选项**全部**是视频/音频文件名时，返回 "video" / "audio"，否则空串。
+
+    为什么要猜：视频/音频加载节点的控件在 object_info 里就是普通 COMBO，光看类型分不出来；
+    但它的选项就是 input 目录里的文件名 —— 后缀是最硬的信号，比记住节点名靠谱
+    （VHS 升版、原生改 schema、别人 fork 一个新加载节点，后缀都不会变）。
+    ⚠️ 混着图片/视频的选项一律返回空串（宁可退化成普通下拉框，也不乱判）。
+    """
+    if not isinstance(cfg, dict):
+        return ""
+    ch = cfg.get("choices") or cfg.get("options")
+    if not isinstance(ch, (list, tuple)) or not ch:
+        return ""
+    names = [str(x).lower() for x in ch if isinstance(x, str) and x]
+    if not names:
+        return ""
+    if all(n.endswith(_VIDEO_EXTS) for n in names):
+        return "video"
+    if all(n.endswith(_AUDIO_EXTS) for n in names):
+        return "audio"
+    return ""
+
 
 def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = None) -> str:
     """打包候选的建议 widget（按节点声明推断，仅几处品牌特判：本家节点）。
@@ -136,6 +163,14 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
         return "kedou_media"
     if class_type == "LoadImage" and name == "image":
         return "image"
+    # 视频 / 音频素材：品牌特判只列「名字和后缀对不上」的几处（VHS 的控件叫 video、
+    # 原生的叫 file/audio），其余靠下面的后缀表兜底。
+    if class_type == "VHS_LoadVideo" and name == "video":
+        return "video"
+    if class_type == "LoadVideo" and name == "file":
+        return "video"
+    if class_type in ("VHS_LoadAudio", "LoadAudio") and name == "audio":
+        return "audio"
     if _prompt_usage_of(class_type, name):
         return "prompt"
     decl, cfg = _find_spec(object_info, class_type, name)
@@ -144,7 +179,13 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
     if decl == "BOOLEAN":
         return "toggle"
     if decl == "COMBO":
-        return "combo"
+        # 选项全是 .mp4 / .flac 这类文件名的 → 素材控件（视频/音频），不是普通下拉
+        return _media_kind_of_choices(cfg) or "combo"
+    # ⚠️ 老式 INPUT_TYPES 的下拉声明是 `(选项列表, {})` —— `_find_spec` 取 spec[0] 拿到的是
+    #    **列表本身**，不是字符串 "COMBO"。只认 `decl == "COMBO"` 的话这条分支在真机上永远进不去
+    #    （视频/音频后缀推断等于没写），普通下拉也只能靠下面「退回 UI 工作流声明」兜底。
+    if isinstance(decl, (list, tuple)):
+        return _media_kind_of_choices({"choices": list(decl)}) or "combo"
     # 「创建边界框」那套框选控件（comfy_api 的 BOUNDING_BOX / BOUNDING_BOXES）。
     # 值是 [{x,y,width,height,metadata}]，既不是数字也不是文本：给独立类型 bbox，
     # 应用里渲染成能拖框的画布；认不出这个类型的老客户端会退回文本框，不会坏。

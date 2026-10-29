@@ -1936,14 +1936,16 @@ app.registerExtension({
 // 的 output 即 API 格式）与勾选参数 POST 到 /ps/pack/save。不依赖工作流先保存。
 // 这套逻辑与上面的 KedouImageLoader 面板完全独立，互不影响。
 
-const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "kedou_media", "prompt", "bbox"];
+const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "video", "audio", "kedou_media", "prompt", "bbox"];
 // 下拉里显示的名字：值是落进 kapp 的协议字段，不能翻；只有显示名走 t()。
 // 说明：toggle 在 PS 面板里渲染成真开关（spec.type == BOOLEAN → .sw），所以叫「开关」；
 // prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框；
-// bbox 是「创建边界框」节点那套框选数据，启动器里渲染成能直接拖框的画布。
+// bbox 是「创建边界框」节点那套框选数据，启动器里渲染成能直接拖框的画布；
+// video / audio 是素材选择，启动器里渲染成「下拉 + 播放器预览 + 拖入 + 媒体库」。
 const KP_WIDGET_LABEL = {
   text: "Text", number: "Number", toggle: "Switch",
-  combo: "Dropdown", image: "Image", kedou_media: "Kedou image loader",
+  combo: "Dropdown", image: "Image", video: "Video", audio: "Audio",
+  kedou_media: "Kedou image loader",
   prompt: "Kedou prompt", bbox: "Bounding boxes",
 };
 // 主题适配（2026-09-28）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
@@ -2154,7 +2156,7 @@ function kpToast(msg, isErr) {
 }
 
 function kpPreview(v, widget) {
-  if (widget === "image" || widget === "kedou_media") {
+  if (widget === "image" || widget === "kedou_media" || widget === "video" || widget === "audio") {
     const s = String(v == null ? "" : v);
     return (s.split("/").pop() || t("(not selected)")).slice(0, 40);
   }
@@ -2212,17 +2214,37 @@ function suggestWidget(node, w) {
   const ntype = node.type || node.comfyClass || "";
   if (ntype === "KedouImageLoader" && w.name === "media_state") return "kedou_media";
   if (ntype === "LoadImage" && w.name === "image") return "image";
+  // 视频 / 音频素材：只列「名字和后缀对不上」的几处（VHS 的控件叫 video、原生叫 file/audio），
+  // 其余靠下面的后缀表兜底 —— 与后端 pack.py 的 _suggest_widget 同一套规则，两边必须一致。
+  if (ntype === "VHS_LoadVideo" && w.name === "video") return "video";
+  if (ntype === "LoadVideo" && w.name === "file") return "video";
+  if ((ntype === "VHS_LoadAudio" || ntype === "LoadAudio") && w.name === "audio") return "audio";
   if (promptUsageOf(ntype, w.name)) return "prompt";
   const kind = widgetKind(w.type);
+  // 普通下拉也要先过一遍后缀表：真机 combo 的 w.type 就是 "combo"，直接 return 的话
+  // 下面那条后缀兜底永远走不到，视频/音频只能靠上面几个写死节点名认（与后端 pack.py 同规则）
+  if (kind === "combo") return mediaKindOfChoices(comboValuesOf(w)) || "combo";
   if (kind) return kind;         // null/""/undefined 继续往下兜底
   // 自定义类型名（如 ResolutionSelector 的 aspect_ratio）：控件对象里有选项列表就是下拉，
   // 不应按类型名推断：判为 text 会使应用中的下拉退化为输入框
   const vals = comboValuesOf(w);
-  if (vals && vals.length) return "combo";
+  if (vals && vals.length) return mediaKindOfChoices(vals) || "combo";
   // 有些插件把数值/布尔塞进自定义控件，类型名认不出时按值兜底
   if (typeof w.value === "boolean") return "toggle";
   if (typeof w.value === "number") return "number";
   return "text";
+}
+
+// 选项**全部**是视频/音频文件名时判成素材控件，否则空串（混着图片的一律不猜）。
+// 后缀是最硬的信号：VHS 升版、原生改 schema、别人 fork 一个加载节点，后缀都不会变。
+const KP_VIDEO_EXTS = [".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv"];
+const KP_AUDIO_EXTS = [".flac", ".wav", ".mp3", ".ogg", ".m4a", ".opus", ".aac"];
+function mediaKindOfChoices(vals) {
+  const names = (vals || []).filter((x) => typeof x === "string" && x).map((x) => x.toLowerCase());
+  if (!names.length) return "";
+  if (names.every((n) => KP_VIDEO_EXTS.some((e) => n.endsWith(e)))) return "video";
+  if (names.every((n) => KP_AUDIO_EXTS.some((e) => n.endsWith(e)))) return "audio";
+  return "";
 }
 
 // 真机 combo 选项列表：标准在 w.options.values；个别插件给函数（动态生成），调用一次取回

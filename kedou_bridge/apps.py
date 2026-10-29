@@ -67,9 +67,15 @@ def find_app_files(root: str = None) -> list:
 # 打包：POST /ps/pack（source = 任意 UI 格式工作流，含 .app.json）。
 # 插件仍是纯通道：声明是什么就是什么，不针对任何应用做特判。
 
-_KAPP_WIDGETS = ("text", "number", "toggle", "combo", "image", "kedou_media", "prompt", "bbox")
+_KAPP_WIDGETS = ("text", "number", "toggle", "combo", "image", "video", "audio",
+                 "kedou_media", "prompt", "bbox")
 _KAPP_KIND = {"text": "text", "number": "number", "toggle": "bool",
               "combo": "combo", "image": "image", "kedou_media": "text",
+              # video / audio 是「素材选择」控件（VHS_LoadVideo.video、LoadVideo.file、
+              # VHS_LoadAudio.audio、LoadAudio.audio 这类）。kind 报自己的名字，启动器渲染成
+              # 「下拉 + 播放器预览 + 拖入 + 媒体库」；不认识它们的旧客户端按 widget 名兜底成
+              # text，退化成普通输入框，不会崩 —— 与 prompt / bbox 同一套兼容约定。
+              "video": "video", "audio": "audio",
               # prompt 是「提示词 + 用途」复合控件；kind 仍报 text，
               # 不认识新 widget 的旧客户端退回普通文本框，不会坏。
               "prompt": "text",
