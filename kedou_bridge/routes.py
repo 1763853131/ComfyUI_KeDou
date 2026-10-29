@@ -11,7 +11,7 @@ import json
 import os
 import re
 
-from . import apps, compat, image_sets, media, pack, paths, state
+from . import apps, compat, image_sets, media, pack, paths, state, version
 
 LOCALE_DIR = os.path.join(paths.PLUGIN_DIR, "locales")
 _thumb_pruned = False
@@ -80,6 +80,7 @@ def register(routes):
         return compat.web.json_response({
             "ok": True,
             "bridge": "ComfyUI_KeDou",
+            "version": version.__version__,
             "schema_version": state.BRIDGE_SCHEMA_VERSION,
             "features": {
                 "sidecar_state": True,

@@ -7,6 +7,9 @@ __pycache__/
 *.bak-*
 _newver/
 
+# 出包产物（tools/pack_release.py 生成）
+dist/
+
 # Hindsight 记忆库开关：本机 opt-in 标记，不随插件分发
 .hindsight.json
 

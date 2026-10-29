@@ -58,6 +58,10 @@ _BRIDGE = _load_bridge()
 _nodes = _BRIDGE.nodes
 _compat = _BRIDGE.compat
 
+# 启动日志里就报版本：对方装了哪一版，看日志第一行即可，不用去翻文件。
+print("[KeDou] ComfyUI_KeDou v%s 已加载（%s）" % (
+    _BRIDGE.__version__, PLUGIN_DIR))
+
 if _compat.HAS_COMFY:
     try:
         _BRIDGE.routes.register(_compat.PromptServer.instance.routes)
