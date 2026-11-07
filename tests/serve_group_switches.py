@@ -78,6 +78,9 @@ def main():
                     text = (ROOT / "tests/group_switches_browser.js").read_text(encoding="utf-8")
                     text = text.replace('import("/scripts/app.js")', 'import("http://127.0.0.1:8188/scripts/app.js")')
                     self.reply(text, "text/javascript")
+                elif path == "/pack_rows.js":
+                    text = (ROOT / "tests/pack_rows_browser.js").read_text(encoding="utf-8")
+                    self.reply(text, "text/javascript")
                 elif path == "/locale":
                     self.reply(json.loads((ROOT / "locales/zh/main.json").read_text(encoding="utf-8")))
                 elif path == "/ps/pack/apps":

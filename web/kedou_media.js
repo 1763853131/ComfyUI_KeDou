@@ -2860,6 +2860,10 @@ function openPackPanel(hostEl) {
   const dotRowEl = (dot) => {
     let e = dot;
     while (e && e.parentElement) {
+      // 动态分组节点（如 LoadLoraModel 的 loras）会把多行包在一个分组容器里：
+      // 分组容器的父级才是 .lg-node-widgets，如果一路走到那里，三行会全映射成同一个元素。
+      // 先认离圆点最近的 .lg-node-widget（真正的那一行），没有再退回旧规则。
+      if (e.classList && e.classList.contains("lg-node-widget")) return e;
       const p = e.parentElement;
       if (p.classList && p.classList.contains("lg-node-widgets")) return e;
       if (p.getAttribute && p.getAttribute("data-node-id")) return null;
