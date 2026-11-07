@@ -65,6 +65,10 @@ export async function runGroupSwitchTests(before = false) {
   test("两个分组行", host.querySelectorAll(".kp-group-row").length, 2);
   test("没有普通参数也可生成", host.querySelector(".kp-gen").disabled, false);
   const firstRow = host.querySelector(".kp-group-row");
+  const modeSel = firstRow.querySelector(".kp-group-mode");
+  test("关闭方式用看得懂的词", [...modeSel.options].map((o) => o.textContent), ["跳过", "停用"]);
+  test("词面改了存的仍是原生模式", [...modeSel.options].map((o) => o.value), ["bypass", "mute"]);
+  test("悬停说明带上官方对照", modeSel.title.includes("绕过") && modeSel.title.includes("静音"));
   const label = firstRow.querySelector(".kp-group-name");
   label.value = "超分 <img src=x>";
   label.dispatchEvent(new Event("input"));

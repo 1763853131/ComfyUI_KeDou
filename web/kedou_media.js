@@ -2415,7 +2415,7 @@ async function kpGroupPrompt(switches) {
     const group = candidates.find((candidate) => candidate.id === item.id);
     if (!group) throw new Error(t("Group \"{name}\" is no longer on this canvas.", { name: item.label }));
     if (group.hasSubgraph && item.mode === "bypass") {
-      throw new Error(t("Group \"{name}\" contains a subgraph; use Mute, or expose the processing nodes in the main graph for Bypass.", { name: item.label }));
+      throw new Error(t("Group \"{name}\" contains a subgraph; use Disable, or move the processing nodes into a main-canvas group to use Skip.", { name: item.label }));
     }
     return { ...item, members: group.nodes };
   });
@@ -2680,13 +2680,13 @@ function openPackPanel(hostEl) {
       modeLabel.textContent = t("When off");
       const mode = document.createElement("select");
       mode.className = "kp-sel kp-group-mode";
-      for (const [value, label] of [["bypass", "Bypass"], ["mute", "Mute"]]) {
+      for (const [value, label] of [["bypass", "Skip"], ["mute", "Disable"]]) {
         const option = document.createElement("option");
         option.value = value; option.textContent = t(label);
         mode.appendChild(option);
       }
       mode.value = item.mode;
-      mode.title = t("Bypass passes through matching inputs; Mute removes the group from execution.");
+      mode.title = t("Skip: the group does not run, data passes straight through to the next node (ComfyUI Bypass). Disable: the group does not run and nothing is passed on, so downstream loses that input (ComfyUI Mute).");
       mode.onchange = () => { item.mode = mode.value; renderPreview(); };
       modeLabel.appendChild(mode);
       const defaultLabel = document.createElement("label");
@@ -2721,7 +2721,7 @@ function openPackPanel(hostEl) {
     groupSwitches.push({ id: item.id, label: item.label, default: true, mode: item.hasSubgraph ? "mute" : "bypass", nodes: item.nodes });
     groupSelect.hidden = true;
     err.textContent = item.hasSubgraph
-      ? t("This group contains a subgraph. Mute is supported; Bypass requires processing nodes in the main graph.") : "";
+      ? t("This group contains a subgraph. Disable works here; Skip needs the processing nodes in a main-canvas group.") : "";
     renderGroups(); updateCount();
   };
 
