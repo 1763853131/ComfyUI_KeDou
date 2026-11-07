@@ -5,16 +5,80 @@ import json
 import os
 import re
 import shutil
+import tempfile
+import threading
 import time
 import urllib.parse
 import uuid
 
-from . import apps, compat, paths
+from . import apps, compat, groups, paths
 from .common import (_clean_label, _dom_handle, _panel_widget, _ref_parts,
                      _widget_values)
 from .registry import (build_object_info, widget_spec, _ctl_after_gen,
                        _declared_widgets, _find_spec, _widget_index)
 from .state import _load_app_state, _state_path
+
+
+_PACK_WRITE_LOCK = threading.Lock()
+
+
+def _write_kapp_files(out_path, kapp, workflow=None):
+    if not (paths._under(paths.APPS_DIR, out_path)
+            or paths._under(paths.WORKFLOW_DIR, out_path)):
+        raise ValueError("应用包路径越出允许目录")
+    wf_path = None
+    if workflow is not None:
+        stem = paths._stem(os.path.basename(out_path))
+        wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
+        if not paths._under(paths.APPS_DIR, wf_path):
+            raise ValueError("工作流副本路径越出应用归档目录")
+
+    with _PACK_WRITE_LOCK:
+        staged = []
+        backup = None
+        workflow_written = False
+        try:
+            entries = [(wf_path, workflow, 2)] if wf_path else []
+            entries.append((out_path, kapp, 1))
+            for target, data, indent in entries:
+                directory = os.path.dirname(target)
+                os.makedirs(directory, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(dir=directory, prefix=".kedou-pack-", suffix=".tmp")
+                staged.append((tmp, target))
+                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=indent)
+                    f.write("\n")
+            if wf_path and os.path.exists(wf_path):
+                fd, backup = tempfile.mkstemp(
+                    dir=os.path.dirname(wf_path), prefix=".kedou-pack-", suffix=".bak")
+                os.close(fd)
+                shutil.copy2(wf_path, backup)
+            # 包最后替换；失败时用预先备好的原文件回滚，不依赖再次分配磁盘空间。
+            for tmp, target in staged:
+                os.replace(tmp, target)
+                if target == wf_path:
+                    workflow_written = True
+        except Exception as error:
+            if workflow_written:
+                try:
+                    if backup is not None:
+                        os.replace(backup, wf_path)
+                    else:
+                        os.remove(wf_path)
+                except OSError as rollback_error:
+                    recovery = backup or wf_path
+                    backup = None
+                    raise OSError("%s；工作流回滚失败：%s；恢复文件保留在：%s"
+                                  % (error, rollback_error, recovery)) from error
+            raise
+        finally:
+            for leftover in [tmp for tmp, _target in staged] + ([backup] if backup else []):
+                try:
+                    os.remove(leftover)
+                except FileNotFoundError:
+                    pass
+                except OSError as error:
+                    print("[KeDou] 打包临时文件清理失败：%s（%s）" % (leftover, error))
 
 
 def _find_workflow_file(name: str):
@@ -441,21 +505,15 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
     stem = paths._stem(raw) if raw else paths._stem(os.path.basename(path))
     if not stem or not paths._safe_id(stem):
         return {"ok": False, "error": "应用名含非法字符（不能含 / \\ .. 或 :）"}
-    # 归档：工作流副本 + 应用包并排放在应用目录里（工作流目录之外，ComfyUI 扫不到）
     wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
-    try:
-        os.makedirs(paths.APPS_DIR, exist_ok=True)
-        paths._dump_json_atomic(wf_path, wf, indent=2)
-    except Exception as e:                       # noqa: BLE001
-        return {"ok": False, "error": "工作流副本写入失败：%s" % e}
     built = _build_kapp(wf, decls, raw or stem, desc, saved,
                         source=_src_rel(wf_path))
     if not built["ok"]:
         return built
     out_path = os.path.join(paths.APPS_DIR, stem + ".kapp.json")
     try:
-        paths._dump_json_atomic(out_path, built["kapp"], indent=1)
-    except Exception as e:                       # noqa: BLE001
+        _write_kapp_files(out_path, built["kapp"], wf)
+    except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": paths._rel(out_path), "param_count": len(built["params"]),
             "node_count": len(built["graph"]), "outputs": built["outputs"],
@@ -527,13 +585,7 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
         out_dir = paths.APPS_DIR
         out_path = os.path.join(out_dir, stem + ".kapp.json")
 
-    # 归档：工作流副本和应用包并排放在应用目录（与 /ps/pack/save 同一套规矩）
     wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
-    try:
-        os.makedirs(paths.APPS_DIR, exist_ok=True)
-        paths._dump_json_atomic(wf_path, workflow, indent=2)
-    except Exception as e:                       # noqa: BLE001
-        return {"ok": False, "error": "工作流副本写入失败：%s" % e}
     source = _src_rel(wf_path)
 
     built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info,
@@ -548,15 +600,11 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
                                       % "、".join(missing)}
     kapp["outputs"] = nid_order
 
-    try:
-        os.makedirs(out_dir, exist_ok=True)
-    except Exception as e:                        # noqa: BLE001
-        return {"ok": False, "error": "应用归档目录不可写：%s" % e}
     if not paths._under(out_dir, out_path):
         return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
-        paths._dump_json_atomic(out_path, kapp, indent=1)
-    except Exception as e:                       # noqa: BLE001
+        _write_kapp_files(out_path, kapp, workflow)
+    except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "id": stem, "file": paths._rel(out_path),
             "target": _pack_target(out_path), "param_count": len(built["params"]),
@@ -707,6 +755,10 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
     graph = kapp.get("graph")
     if not isinstance(graph, dict) or not graph:
         return {"ok": False, "error": "graph 必须是非空的 API 格式工作流"}
+    try:
+        groups.validate(kapp)
+    except ValueError as error:
+        return {"ok": False, "error": str(error)}
     params = kapp.get("params")
     if not isinstance(params, list):
         return {"ok": False, "error": "params 必须是列表"}
@@ -757,11 +809,6 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
         # 让副本和应用包变成两个名字。
         file_stem = paths._stem(os.path.basename(out_path))
         wf_path = os.path.join(paths.APPS_DIR, file_stem + ".json")
-        try:
-            os.makedirs(paths.APPS_DIR, exist_ok=True)
-            paths._dump_json_atomic(wf_path, ui_wf, indent=2)
-        except Exception as e:                        # noqa: BLE001
-            return {"ok": False, "error": "工作流副本写入失败：%s" % e}
         kapp = dict(kapp, source=_src_rel(wf_path))
     else:
         # source：前端记下的「这包是从哪个工作流打的」，只用于「切回工作流」。
@@ -784,22 +831,23 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
             return {"ok": False,
                     "error": "打包图完整性校验未通过，共 %d 个问题：%s%s"
                              % (len(errs), "；".join(head), more)}
-    try:
-        os.makedirs(out_dir, exist_ok=True)
-    except Exception as e:                        # noqa: BLE001
-        return {"ok": False, "error": "应用归档目录不可写：%s" % e}
-    if not paths._under(out_dir, out_path):              # 落盘前按真实路径复核
+    if not paths._under(out_dir, out_path):
         return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
-        paths._dump_json_atomic(out_path, kapp, indent=1)
-    except Exception as e:                        # noqa: BLE001
+        _write_kapp_files(out_path, kapp, ui_wf)
+    except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": paths._rel(out_path), "target": _pack_target(out_path),
-            "param_count": len(params), "node_count": len(graph), "warnings": warns,
-            "edited": bool(target)}
+            "param_count": len(params) + len(kapp.get("groups", [])),
+            "node_count": len(graph), "warnings": warns, "edited": bool(target)}
 
 
 def delete_kapp(target: str) -> dict:
+    with _PACK_WRITE_LOCK:
+        return _delete_kapp_locked(target)
+
+
+def _delete_kapp_locked(target: str) -> dict:
     """POST /ps/pack/delete —— 把打包面板列表里的一个应用包移到回收站。
 
     不直接 os.remove：手滑点错就再也回不来了。改成移到 user/default/kedou_trash/，

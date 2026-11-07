@@ -6,7 +6,7 @@ import importlib.util
 import json
 import os
 
-from . import compat, paths
+from . import compat, groups, paths
 from .common import (DOM_HANDLE_KIND, KIND_CN, NOISE_INPUTS, _clean_label,
                      _kind_of, _panel_widget, _ref_parts, _widget_values)
 from .registry import (build_object_info, widget_spec, _find_spec, _unknown_in_ui,
@@ -95,6 +95,7 @@ def _load_kapp(path: str) -> dict:
         raise ValueError("不是 kapp 应用包（缺少 kedou_app: 1）")
     if not isinstance(data.get("graph"), dict) or not data["graph"]:
         raise ValueError("kapp 缺少 graph（API 格式工作流）")
+    groups.validate(data)
     return data
 
 
@@ -175,7 +176,7 @@ def build_kapp_spec(path: str, object_info: dict = None) -> dict:
     saved = _load_app_state(path)                    # sidecar 保存值覆盖声明里的 default
     if object_info is None and compat.NODE_MAP:
         object_info = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()}))
-    params = []
+    params = groups.spec_items(data, saved)
     for entry in (data.get("params") or []):
         if not isinstance(entry, dict):
             continue
@@ -234,14 +235,28 @@ def build_kapp_spec(path: str, object_info: dict = None) -> dict:
 
 
 def _build_graph_kapp(path: str, values: dict, object_info: dict) -> dict:
-    """kapp 取图：graph 已是 API 格式，深拷贝 + 注值即可（无转换）。"""
+    """kapp 取图：注入参数后按分组开关裁剪和重接 API 图。"""
     data = _load_kapp(path)
     graph = copy.deepcopy(data["graph"])
-    if object_info is None and compat.NODE_MAP:
-        object_info = build_object_info(sorted({str(v.get("class_type")) for v in graph.values()}))
-    applied, skipped, failed = _inject_values(graph, values)
+    ordinary, switches, failures = groups.split_values(data, values)
+    applied, skipped, failed = _inject_values(graph, ordinary)
+    failed.extend(failures)
+    applied.extend(switches)
+    disabled = groups.disabled_nodes(data, switches)
+    if not failed and disabled:
+        try:
+            graph = groups.rewrite(graph, data["group_nodes"], disabled)
+        except ValueError as error:
+            return {"ok": False, "error": str(error)}
+        if not graph:
+            return {"ok": False, "error": "分组全部关闭后没有可执行节点，请至少打开一个分组"}
+        for key in list(applied):
+            if str(key).rpartition(":")[0] in disabled:
+                applied.remove(key)
+                skipped.append({"key": key, "why": "节点所在分组已关闭"})
     return {
         "ok": not failed,
+        "disabled_nodes": list(disabled),
         "graph": graph,
         "node_count": len(graph),
         "applied": applied,
@@ -494,6 +509,14 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
     is_kapp = isinstance(graph, dict) and not isinstance(wf.get("nodes"), list)
 
     if is_kapp:
+        try:
+            groups.validate(wf)
+        except ValueError as error:
+            return {"ok": False, "error": str(error)}
+        values, switches, group_failures = groups.split_values(wf, values)
+        changed.extend(switches)
+        changed_values.update(switches)
+        failed.extend(group_failures)
         # kapp（首推格式）：参数值直接住在 API 图的 inputs 里。
         # 旧版只认 nodes，导致 kapp 的每一次回写都报 no such node。
         params_by_key = {}
@@ -501,7 +524,7 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
             if isinstance(p, dict):
                 params_by_key[(str(p.get("node")), str(p.get("input")))] = p
         for key, val in (values or {}).items():
-            nid, _, widget = str(key).partition(":")
+            nid, _, widget = str(key).rpartition(":")
             node = graph.get(str(nid))
             if not isinstance(node, dict):
                 failed.append({"key": key, "why": "no such node"})
@@ -529,7 +552,7 @@ def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
                 sorted({str(n.get("type")) for n in nodes if isinstance(n, dict)}))
 
         for key, val in (values or {}).items():
-            nid, _, widget = str(key).partition(":")
+            nid, _, widget = str(key).rpartition(":")
             node = by_id.get(str(nid))
             if node is None:
                 failed.append({"key": key, "why": "no such node"})
@@ -625,7 +648,7 @@ def _inject_values(graph: dict, values: dict):
     """
     applied, skipped, failed = [], [], []
     for key, val in (values or {}).items():
-        nid, _, widget = str(key).partition(":")
+        nid, _, widget = str(key).rpartition(":")
         node = graph.get(str(nid))
         if node is None:
             failed.append({"key": key, "why": "节点不在可执行图中（可能被静音/未安装）"})

@@ -2041,6 +2041,13 @@ const KPCSS = [
   "background:var(--interface-panel-surface,#2a2a33);box-shadow:0 8px 22px rgba(0,0,0,.45);",
   "opacity:1;pointer-events:none;}",
   ".kp-picktop:hover .kp-picktip{display:block;}",
+  ".kp-groups,.kp-group-list{display:flex;flex-direction:column;gap:6px;}",
+  ".kp-group-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;padding:8px;border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;}",
+  ".kp-group-settings{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;}",
+  ".kp-group-settings>label{display:flex;align-items:center;gap:6px;}",
+  ".kp-pv-group{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;}",
+  ".kp-pv-sw.kp-on{background:var(--p-primary-color,#4a7dff);}",
+  ".kp-pv-sw.kp-on:after{left:18px;background:#fff;opacity:1;}",
   ".kp-picklist{display:flex;flex-direction:column;gap:6px;}",
   ".kp-pickrow{display:flex;align-items:center;gap:6px;padding:6px 7px;border:1px solid var(--interface-stroke,#3a3a44);border-radius:8px;}",
   ".kp-pickrow .kp-lab{flex:1;min-width:0;}",
@@ -2380,6 +2387,78 @@ function defaultAppName() {
 // 包就永远不记得自己从哪来。现在改成打包时自己把画布另存一份到应用归档目录，
 // 不再问 ComfyUI「你这张图存过盘没有」。
 
+function kpGroupCandidates() {
+  const graph = app.rootGraph || app.graph;
+  return Array.from(graph.groups || graph._groups || []).map((group, index) => {
+    // boundingRect 这个 getter 会先把布局 store 里的最新尺寸同步进来，_bounding 可能是旧的
+    const bounds = group.boundingRect || group._bounding;
+    const nodes = (graph.nodes || graph._nodes || []).filter((node) => {
+      const r = node.boundingRect;
+      const x = r[0] + r[2] / 2, y = r[1] + r[3] / 2;
+      return bounds && x >= bounds[0] && x <= bounds[0] + bounds[2]
+        && y >= bounds[1] && y <= bounds[1] + bounds[3];
+    });
+    return {
+      id: "group-" + String(group.id ?? index),
+      label: String(group.title || t("Untitled group")),
+      nodes: nodes.map((node) => String(node.id)),
+      hasSubgraph: nodes.some((node) => !!node.subgraph),
+    };
+  });
+}
+
+async function kpGroupPrompt(switches) {
+  const root = app.rootGraph || app.graph;
+  const workflow = root.serialize();
+  const candidates = kpGroupCandidates();
+  const chosen = switches.map((item) => {
+    const group = candidates.find((candidate) => candidate.id === item.id);
+    if (!group) throw new Error(t("Group \"{name}\" is no longer on this canvas.", { name: item.label }));
+    if (group.hasSubgraph && item.mode === "bypass") {
+      throw new Error(t("Group \"{name}\" contains a subgraph; use Mute, or expose the processing nodes in the main graph for Bypass.", { name: item.label }));
+    }
+    return { ...item, members: group.nodes };
+  });
+  // 独立图上启用成员，才能把默认关闭的节点也打进包；绝不切换用户画布的 mode。
+  const graph = new root.constructor();
+  try {
+    graph.configure(JSON.parse(JSON.stringify(workflow)));
+    const enabled = new Set(chosen.flatMap((item) => item.members));
+    const ports = {};
+    const visit = (current, prefix = "", force = false) => {
+      for (const node of current._nodes || []) {
+        const id = prefix + String(node.id);
+        const active = force || (!prefix && enabled.has(id));
+        if (active) node.mode = 0;
+        if (node.subgraph) {
+          visit(node.subgraph, id + ":", active);
+        } else {
+          ports[id] = {
+            inputs: (node.inputs || []).map((slot) => ({ name: slot.name, type: String(slot.type ?? "*") })),
+            outputs: (node.outputs || []).map((slot) => String(slot.type ?? "*")),
+          };
+        }
+      }
+    };
+    visit(graph);
+    const prompt = await app.graphToPrompt(graph);
+    const output = prompt.output || {};
+    const groups = chosen.map(({ members, ...item }) => {
+      const nodes = Object.keys(output).filter((id) => members.some((member) => id === member || id.startsWith(member + ":")));
+      if (!nodes.length) throw new Error(t("Group \"{name}\" has no executable nodes.", { name: item.label }));
+      return { ...item, nodes };
+    });
+    const groupNodes = {};
+    for (const id of Object.keys(output)) {
+      if (!ports[id]) throw new Error(t("Cannot map execution node {id} to the canvas.", { id }));
+      groupNodes[id] = ports[id];
+    }
+    return { output, workflow, groups, groupNodes };
+  } finally {
+    graph.clear();
+  }
+}
+
 function openPackPanel(hostEl) {
   ensurePackCss();
   const sidebar = !!hostEl;                         // 侧栏模式：内容直接挂进页签元素
@@ -2517,7 +2596,20 @@ function openPackPanel(hostEl) {
   previewEl.addEventListener("toggle", () => {
     try { localStorage.setItem("kedou.pack.pv", previewEl.open ? "1" : "0"); } catch (_) { /* ignore */ }
   });
-  pickPane.append(pickTop, pickList, pickFoot, previewEl);
+  let groupSwitches = [];
+  const groupField = document.createElement("div");
+  groupField.className = "kp-groups";
+  const groupAdd = document.createElement("button");
+  groupAdd.className = "kp-tbtn kp-group-add";
+  groupAdd.textContent = t("Add group switch");
+  const groupSelect = document.createElement("select");
+  groupSelect.className = "kp-lab kp-group-select";
+  groupSelect.setAttribute("aria-label", t("Choose a canvas group"));
+  groupSelect.hidden = true;
+  const groupList = document.createElement("div");
+  groupList.className = "kp-group-list";
+  groupField.append(groupAdd, groupSelect, groupList);
+  pickPane.append(pickTop, pickList, pickFoot, groupField, previewEl);
 
   body.append(listField, editHint, nameField, descField, graphField,
               pickPane, err);
@@ -2558,8 +2650,79 @@ function openPackPanel(hostEl) {
     syncPick();
     renderPick();
     // 一个参数都没勾时「生成」按钮变灰：省得点了才发现空清单
-    gen.disabled = !rows.some((r) => r.cb.checked);
+    gen.disabled = !rows.some((r) => r.cb.checked) && !groupSwitches.length;
     gen.classList.toggle("kp-gen-off", gen.disabled);
+  };
+
+  const renderGroups = () => {
+    groupAdd.textContent = t("Add group switch");
+    groupList.replaceChildren();
+    for (const item of groupSwitches) {
+      const row = document.createElement("div");
+      row.className = "kp-group-row";
+      row.dataset.group = item.id;
+      const name = document.createElement("input");
+      name.className = "kp-lab kp-group-name";
+      name.value = item.label;
+      name.setAttribute("aria-label", t("Switch name"));
+      name.oninput = () => { item.label = name.value; renderPreview(); };
+      const remove = document.createElement("button");
+      remove.className = "kp-pdel";
+      remove.textContent = "×";
+      remove.title = t("Remove");
+      remove.onclick = () => {
+        groupSwitches = groupSwitches.filter((other) => other !== item);
+        renderGroups(); updateCount();
+      };
+      const settings = document.createElement("div");
+      settings.className = "kp-group-settings";
+      const modeLabel = document.createElement("label");
+      modeLabel.textContent = t("When off");
+      const mode = document.createElement("select");
+      mode.className = "kp-sel kp-group-mode";
+      for (const [value, label] of [["bypass", "Bypass"], ["mute", "Mute"]]) {
+        const option = document.createElement("option");
+        option.value = value; option.textContent = t(label);
+        mode.appendChild(option);
+      }
+      mode.value = item.mode;
+      mode.title = t("Bypass passes through matching inputs; Mute removes the group from execution.");
+      mode.onchange = () => { item.mode = mode.value; renderPreview(); };
+      modeLabel.appendChild(mode);
+      const defaultLabel = document.createElement("label");
+      defaultLabel.className = "kp-chk";
+      const checked = document.createElement("input");
+      checked.type = "checkbox"; checked.checked = item.default;
+      checked.className = "kp-group-default";
+      checked.onchange = () => { item.default = checked.checked; renderPreview(); };
+      defaultLabel.append(checked, document.createTextNode(t("Default on")));
+      settings.append(modeLabel, defaultLabel);
+      row.append(name, remove, settings);
+      groupList.appendChild(row);
+    }
+  };
+  groupAdd.onclick = () => {
+    if (editing && !graphCb.checked) {
+      err.textContent = t("To add a canvas group, enable Update graph from current workflow first.");
+      return;
+    }
+    const choices = kpGroupCandidates().filter((item) => !groupSwitches.some((selected) => selected.id === item.id));
+    groupSelect.replaceChildren(new Option(t("Choose a canvas group"), ""));
+    for (const item of choices) {
+      groupSelect.add(new Option(item.label + " · " + item.nodes.length, item.id));
+    }
+    groupSelect.hidden = !choices.length;
+    err.textContent = choices.length ? "" : t("No more canvas groups to add. Create a group around the nodes first.");
+    if (choices.length) groupSelect.focus();
+  };
+  groupSelect.onchange = () => {
+    const item = kpGroupCandidates().find((candidate) => candidate.id === groupSelect.value);
+    if (!item || groupSwitches.some((selected) => selected.id === item.id)) return;
+    groupSwitches.push({ id: item.id, label: item.label, default: true, mode: item.hasSubgraph ? "mute" : "bypass", nodes: item.nodes });
+    groupSelect.hidden = true;
+    err.textContent = item.hasSubgraph
+      ? t("This group contains a subgraph. Mute is supported; Bypass requires processing nodes in the main graph.") : "";
+    renderGroups(); updateCount();
   };
 
   // 一行参数的数据载体。删掉列表页后不再有行 DOM —— lab / sel 只当状态容器，
@@ -3203,7 +3366,7 @@ function openPackPanel(hostEl) {
     previewBody.innerHTML = "";
     // 一项没勾时预览区就空着 —— 原来那句「勾几个参数，这里就按应用的样子排出来。」
     // 被用户点名删掉（2026-10-26），也不要悬浮版
-    if (!ordered.length) return;
+    if (!ordered.length && !groupSwitches.length) return;
     const head = document.createElement("div");
     const nm = document.createElement("div");
     nm.className = "kp-pv-name";
@@ -3217,6 +3380,17 @@ function openPackPanel(hostEl) {
       head.appendChild(dd);
     }
     previewBody.appendChild(head);
+    for (const item of groupSwitches) {
+      const field = document.createElement("div");
+      field.className = "kp-pv-group";
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      const sw = document.createElement("div");
+      sw.className = "kp-pv-sw" + (item.default ? " kp-on" : "");
+      sw.title = item.default ? t("On") : t("Off");
+      field.append(label, sw);
+      previewBody.appendChild(field);
+    }
     for (const r of ordered) {
       const field = document.createElement("div");
       field.className = "kp-pv-field";
@@ -3313,6 +3487,9 @@ function openPackPanel(hostEl) {
   };
   const applyEditing = (file, kapp, id) => {
     editing = { id: id || "", file, kapp: kapp || {} };
+    groupSwitches = JSON.parse(JSON.stringify(editing.kapp.groups || []));
+    groupSelect.hidden = true;
+    renderGroups();
     resetRows();
     nameInput.value = String(editing.kapp.name || "");
     nameAuto = false;
@@ -3367,6 +3544,9 @@ function openPackPanel(hostEl) {
   };
   const resetEditor = () => {
     editing = null;
+    groupSwitches = [];
+    groupSelect.hidden = true;
+    renderGroups();
     resetRows();
     nameInput.value = defaultAppName();
     nameAuto = true;
@@ -3621,6 +3801,8 @@ function openPackPanel(hostEl) {
     pickClear.title = t("Remove every picked parameter; the canvas is untouched");
     if (!gen.disabled) setPrimaryLabel();
     renderAppList();     // 行内按钮文案也要跟着语言走
+    renderGroups();
+    groupSelect.setAttribute("aria-label", t("Choose a canvas group"));
     updateCount();       // 清单 + 预览随之重画
   };
   kpUnsubRepaint = onLocaleChange(repaint);   // 侧栏常驻也要能注销，否则重建一次泄漏一个监听
@@ -3629,6 +3811,7 @@ function openPackPanel(hostEl) {
     nameInput, descInput, rows, err, gen, graphCb,
     order: () => pickOrder,
     editing: () => editing,
+    groups: () => groupSwitches,
     refreshList: () => loadApps(),
   });
 
@@ -3690,6 +3873,7 @@ async function doGenerate(ctx) {
     return;
   }
   const editing = typeof ctx.editing === "function" ? ctx.editing() : null;
+  const switches = typeof ctx.groups === "function" ? ctx.groups() : [];
   const checked = ctx.rows.filter((r) => r.cb.checked);
   // 点选页的顺序就是 kapp 里的参数顺序：按 pickOrder 排一遍（没点过的排在后面）
   if (typeof ctx.order === "function") {
@@ -3700,21 +3884,27 @@ async function doGenerate(ctx) {
     };
     checked.sort((a, b) => pos(a) - pos(b));
   }
-  if (!checked.length) {
-    ctx.err.textContent = t("Select at least one parameter");
+  if (!checked.length && !switches.length) {
+    ctx.err.textContent = t("Select at least one parameter or group switch");
     return;
   }
   // 编辑已有应用时默认保留原 graph / outputs，只改参数声明；
   // 勾了「用当前工作流更新图」才重新抓图（参数也得能在新图里找到）。
   const updateGraph = !editing || !!(ctx.graphCb && ctx.graphCb.checked);
+  // 不更新图就没有新分组的 ports 数据，包会被后端退回；在这里说清楚该勾哪个
+  if (!updateGraph && switches.some((item) => !(editing.kapp.groups || []).some((g) => g.id === item.id))) {
+    ctx.err.textContent = t("New group switches need \"Update graph from current workflow\".");
+    return;
+  }
   const primary = () => editing ? t("Save changes") : t("Generate app package");
   ctx.gen.disabled = true;
   ctx.gen.textContent = editing ? t("Saving…") : t("Generating…");
   ctx.err.textContent = "";
-  let output;
+  let output, groupPrompt;
   if (updateGraph) {
     try {
-      const pr = await app.graphToPrompt();
+      if (switches.length) groupPrompt = await kpGroupPrompt(switches);
+      const pr = groupPrompt || await app.graphToPrompt();
       output = (pr && pr.output) || {};
     } catch (e) {
       ctx.err.textContent = t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
@@ -3806,6 +3996,13 @@ async function doGenerate(ctx) {
     params,
     outputs,
   });
+  if (switches.length) {
+    kapp.groups = groupPrompt ? groupPrompt.groups : JSON.parse(JSON.stringify(switches));
+    kapp.group_nodes = groupPrompt ? groupPrompt.groupNodes : editing.kapp.group_nodes;
+  } else {
+    delete kapp.groups;
+    delete kapp.group_nodes;
+  }
   // 打包 = 归档：把画布这一刻另存一份 **UI 格式**工作流（app.graph.serialize()），
   // 后端写到 user/default/kedou_apps/<应用名>.json，和应用包并排放，source 指向它。
   //
@@ -3815,7 +4012,7 @@ async function doGenerate(ctx) {
   // 现在不依赖 ComfyUI 存没存过：我们自己存。
   let uiWf = null;
   if (updateGraph) {
-    try { uiWf = app.graph.serialize(); } catch (_) { uiWf = null; }
+    try { uiWf = groupPrompt ? groupPrompt.workflow : app.graph.serialize(); } catch (_) { uiWf = null; }
   }
   const payload = { name: kapp.name, desc: kapp.desc, kapp };
   if (uiWf && Array.isArray(uiWf.nodes) && uiWf.nodes.length) payload.workflow = uiWf;
