@@ -158,7 +158,7 @@
   - 不盖画布、不抢选择；目标节点按「当前选中 → 打开时快照 → 第一个 CLIP」三级确定；填入后重选节点。
 - 提交 `5bf8560`：新增自有提示词输入框节点。
   - 大 textarea + 词库/存为预设/清除 + 置顶和最近 chips；词库抽屉锁定该节点；清掉白主题黑块配色。
-- 旧实现的原件保存在 `D:/Git/_archived_git/KeDou_promptlib_removed_20261012/`（`__init__.py.bak`、`kedou_media.js.bak`）。
+- 旧实现的原件保存在本机归档目录 `_archived_git/KeDou_promptlib_removed_20261012/`（`__init__.py.bak`、`kedou_media.js.bak`）。
 
 ### 阶段 3：集成进节点（2026-10-13）
 

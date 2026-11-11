@@ -173,4 +173,4 @@ ComfyUI_KeDou/
 
 1. **自动历史默认开还是关？** 建议开（30 行、hash 去重、50 条封顶），不想要时面板里一个开关关掉。
 2. **新条目默认 type**：手动保存默认「精选」还是弹 type 选择？建议默认精选，编辑里可改。
-3. **ObsidianPromptBridge 处置**：词库重做后它功能重叠（Composer 除外）。建议归档进 `D:\Git` 保紧 + 从 custom_nodes 挪走（避免两套词库路由并存打架），你确认。
+3. **ObsidianPromptBridge 处置**：词库重做后它功能重叠（Composer 除外）。建议归档到本机仓库目录留存 + 从 custom_nodes 挪走（避免两套词库路由并存打架），你确认。

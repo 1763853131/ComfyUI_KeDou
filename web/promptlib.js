@@ -1,5 +1,5 @@
 // 蝌蚪提示词库（轻量版 v6）—— 语库 / 词库 / 历史 三个入口都在「蝌蚪提示词输入框」节点上
-// 后端：prompt_vault 包（vendored 在 ComfyUI_KeDou/prompt_vault/，上游是 D:\Git\prompt_vault，
+// 后端：prompt_vault 包（vendored 在 ComfyUI_KeDou/prompt_vault/，上游是独立仓库 prompt_vault，
 //       改动在那边提交后跑 sync.py 推过来）
 //       GET /ps/prompts（语库）、/ps/prompts/history（历史）、/ps/prompts/phrases（短词）
 //       POST save|delete|use|history|history/clear|phrases/save|phrases/delete|phrases/use|vault
