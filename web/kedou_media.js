@@ -156,16 +156,21 @@ const CSS = [
   ".kd-zoom{position:fixed;z-index:100001;pointer-events:none;display:none;",
   "max-width:344px;border-radius:10px;overflow:hidden;",
   "border:2px solid var(--p-primary-color,#4a7dff);",
-  "box-shadow:0 10px 30px rgba(0,0,0,.55);background:var(--comfy-menu-bg,#232329);}",
+  // 底色写死深色，不跟主题变量：新版前端把 --comfy-menu-bg 接到了 var(--background)
+  // （main-*.css 实测），白主题下它是白的，浅字压上去整条看不见（2026-11-11 用户截图）。
+  // 悬浮层是临时浮层，两种主题统一深底浅字，和格子角标 .kd-no 一个口径。
+  "box-shadow:0 10px 30px rgba(0,0,0,.55);background:#1c1c22;}",
   ".kd-zoom img{display:block;margin:0 auto;max-width:340px;max-height:340px;width:auto;height:auto;object-fit:contain;}",
-  // 尺寸条：贴在悬浮图下面，写原图像素；对齐分辨率开着且尺寸会变时再补「→ 输出 W×H」。
-  // 悬浮层的底色是 --comfy-menu-bg（恒定深色，白主题下也一样），所以这里直接给浅字，
-  // 不能跟着 --fg-color 走 —— 白主题下那是黑字，落在深底上就看不见了。
-  ".kd-zoomcap{display:flex;align-items:center;justify-content:center;gap:5px;",
-  "padding:4px 9px;font:11px/1.35 system-ui,sans-serif;color:#e8e8ee;white-space:nowrap;",
+  // 信息条：文件名 + 尺寸合在同一条里（文件名一行、尺寸一行）。
+  // 以前文件名走格子的原生 title 提示，浏览器自己摆位置，正好压在这条上 —— 现在只留这一层。
+  ".kd-zoomcap{display:flex;flex-direction:column;align-items:center;gap:2px;",
+  "padding:5px 10px;font:11px/1.35 system-ui,sans-serif;color:#e8e8ee;",
   "background:rgba(0,0,0,.34);border-top:1px solid rgba(255,255,255,.09);}",
+  ".kd-zname{max-width:322px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.82;}",
+  ".kd-zdim{display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}",
   ".kd-zoom.kd-chip{border-radius:8px;border-width:1px;}",
-  ".kd-zoom.kd-chip .kd-zoomcap{border-top:0;background:transparent;padding:3px 9px;}",
+  ".kd-zoom.kd-chip .kd-zoomcap{border-top:0;background:transparent;padding:4px 10px;}",
+  ".kd-zoom.kd-chip .kd-zname{max-width:300px;}",
   ".kd-zd{font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.2px;}",
   ".kd-za{color:var(--p-primary-color,#4a7dff);}",
   ".kd-zl{opacity:.6;font-size:10px;}",
@@ -366,6 +371,13 @@ function kdZoomBox() {
   const cap = document.createElement("div");
   cap.className = "kd-zoomcap";
   cap.style.display = "none";
+  // 文件名和尺寸同住一条：名字一行（超长省略）、尺寸一行。格子不再挂原生 title，
+  // 否则浏览器自己的提示会摆到这条上面，两块信息互相盖（用户截图里就是那样）。
+  const nm = document.createElement("div");
+  nm.className = "kd-zname";
+  const dim = document.createElement("div");
+  dim.className = "kd-zdim";
+  cap.append(nm, dim);
   d.appendChild(cap);
   document.body.appendChild(d);
   kdZoomEl = d;
@@ -384,24 +396,35 @@ function kdZoomPlace(d, x, y) {
 function kdZoomPaintCap(d, info, force) {
   const cap = d.querySelector(".kd-zoomcap");
   if (!cap) return;
+  const nm = cap.querySelector(".kd-zname");
+  const dim = cap.querySelector(".kd-zdim");
   const bucket = info ? Math.max(0, Number(info.bucket) || 0) : 0;
   const key = info && info.name ? kdSizeKey(info) + "|" + bucket : "";
   // mousemove 每秒来几十次，数字已经在就别重建 DOM
-  if (!force && key && d.dataset.size === key && cap.dataset.state === "num") return;
+  if (!force && key && d.dataset.size === key && dim && dim.dataset.state === "num") return;
   d.dataset.size = key;
-  cap.textContent = "";
-  const rec = key ? kdSizePeek(info) : null;
-  if (!rec) {
-    // 读不到（文件没了 / 后端还没这条路由）就整条收起来，绝不显示错数字，也不留个永远的「…」
-    const wait = !!key && !kdSizeFailed(info);
-    cap.style.display = wait ? "" : "none";
-    cap.dataset.state = wait ? "wait" : "off";
-    if (wait) cap.textContent = "…";
-    return;
+  const name = info && info.name ? String(info.name) : "";
+  if (nm) {
+    nm.textContent = name;
+    nm.style.display = name ? "" : "none";
   }
-  cap.style.display = "";
-  cap.dataset.state = "num";
-  kdFillSize(cap, rec.w, rec.h, bucket);
+  const rec = key ? kdSizePeek(info) : null;
+  if (dim) {
+    dim.textContent = "";
+    if (rec) {
+      dim.style.display = "";
+      dim.dataset.state = "num";
+      kdFillSize(dim, rec.w, rec.h, bucket);
+    } else {
+      // 读不到尺寸（文件没了 / 后端还没这条路由）只收尺寸行，绝不编数字，也不留永远的「…」；
+      // 文件名照常显示 —— 格子的原生 title 已经去掉，名字只剩这一处可看。
+      const wait = !!key && !kdSizeFailed(info);
+      dim.style.display = wait ? "" : "none";
+      dim.dataset.state = wait ? "wait" : "off";
+      if (wait) dim.textContent = "…";
+    }
+  }
+  cap.style.display = (name || (dim && dim.style.display !== "none")) ? "" : "none";
 }
 function kdZoomShow(url, x, y, info) {
   const d = kdZoomBox();
@@ -1083,7 +1106,9 @@ function renderPanel(node) {
   state.images.forEach((it, i) => {
     const cell = document.createElement("div");
     cell.className = "kd-cell";
-    cell.title = it.filename;
+    // 不挂原生 title：浏览器自己的文件名提示会摆在悬浮层上面，把尺寸盖住。
+    // 文件名并进悬浮层的信息条（kd-zname），这里只留 aria-label 给读屏。
+    cell.setAttribute("aria-label", it.filename);
     const img = document.createElement("img");
     img.loading = "lazy";
     img.draggable = false;                  // 禁原生拖拽：拖图片出去会在画布创建官方 LoadImage 节点，没用还干扰
@@ -2144,13 +2169,16 @@ const KP_WIDGET_LABEL = {
   kedou_media: "Kedou image loader",
   prompt: "Kedou prompt", bbox: "Bounding boxes",
 };
-// 主题适配（2026-09-28）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
+// 主题适配（2026-09-28，2026-11-11 复核）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
 // 实测取自本机 comfyui_frontend_package 的 main-*.css：
 //   随主题变（可用）：--fg-color(黑#fff/白#000) --bg-color --content-bg(#4e4e4e/#e0e0e0)
 //                    --interface-panel-surface(charcoal-800/white) --interface-stroke
 //                    --error-text --backdrop
-//   恒定深色（不可用，白主题下仍是黑块）：--comfy-menu-bg --comfy-input-bg
-//                    --border-color --descrip-text --input-text
+//   ⚠ --comfy-menu-bg 旧前端恒定深色，新版前端已改成 var(--background) —— 白主题下是白的。
+//     所以「深底 + 写死浅字」的浮层（.kd-zoom）不能再拿它当底色，见该处注释；
+//     拿它当底色的地方必须同时用 --fg-color 当字色（.kd-card / .kd-libwin 是这样）。
+//   仍恒定深色（不可用，白主题下仍是黑块）：--comfy-input-bg --border-color
+//                    --descrip-text --input-text
 // 所有 var() 都带一份深色回退值，老前端没有这些变量时保持原外观。
 const KPCSS = [
   ".kp-ov{position:fixed;inset:0;z-index:99990;background:rgba(0,0,0,.45);display:flex;justify-content:flex-end;}",

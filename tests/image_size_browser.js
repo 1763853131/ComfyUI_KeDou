@@ -40,6 +40,13 @@
   }
   const zoom = () => (T.zoomEl ? T.zoomEl() : null);
   const cap = () => { const d = zoom(); return d ? d.querySelector(".kd-zoomcap") : null; };
+  // 合并后尺寸行是 .kd-zdim；改动前的备份里尺寸直接写在 .kd-zoomcap 上，两处都认，
+  // 反向测试才能跑到「num」而不是每条都等超时。
+  const dimRow = (c) => (c ? (c.querySelector(".kd-zdim") || c) : null);
+  const nameOf = (c) => {
+    const s = c && c.querySelector(".kd-zname");
+    return s ? s.textContent : null;
+  };
   const dim = (el) => {
     const s = el && el.querySelector(".kd-zd");
     return s ? s.textContent : null;
@@ -59,7 +66,8 @@
     const t0 = Date.now();
     while (Date.now() - t0 < (timeout || 2500)) {
       const c = cap();
-      if (c && c.dataset.state === "num") return c;
+      const row = dimRow(c);
+      if (row && row.dataset.state === "num") return c;
       await sleep(25);
     }
     return cap();
@@ -87,6 +95,24 @@
          !!(zoom() && zoom().firstElementChild.src.indexOf("w=512") > 0));
     test("显示的是原图尺寸，不是缩略图尺寸", dim(c), "1600 × 900");
     test("桶为原尺寸时不多出一条输出尺寸", outSize(c), null);
+
+    // ------------------------------------------- 文件名与尺寸合并成一条（不再两个提示互相盖）
+    test("文件名和尺寸在同一条信息里", nameOf(c), "wide.png");
+    const nmEl = c ? c.querySelector(".kd-zname") : null;
+    const dmEl = dimRow(c);
+    test("名字行在尺寸行上方",
+         nmEl && dmEl ? nmEl.getBoundingClientRect().bottom <= dmEl.getBoundingClientRect().top + 0.5 : false);
+    test("格子不再挂原生 title（浏览器提示不会压到悬浮层上）",
+         cells()[0].getAttribute("title"), null);
+    test("格子保留 aria-label 给读屏", cells()[0].getAttribute("aria-label"), "wide.png");
+    const theme = new URLSearchParams(location.search).get("theme") || "dark";
+    test("悬浮层底色不随主题变（" + theme + " 主题下也是深底）",
+         getComputedStyle(zoom()).backgroundColor, "rgb(28, 28, 34)");
+    test(theme + " 主题下尺寸数字仍是浅字（深底上可读）",
+         dmEl && dmEl.querySelector(".kd-zd")
+           ? getComputedStyle(dmEl.querySelector(".kd-zd")).color : null, "rgb(232, 232, 238)");
+    test(theme + " 主题下文件名也是浅字",
+         nmEl ? getComputedStyle(nmEl).color : null, "rgb(232, 232, 238)");
 
     const calls0 = window.__sizeCalls.filter((u) => u.indexOf("wide.png") >= 0).length;
     test("一张图只发一次尺寸请求", calls0, 1);
@@ -140,6 +166,7 @@
     hover(cells()[0], 150, 150);
     c = await waitNum();
     test("选择模式也能看到尺寸", dim(c), "1600 × 900");
+    test("选择模式的小浮标也带文件名", nameOf(c), "wide.png");
     test("选择模式不出放大图（点击留给选中）", zoom().firstElementChild.style.display, "none");
     test("选择模式用小浮标样式", zoom().classList.contains("kd-chip"));
     // 框选期间不该有悬浮层跟选框抢视线。
@@ -164,8 +191,11 @@
     hover(cells()[3], 200, 200);
     await sleep(400);
     test("后端还没这条路由时，放大图照常出", zoom().style.display, "block");
-    test("读不到尺寸就整条收起，不编数字",
-         cap() ? cap().style.display : "(没有尺寸条)", "none");
+    test("读不到尺寸时尺寸行收起，不编数字",
+         dimRow(cap()) ? dimRow(cap()).style.display : "(没有尺寸行)", "none");
+    test("读不到尺寸时不留下任何数字", dim(cap()), null);
+    test("读不到尺寸时文件名仍在（原生 title 已去掉，名字只剩这一处）",
+         nameOf(cap()), "small.webp");
     leave(cells()[3]);
     window.__blockSize = false;
     if (T.kdSizeCache) T.kdSizeCache.clear();
@@ -203,6 +233,28 @@
          r.left >= -0.5 && r.top >= -0.5);
     test("尺寸条真的有高度（没被裁掉）", c ? c.getBoundingClientRect().height > 8 : false);
     leave(cells()[0]);
+
+    // ---------------------------------------------------------------- 长文件名不撑破悬浮层
+    const longHost = document.createElement("div");
+    longHost.style.cssText = "position:fixed;left:10px;top:10px;width:80px;height:60px;";
+    document.body.appendChild(longHost);
+    const longName = fx.longName;
+    if (T.attachZoom) {
+      T.attachZoom(longHost, T.thumbUrl(longName, "", 512, "input", "raw"),
+                   { name: longName, sub: "", tab: "input", bucket: 1024 });
+    }
+    longHost.dispatchEvent(new MouseEvent("mouseenter", { clientX: 40, clientY: 40 }));
+    longHost.dispatchEvent(new MouseEvent("mousemove", { clientX: 40, clientY: 40 }));
+    await sleep(300);
+    const lz = zoom();
+    const lnm = lz ? lz.querySelector(".kd-zname") : null;
+    test("长文件名也进同一条信息", lnm ? lnm.textContent : null, longName);
+    test("长文件名走省略号，不撑宽悬浮层",
+         lnm ? (lnm.scrollWidth > lnm.clientWidth &&
+                lz.getBoundingClientRect().width <= 348.5) : false);
+    test("长文件名时尺寸行仍完整可见", dim(cap()), "1600 × 900");
+    longHost.dispatchEvent(new MouseEvent("mouseleave"));
+    longHost.remove();
   } catch (e) {
     results.push({ name: "运行中抛异常", pass: false, actual: String(e && e.stack || e), expected: "无异常" });
   }

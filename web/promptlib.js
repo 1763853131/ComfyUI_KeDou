@@ -16,7 +16,8 @@
 //   5) 「保存」先选去处：语库（.md）或词库（我的词·未分类）；右键可在三个库之间
 //      添加/移动（历史→语库/词库是复制，词库↔语库是先建后删的移动）。
 // 主题规矩：随主题变可用 --fg-color --content-bg --interface-panel-surface --interface-stroke --error-text；
-//   恒定深色 --comfy-menu-bg --comfy-input-bg --border-color --descrip-text 禁用（白主题黑块坑）。
+//   --comfy-menu-bg 别配写死字色：旧前端恒定深色、新版前端随主题变（=var(--background)），
+//   拿它当底又写死浅字，白主题下整块看不见；--comfy-input-bg --border-color --descrip-text 仍恒定深色，禁用。
 // 动效：只动 transform/opacity；prefers-reduced-motion 只留 fade。
 import { app } from "../../scripts/app.js";
 import { t, initI18n, onLocaleChange, serverError } from "./i18n.js";

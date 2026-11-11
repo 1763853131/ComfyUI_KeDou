@@ -25,7 +25,10 @@ from aiohttp import web
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8897
-BACKUP = "kedou_media.js.bak-20261111-hover-size"
+# 反向测试的基线：默认拿「合并文件名/尺寸」改动前的备份；可用第二个参数换别的备份。
+BACKUP = sys.argv[2] if len(sys.argv) > 2 else "kedou_media.js.bak-20261111-merge-cap"
+# 真·长文件名：11px 下约 480px 宽，超过信息条名字行的 322px 上限，用来验省略号。
+LONG_NAME = "金属臂灵汐_最终版_改改改_再改_交付_真的最终版_还要再改_这次真的不改了_备份_副本_归档.png"
 
 
 def load_bridge(stack):
@@ -78,6 +81,7 @@ def make_fixtures(in_dir, out_dir, nodes):
     # 已经正好落在 1024 档不动点上的图：桶开着也不该多出一条「输出」
     fw, fh = nodes.bucket_size(1600, 900, 1024)
     files.append(put(in_dir / "fixed.png", (fw, fh), color=(80, 160, 200)))
+    files.append(put(in_dir / LONG_NAME, (1600, 900), color=(190, 120, 160)))
     (in_dir / "broken.png").write_bytes(b"\x89PNG\r\n\x1a\nnot a real png")
     return files
 
@@ -98,7 +102,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8">
 <title>kedou hover size verify</title>
 <style>
-  html,body{margin:0;background:#1b1b20;color:#e8e8ee;font:13px/1.5 system-ui,sans-serif}
+  html,body{margin:0;background:var(--background,#1b1b20);color:var(--foreground,#e8e8ee);font:13px/1.5 system-ui,sans-serif}
   #host{position:relative;width:460px;height:380px;overflow:auto;margin:12px}
   #out{white-space:pre-wrap;padding:8px 12px;font:11px/1.5 ui-monospace,monospace}
 </style>
@@ -106,7 +110,23 @@ PAGE = """<!doctype html>
 <pre id="out">running…</pre>
 <script>
 (async function () {
-  const which = new URLSearchParams(location.search).get("module") || "module.js";
+  const params = new URLSearchParams(location.search);
+  const which = params.get("module") || "module.js";
+  // 主题变量按本机前端 main-*.css 的实测映射注入：--comfy-menu-bg:var(--background)。
+  // 旧前端 --comfy-menu-bg 恒定深色，新前端随主题变；白主题的 --background/--foreground
+  // 由前端主题系统在运行时注入（用户截图实测为白底黑字），这里照此复现两种主题。
+  // 不注入的话 var() 全走深色回退，白主题下「浅字压白底」这类 bug 永远测不出来。
+  const rs = document.documentElement.style;
+  if ((params.get("theme") || "dark") === "light") {
+    rs.setProperty("--background", "#ffffff");
+    rs.setProperty("--foreground", "#000000");
+  } else {
+    rs.setProperty("--background", "#171718");
+    rs.setProperty("--foreground", "#ffffff");
+  }
+  rs.setProperty("--comfy-menu-bg", "var(--background)");
+  rs.setProperty("--fg-color", "var(--foreground)");
+  rs.setProperty("--p-primary-color", "#4a7dff");
   const loc = await (await fetch("/ps/locale?lang=zh")).json();
   const dict = (loc && loc.messages) || {};
   window.__t = function (key, params) {
@@ -211,7 +231,7 @@ def main():
 
         @table.get("/fixtures.json")
         async def fixtures(request):
-            return web.json_response({"files": files, "cases": cases})
+            return web.json_response({"files": files, "cases": cases, "longName": LONG_NAME})
 
         @table.get("/view")
         async def view(request):
