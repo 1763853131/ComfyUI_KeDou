@@ -41,6 +41,7 @@
   "Select mode: when on, clicking a panel image selects it (numbered in click order), click again to deselect; only selected images are output and clicking no longer opens the zoom preview": "选择模式：打开后点击面板图片即选中（按点击顺序编号），再点取消；此时只输出被选中的照片，且点击不再放大预览",
   "Alignment resolution": "对齐分辨率",
   "Original": "原尺寸",
+  "Output": "输出",
   "Common": "常用",
   "Finer steps ({n})": "细分（步进 {n}）",
   "Search": "搜索",

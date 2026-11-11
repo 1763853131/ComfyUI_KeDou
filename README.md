@@ -78,6 +78,7 @@ custom_nodes/ComfyUI_KeDou/
 | `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图；转换结果按文件版本缓存 |
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
 | `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256&fit=3x4`，按源图指纹落盘缓存；不透明出 JPEG、带透明出 PNG（**不能用 webp —— PS 面板的 `<img>` 走 Adobe 解码器，解不出来就是一片空白**）；`fit=<宽x高>` 把整图缩进这个比例再按 `#1a1a1a` 补边（**不裁边**，缩略图要让人认出画面；UXP 的 `max-*` 不锁宽高比，所以位图比例必须严格等于面板格子）；ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡 |
+| `/ps/imgsize` | GET | 原图像素尺寸：`?filename=&subfolder=&type=` → `{ok,width,height,bytes,tab,format}`。只读文件头、不解码整图，按路径 + mtime + 字节数缓存；宽高按 EXIF 方向摆正（与缩略图、节点出图一致）；`type` 指的目录里没有就自动试另一个并回报命中的 `tab`；不是图 / 读不出 / 越界回 404 |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
 | `/ps/pack` | POST | 按已有工作流文件生成应用包：`<stem>.kapp.json` + 同名工作流副本，都放进 `user/default/kedou_apps/` |
 | `/ps/pack/apps` | GET | 列出**应用归档目录 + 工作流目录**里所有 `.kapp.json`（打包面板的「已打包的应用」列表用），带 `target`（回写/删除口径）与 `source`（来源工作流） |

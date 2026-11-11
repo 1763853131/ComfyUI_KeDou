@@ -150,6 +150,61 @@ def _media_file(name, sub, tab):
     return path
 
 
+# ---------------------------------------------------------------- 原图尺寸
+# 悬浮预览要回答「这张图多大」，但缩略图是缩过的、媒体清单里的 size 是字节数，
+# 两处都拿不到像素宽高；让前端去读原图又意味着为看一个数字下载几 MB。
+# 这里只读文件头（Pillow 的 Image.open 不解码像素），一次不到一毫秒，
+# 再按源文件指纹在内存里缓存，鼠标反复扫过同一张图不会重复读盘。
+_SIZE_CACHE = {}            # 路径 -> (mtime_ns, 字节数, (宽, 高), 格式)
+_SIZE_CACHE_MAX = 512       # 满了丢最早写进来的那条（不是 LRU，够用且不用额外维护顺序）
+
+
+def image_size(name, sub="", tab="input") -> dict:
+    """原图像素尺寸：{ok,width,height,bytes,tab,format}；给的目录里找不到会自动试另一个。
+
+    宽高按 EXIF 方向换算过（手机竖拍存的是横向像素 + 一个方向标记），与缩略图、
+    与节点 _load_image 出来的张量一致 —— 否则面板写着 4032×3024、实际出图 3024×4032。
+    自动试另一个目录是必要的：面板格子先按 input 取图、失败才退 output，
+    鼠标可能在回退发生前就扫过去了，这时按 input 找必然扑空。
+    不是图片 / 读不出来 / 越界，一律 ok=False（路由回 404）。
+    """
+    src = used = None
+    for cand in (("output", "input") if str(tab) == "output" else ("input", "output")):
+        src = _media_file(name, sub, cand)
+        if src:
+            used = cand
+            break
+    if not src:
+        return {"ok": False, "error": "文件不存在，或不在输入/输出目录内"}
+    if not src.lower().endswith(MEDIA_EXTS["image"]):
+        return {"ok": False, "error": "不是图片文件"}
+    try:
+        st = os.stat(src)
+    except OSError:
+        return {"ok": False, "error": "文件读不到"}
+    hit = _SIZE_CACHE.get(src)
+    if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+        size, fmt = hit[2], hit[3]
+    else:
+        try:
+            from PIL import Image                               # noqa: PLC0415
+            with Image.open(src) as im:
+                size, fmt = im.size, str(im.format or "")
+                try:
+                    orient = int(im.getexif().get(274, 1) or 1)   # 274 = Orientation
+                except Exception:                               # noqa: BLE001
+                    orient = 1                                  # 没有 EXIF：按存的宽高算
+            if orient in (5, 6, 7, 8):                          # 转了 90/270 度：宽高互换
+                size = (size[1], size[0])
+        except Exception as e:                                  # noqa: BLE001
+            return {"ok": False, "error": "图片尺寸读不出来：%s" % e}
+        if len(_SIZE_CACHE) >= _SIZE_CACHE_MAX:
+            _SIZE_CACHE.pop(next(iter(_SIZE_CACHE)), None)
+        _SIZE_CACHE[src] = (st.st_mtime_ns, st.st_size, size, fmt)
+    return {"ok": True, "width": int(size[0]), "height": int(size[1]),
+            "bytes": st.st_size, "tab": used, "format": fmt}
+
+
 def _make_thumb(src, base, w, fit="", mode=""):
     """缩到 w 以内并落盘，返回真实写出的路径（base + .jpg/.png）。
 

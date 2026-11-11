@@ -157,7 +157,21 @@ const CSS = [
   "max-width:344px;border-radius:10px;overflow:hidden;",
   "border:2px solid var(--p-primary-color,#4a7dff);",
   "box-shadow:0 10px 30px rgba(0,0,0,.55);background:var(--comfy-menu-bg,#232329);}",
-  ".kd-zoom img{display:block;max-width:340px;max-height:340px;width:auto;height:auto;object-fit:contain;}",
+  ".kd-zoom img{display:block;margin:0 auto;max-width:340px;max-height:340px;width:auto;height:auto;object-fit:contain;}",
+  // 尺寸条：贴在悬浮图下面，写原图像素；对齐分辨率开着且尺寸会变时再补「→ 输出 W×H」。
+  // 悬浮层的底色是 --comfy-menu-bg（恒定深色，白主题下也一样），所以这里直接给浅字，
+  // 不能跟着 --fg-color 走 —— 白主题下那是黑字，落在深底上就看不见了。
+  ".kd-zoomcap{display:flex;align-items:center;justify-content:center;gap:5px;",
+  "padding:4px 9px;font:11px/1.35 system-ui,sans-serif;color:#e8e8ee;white-space:nowrap;",
+  "background:rgba(0,0,0,.34);border-top:1px solid rgba(255,255,255,.09);}",
+  ".kd-zoom.kd-chip{border-radius:8px;border-width:1px;}",
+  ".kd-zoom.kd-chip .kd-zoomcap{border-top:0;background:transparent;padding:3px 9px;}",
+  ".kd-zd{font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.2px;}",
+  ".kd-za{color:var(--p-primary-color,#4a7dff);}",
+  ".kd-zl{opacity:.6;font-size:10px;}",
+  // 输出尺寸用主色的浅色调：#4a7dff 本身压在深底上对比度不到 4.5，小字会发闷
+  ".kd-zo{color:#cfe0ff;font-weight:600;font-variant-numeric:tabular-nums;}",
+  ".kd-bigdim{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:3px;font-size:12.5px;}",
   ".kd-no{position:absolute;left:4px;bottom:4px;font-size:10px;line-height:16px;padding:0 6px;border-radius:999px;",
   "background:rgba(0,0,0,.66);color:#fff;max-width:calc(100% - 8px);overflow:hidden;text-overflow:ellipsis;",
   "white-space:nowrap;}",
@@ -234,27 +248,132 @@ function thumbUrl(name, sub, w, tab, mode) {
   return "/ps/thumb?" + new URLSearchParams(p).toString();
 }
 
+// ---- 原图尺寸（悬浮层与大图预览共用） ----
+// 缩略图是缩过的、/ps/media 的 size 是字节数，都答不了「这张图多少像素」，
+// 所以走桥接的 /ps/imgsize：后端只读文件头，不解码、不发图。
+// 绝不为了看一个数字去下载原图（一屏几十张 8MB 原图会把面板拖死）。
+const KD_SIZE_ERR_TTL = 10000;   // 读失败后再等多久才重试：图可能刚生成到一半
+const KD_SIZE_CAP = 800;         // 缓存条数上限（媒体库一屏就 400 条），超了丢最早的
+const kdSizeCache = new Map();   // "tab|sub/name" -> {w,h,tab} | {p:Promise} | {err:时间戳}
+
+function kdSizeKey(info) {
+  return (info.tab || "input") + "|" + (info.sub ? info.sub + "/" : "") + info.name;
+}
+function kdSizePeek(info) {
+  const rec = kdSizeCache.get(kdSizeKey(info));
+  return rec && rec.w ? rec : null;
+}
+function kdSizeFailed(info) {
+  const rec = kdSizeCache.get(kdSizeKey(info));
+  return !!(rec && rec.err && Date.now() - rec.err < KD_SIZE_ERR_TTL);
+}
+// 拿不到就现拉；已在请求中返回同一个 Promise，鼠标扫过多少次都只发一次请求。
+function kdSizeFetch(info) {
+  if (!info || !info.name) return null;
+  const key = kdSizeKey(info);
+  const rec = kdSizeCache.get(key);
+  if (rec && rec.w) return null;                       // 已有结果
+  if (rec && rec.p) return rec.p;                      // 正在请求
+  if (rec && rec.err && Date.now() - rec.err < KD_SIZE_ERR_TTL) return null;
+  const qs = new URLSearchParams({
+    filename: info.name, subfolder: info.sub || "", type: info.tab || "input",
+  }).toString();
+  const p = (async () => {
+    // /api/ 前缀兜底：ComfyUI 挂在子路径下时相对根路径会 404（与 fetchLibrary 同一套）
+    for (const pre of ["/ps/imgsize?", "/api/ps/imgsize?"]) {
+      try {
+        const r = await fetch(pre + qs);
+        if (!r.ok) continue;                           // 404 = 文件没了，或后端还没这条路由
+        const j = await r.json();
+        if (j && j.ok && j.width > 0 && j.height > 0) {
+          const got = { w: j.width, h: j.height, tab: j.tab || info.tab || "input" };
+          if (kdSizeCache.size >= KD_SIZE_CAP) kdSizeCache.delete(kdSizeCache.keys().next().value);
+          kdSizeCache.set(key, got);
+          // 后端会 input→output 兜底，命中的目录也记一份：换个格子问同一个文件不用再跑一趟
+          kdSizeCache.set(kdSizeKey({ name: info.name, sub: info.sub, tab: got.tab }), got);
+          return got;
+        }
+      } catch (e) { /* 试下一个前缀 */ }
+    }
+    kdSizeCache.set(key, { err: Date.now() });
+    return null;
+  })();
+  kdSizeCache.set(key, { p });
+  return p;
+}
+
+// 对齐分辨率下的输出尺寸：与后端 nodes.py::bucket_size 逐字对齐（官方编码器的取整公式）。
+// 注意 round：Python 的 round() 是「四舍六入五取偶」，Math.round 是「.5 一律进位」，
+// 1089×4096 @1024 这种正好落在 .5 的比例上两者会差 32px —— 所以自己写一个。
+function kdRound(x) {
+  const f = Math.floor(x), d = x - f;
+  if (d > 0.5) return f + 1;
+  if (d < 0.5) return f;
+  return f % 2 === 0 ? f : f + 1;
+}
+function kdBucketSize(w, h, res) {
+  if (!(res > 0) || !(w > 0) || !(h > 0)) return [w, h];
+  let ratio = w / h, best = null;
+  for (let i = 0; i < 6; i++) {
+    const bw = Math.max(32, kdRound(Math.sqrt(res * res * ratio) / 32) * 32);
+    const bh = Math.max(32, kdRound(Math.sqrt(res * res / ratio) / 32) * 32);
+    const nr = bw / bh;
+    const err = Math.abs(Math.log(nr / ratio));
+    if (!best || err < best[0]) best = [err, [bw, bh]];
+    if (Math.abs(nr - ratio) < 1e-9) break;            // 已是不动点
+    ratio = nr;
+  }
+  return best[1];
+}
+
+// 尺寸文本：原图像素 +（桶开着且尺寸真会变时）「→ 输出 W×H」。
+// 桶开着但尺寸不变就不啰嗦，免得出两条一样的数字。
+function kdFillSize(el, w, h, bucket) {
+  el.textContent = "";
+  const add = (cls, text) => {
+    const s = document.createElement("span");
+    s.className = cls;
+    s.textContent = text;
+    el.appendChild(s);
+  };
+  add("kd-zd", w + " × " + h);
+  const b = Math.max(0, Number(bucket) || 0);
+  if (b > 0) {
+    const out = kdBucketSize(w, h, b);
+    if (out[0] !== w || out[1] !== h) {
+      add("kd-za", "→");
+      add("kd-zl", t("Output"));
+      add("kd-zo", out[0] + " × " + out[1]);
+    }
+  }
+}
+
 // ---- 悬浮放大预览（媒体库网格 + 图片加载器面板共用） ----
-// 鼠标移到格子上时，在鼠标旁边浮出一张完整大图（contain，不裁切，主色高亮边）。
+// 鼠标移到格子上时，在鼠标旁边浮出一张完整大图（contain，不裁切，主色高亮边）+ 一条尺寸。
 // 用 dataset 记住当前 url，只在换图时才重设 src —— 否则 mousemove 每动一下都会重新发起请求。
 let kdZoomEl = null;
+let kdZoomAt = [0, 0];    // 最近一次鼠标位置：图/尺寸晚到时按新高度重贴，别掉出视口
+let kdMarquee = false;    // 框选进行中：不弹悬浮层，免得跟选框抢视线
 function kdZoomBox() {
   if (kdZoomEl && document.contains(kdZoomEl)) return kdZoomEl;
   const d = document.createElement("div");
   d.className = "kd-zoom";
-  d.appendChild(document.createElement("img"));
+  const img = document.createElement("img");
+  img.addEventListener("load", () => {
+    if (kdZoomEl === d && d.style.display !== "none") kdZoomPlace(d, kdZoomAt[0], kdZoomAt[1]);
+  });
+  d.appendChild(img);
+  const cap = document.createElement("div");
+  cap.className = "kd-zoomcap";
+  cap.style.display = "none";
+  d.appendChild(cap);
   document.body.appendChild(d);
   kdZoomEl = d;
   return d;
 }
-function kdZoomShow(url, x, y) {
-  const d = kdZoomBox();
-  if (d.dataset.url !== url) {
-    d.firstElementChild.src = url;
-    d.dataset.url = url;
-  }
-  d.style.display = "block";
-  const W = 344, H = 344, pad = 16;
+// 贴位用实测宽高，不再写死 344：窄长条的图本来就矮，加上尺寸条后高度还会再变一次
+function kdZoomPlace(d, x, y) {
+  const W = d.offsetWidth || 344, H = d.offsetHeight || 344, pad = 16;
   let left = x + pad;
   let top = y + pad;
   if (left + W > window.innerWidth) left = Math.max(8, x - W - pad);
@@ -262,12 +381,71 @@ function kdZoomShow(url, x, y) {
   d.style.left = left + "px";
   d.style.top = top + "px";
 }
+function kdZoomPaintCap(d, info, force) {
+  const cap = d.querySelector(".kd-zoomcap");
+  if (!cap) return;
+  const bucket = info ? Math.max(0, Number(info.bucket) || 0) : 0;
+  const key = info && info.name ? kdSizeKey(info) + "|" + bucket : "";
+  // mousemove 每秒来几十次，数字已经在就别重建 DOM
+  if (!force && key && d.dataset.size === key && cap.dataset.state === "num") return;
+  d.dataset.size = key;
+  cap.textContent = "";
+  const rec = key ? kdSizePeek(info) : null;
+  if (!rec) {
+    // 读不到（文件没了 / 后端还没这条路由）就整条收起来，绝不显示错数字，也不留个永远的「…」
+    const wait = !!key && !kdSizeFailed(info);
+    cap.style.display = wait ? "" : "none";
+    cap.dataset.state = wait ? "wait" : "off";
+    if (wait) cap.textContent = "…";
+    return;
+  }
+  cap.style.display = "";
+  cap.dataset.state = "num";
+  kdFillSize(cap, rec.w, rec.h, bucket);
+}
+function kdZoomShow(url, x, y, info) {
+  const d = kdZoomBox();
+  const img = d.firstElementChild;
+  if (url) {
+    img.style.display = "";
+    if (d.dataset.url !== url) {
+      img.src = url;
+      d.dataset.url = url;
+    }
+  } else {
+    img.style.display = "none";      // 选择模式：点击留给选中，悬浮只出一条尺寸小浮标
+  }
+  d.classList.toggle("kd-chip", !url);
+  d.style.display = "block";
+  kdZoomAt = [x, y];
+  kdZoomPaintCap(d, info);
+  kdZoomPlace(d, x, y);
+}
 function kdZoomHide() { if (kdZoomEl) kdZoomEl.style.display = "none"; }
-// url 可以是字符串，也可以是函数（图片加载器的 src 会在 input→output 回退时变化，需要现取）
-function attachZoom(cell, urlOrFn) {
-  if (!urlOrFn) return;
-  const getUrl = typeof urlOrFn === "function" ? urlOrFn : () => urlOrFn;
-  const at = (e) => { const u = getUrl(); if (u) kdZoomShow(u, e.clientX, e.clientY); };
+// 尺寸是异步来的：回来时若鼠标还停在同一张图上，就地补上数字并按新高度重贴
+function kdSizeWarm(info) {
+  const p = kdSizeFetch(info);
+  if (!p) return;
+  const key = kdSizeKey(info) + "|" + Math.max(0, Number(info.bucket) || 0);
+  p.then(() => {
+    const d = kdZoomEl;
+    if (!d || d.style.display === "none" || d.dataset.size !== key) return;   // 已经移开了
+    kdZoomPaintCap(d, info, true);
+    kdZoomPlace(d, kdZoomAt[0], kdZoomAt[1]);
+  });
+}
+// url 可以是字符串，也可以是函数（图片加载器的 src 会在 input→output 回退时变化，需要现取）；
+// info 同理，给 {name, sub, tab, bucket} 就会在悬浮层里显示原图尺寸，不给就还是纯放大图。
+function attachZoom(cell, urlOrFn, infoOrFn) {
+  if (!urlOrFn && !infoOrFn) return;
+  const getUrl = typeof urlOrFn === "function" ? urlOrFn : () => urlOrFn || "";
+  const getInfo = typeof infoOrFn === "function" ? infoOrFn : () => infoOrFn || null;
+  const at = (e) => {
+    if (kdMarquee) { kdZoomHide(); return; }
+    const info = getInfo();
+    kdZoomShow(getUrl(), e.clientX, e.clientY, info);
+    if (info) kdSizeWarm(info);
+  };
   cell.addEventListener("mouseenter", at);
   cell.addEventListener("mousemove", at);
   cell.addEventListener("mouseleave", kdZoomHide);
@@ -288,6 +466,8 @@ function kdGesture(container, getCells, handlers) {
     const move = (ev) => {
       if (!dragging && Math.abs(ev.clientX - sx) < 5 && Math.abs(ev.clientY - sy) < 5) return;
       dragging = true;
+      kdMarquee = true;                 // 框选期间不弹悬浮预览（尺寸浮标也一起收）
+      kdZoomHide();
       if (!box) { box = document.createElement("div"); box.className = "kd-marquee"; document.body.appendChild(box); }
       box.style.left = Math.min(sx, ev.clientX) + "px";
       box.style.top = Math.min(sy, ev.clientY) + "px";
@@ -297,6 +477,7 @@ function kdGesture(container, getCells, handlers) {
     const up = (ev) => {
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
+      kdMarquee = false;
       if (box) box.remove();
       const cells = getCells();
       if (dragging) {
@@ -550,10 +731,24 @@ function syncOutputs(node) {
 }
 
 // ---------------------------------------------------------------- 放大预览
-function openBig(name, sub) {
+function openBig(name, sub, bucket) {
   const ov = document.createElement("div");
   ov.className = "kd-big";
   const img = document.createElement("img");
+  const cap = document.createElement("div");
+  cap.className = "kd-bigcap";
+  cap.textContent = (sub ? sub + "/" : "") + name;
+  const dim = document.createElement("div");
+  dim.className = "kd-bigdim";
+  dim.style.display = "none";
+  cap.appendChild(dim);
+  // 这里放的就是原图，naturalWidth/Height 本身即答案，不用再问后端一趟。
+  // Chrome 的 natural* 已按 EXIF 方向换算过，与 /ps/imgsize 给的宽高一致。
+  img.addEventListener("load", () => {
+    if (!img.naturalWidth || !img.naturalHeight) return;
+    dim.style.display = "";
+    kdFillSize(dim, img.naturalWidth, img.naturalHeight, bucket);
+  });
   let tried = false;
   img.onerror = () => {
     if (tried) {
@@ -564,9 +759,6 @@ function openBig(name, sub) {
     img.src = viewUrl(name, sub).replace("type=input", "type=output");
   };
   img.src = viewUrl(name, sub);
-  const cap = document.createElement("div");
-  cap.className = "kd-bigcap";
-  cap.textContent = (sub ? sub + "/" : "") + name;
   ov.append(img, cap);
 
   function close() {
@@ -740,7 +932,8 @@ function openLibrary(onPick) {
     no.textContent = it.name;
     cell.appendChild(no);
     // 悬浮层是 344px 见方，格子只有 ~100px：两者不能共用一张图，否则悬浮必糊
-    attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab, "raw"));
+    attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab, "raw"),
+               { name: it.name, sub: it.subfolder, tab: it.tab });
     // 点击逻辑统一由 kdGesture 手势接管（tap 切换/Shift 范围），这里不再挂 onclick
     return cell;
   }
@@ -908,7 +1101,10 @@ function renderPanel(node) {
     };
     img.src = cellSrc();
     cell.appendChild(img);
-    if (!selMode) attachZoom(cell, () => thumbUrl(fn, sd, 512, tab, "raw"));
+    // 悬浮尺寸：普通模式挂在放大图下面；选择模式不出放大图（点击要留给选中），只出一条小浮标。
+    // bucket 每次现取：改对齐分辨率只写状态、不重绘面板，缓存下来就会显示旧的输出尺寸。
+    const sizeInfo = () => ({ name: fn, sub: sd, tab, bucket: readState(node).bucket });
+    attachZoom(cell, selMode ? null : () => thumbUrl(fn, sd, 512, tab, "raw"), sizeInfo);
     // 序号：普通模式 = 面板顺序；选择模式下选中的显示选择顺序号（主色徽标），未选中的变暗
     const pk = selMode ? (pickOrder[it.filename] || 0) : 0;
     const no = document.createElement("span");
@@ -939,7 +1135,7 @@ function renderPanel(node) {
       // 而且每回都走 renderPanel 全量重建，这正是「点一张图整块闪一下」的来源。
       cellRecs.push({ cell, no });
     } else {
-      cell.onclick = () => openBig(baseName(it.filename), subOf(it.filename));
+      cell.onclick = () => openBig(fn, sd, readState(node).bucket);
     }
     grid.appendChild(cell);
   });

@@ -87,6 +87,7 @@ def register(routes):
                 "graph_cache": True,
                 "write_token": True,
                 "image_sets": True,
+                "image_size": True,
                 "app_formats": ["kapp", "official"],
             },
             "write_auth": {
@@ -308,6 +309,25 @@ def register(routes):
             return compat.web.Response(status=404)
         # 文件名带源图指纹，内容变了 key 就变，可以放心让浏览器永久缓存
         return compat.web.FileResponse(dst, headers=_THUMB_CACHE_HEADER)
+
+    @routes.get("/ps/imgsize")
+    async def ps_imgsize(request):
+        """GET /ps/imgsize?filename=&subfolder=&type=input|output
+        -> {ok,width,height,bytes,tab,format}（找不到 / 不是图 = 404 + ok:false）
+
+        给悬浮预览显示原图尺寸用：缩略图是缩过的、/ps/media 的 size 是字节数，
+        都答不了「这张图多少像素」。只读文件头，不解码，也不发图。
+        tab 只是「先找哪个目录」，另一个目录会自动兜底，回包里的 tab 是真正命中的那个。
+        和缩略图一样用 no-cache：同名覆盖是常态，不能让浏览器把旧尺寸缓存死。
+        """
+        qq = request.query
+        tab = "output" if str(qq.get("type") or "input") == "output" else "input"
+        # 用默认线程池而不是 _thumb_pool：读文件头是亚毫秒级的事，
+        # 挤进 4 并发的解码池只会排在一堆大图解码后面，悬浮半天不出数字。
+        info = await asyncio.to_thread(media.image_size, qq.get("filename"),
+                                       qq.get("subfolder"), tab)
+        return compat.web.json_response(info, status=200 if info.get("ok") else 404,
+                                        headers={"Cache-Control": "no-cache"})
 
     @routes.get("/ps/pack/apps")
     async def ps_pack_apps(request):
