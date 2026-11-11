@@ -298,6 +298,7 @@
 - 2026-11-11：v1.0.5 出包并发布；live 部署目录走「还原 → `pull --ff-only`」同步，不重启用户跑在 8188 的实例（`/ps/imgsize` 要等下次重启才注册）。
 - 2026-11-11：v1.0.6 出包、master 与 tag 已推；建 GitHub Release 一度被权限策略拦下（公开发布需用户明确授权），拿到授权后挂 zip 并发布（Latest），live 同步到 `3a11ecb`。
 - 2026-11-11：v1.0.7 出包并发布（Latest），live 同步到 `b34078a`；纯前端改动，硬刷即生效。
+- 2026-11-11 复核：真正跑在 8188 的实例是 `E:\ComfyUI_windows_portable`（其 `custom_nodes/ComfyUI_KeDou` 也是 git clone），`D:\ComfyUI_KeDou_v1` 那份 clone 并不服务 8188。此前「同步 live」只拉了 D 那份；发现后两份都拉到 `79bde1f`，并以「curl  served 内容 md5 == 磁盘 md5」确认运行实例真的拿到新前端。以后同步 live 要两份都拉，或用端口反查进程命令行确认实例路径。
 
 ## 七、完整提交索引
 
