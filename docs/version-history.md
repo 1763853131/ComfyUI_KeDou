@@ -287,7 +287,7 @@
 - 2026-10-29：部署目录改为正规 git clone，清理旧 `.git`、`__pycache__` 和 `.bak-*`。
 - 2026-11-07：补 v1.0.1–v1.0.4 的 tag 和 GitHub Release；v1.0.3 的包从提交 `e3b2404` 现出。
 - 2026-11-11：v1.0.5 出包并发布；live 部署目录走「还原 → `pull --ff-only`」同步，不重启用户跑在 8188 的实例（`/ps/imgsize` 要等下次重启才注册）。
-- 2026-11-11：v1.0.6 出包、master 与 tag 已推；建 GitHub Release 被权限策略拦下（公开发布需用户明确授权），等授权后再挂 zip 并同步 live。
+- 2026-11-11：v1.0.6 出包、master 与 tag 已推；建 GitHub Release 一度被权限策略拦下（公开发布需用户明确授权），拿到授权后挂 zip 并发布（Latest），live 同步到 `3a11ecb`。
 
 ## 七、完整提交索引
 
