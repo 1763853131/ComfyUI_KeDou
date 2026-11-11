@@ -88,6 +88,7 @@ def register(routes):
                 "write_token": True,
                 "image_sets": True,
                 "image_size": True,
+                "media_delete": True,
                 "app_formats": ["kapp", "official"],
             },
             "write_auth": {
@@ -203,6 +204,22 @@ def register(routes):
             body = {}
         body = body if isinstance(body, dict) else {}
         result = await asyncio.to_thread(media.pick_media, body.get("name"),
+                                         body.get("subfolder"), body.get("tab"))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/media/delete")
+    async def ps_media_delete(request):
+        """POST /ps/media/delete {name, subfolder, tab} -> {ok, name, tab, trashed}
+
+        媒体库右键删除：移到 user/default/kedou_trash/media/…，不真删（可捞回）。
+        写接口，来源/令牌检查由中间件统一做；这里只校验参数口径。
+        """
+        try:
+            body = await request.json()
+        except Exception:                                    # noqa: BLE001
+            body = {}
+        body = body if isinstance(body, dict) else {}
+        result = await asyncio.to_thread(media.delete_media, body.get("name"),
                                          body.get("subfolder"), body.get("tab"))
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
 

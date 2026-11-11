@@ -80,6 +80,8 @@
   };
 
   try {
+    // 删除类用例会真删 fixture：每轮开跑前先重建，换主题 / 反向跑同一进程也干净
+    await fetch("/reset", { method: "POST" });
     T.ensureCss();
     const node = makeNode(["wide.png", "rot.jpg", "gen.png", "small.webp", "fixed.png"]);
     T.renderPanel(node);
@@ -234,6 +236,70 @@
       leave(libCell);
     }
     if (lib) lib.remove();
+
+    // ---------------------------------------------------------------- 媒体库右键删除（两步确认）
+    T.openLibrary(() => {});
+    await sleep(500);
+    const lib2 = document.querySelector(".kd-lib");
+    const cellOf = (name) => lib2.querySelector('.kd-cell[data-kd-key="' + name + '"]');
+    const menu = () => document.querySelector(".kd-menu");
+    const menuBtn = () => (menu() ? menu().querySelector("button") : null);
+    // 反向基线没有菜单：用空点击占位，让每条断言逐条失败而不是整页抛 TypeError
+    const clickMenu = () => { const b = menuBtn(); if (b) b.click(); };
+    const rightClick = (el, x, y) => {
+      const ev = new MouseEvent("contextmenu", { clientX: x, clientY: y, bubbles: true, cancelable: true });
+      el.dispatchEvent(ev);
+      return ev;
+    };
+    const listed = async (name) => {
+      const j = await (await fetch("/ps/media?type=image&tab=all")).json();
+      return (j.items || []).some((i) => i.name === name);
+    };
+    const rc = rightClick(cellOf("small.webp"), 300, 300);
+    test("右键阻止浏览器默认菜单", rc.defaultPrevented);
+    test("右键出删除菜单", menuBtn() ? menuBtn().textContent : null, "删除");
+    clickMenu();
+    await sleep(60);
+    test("第一次点只进入确认态，不删", menuBtn() ? menuBtn().textContent : null, "确认删除?");
+    test("确认态白字压错误色", menuBtn() ? getComputedStyle(menuBtn()).color : null, "rgb(255, 255, 255)");
+    test("确认前文件还在清单里", await listed("small.webp"));
+    test("确认前格子还在", !!cellOf("small.webp"));
+    clickMenu();
+    await sleep(400);
+    test("确认后文件从清单消失", !(await listed("small.webp")));
+    test("确认后格子移除", !cellOf("small.webp"));
+    test("删除后菜单收起", !menu());
+    test("删除成功有可见提示",
+         (document.querySelector(".kd-toast") || {}).textContent,
+         "已删除 small.webp（进回收站，可捞回）。");
+    const trash = await (await fetch("/trash.json")).json();
+    test("文件真的进了回收站（可捞回）",
+         (trash.items || []).some((p) => /^media\/input\/small\..+\.webp$/.test(p)));
+    // 超时回退：armed 后 2.5s 不点第二下，回到「删除」，文件不动
+    rightClick(cellOf("tiny.gif"), 320, 320);
+    clickMenu();
+    await sleep(2700);
+    test("超过 2.5s 确认态自动回退", menuBtn() ? menuBtn().textContent : null, "删除");
+    test("回退后文件没被删", await listed("tiny.gif"));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    test("Esc 收起菜单", !menu());
+    rightClick(cellOf("tiny.gif"), 320, 320);
+    document.dispatchEvent(new MouseEvent("mousedown", { clientX: 5, clientY: 5, bubbles: true }));
+    test("点菜单外收起", !menu());
+    // 后端还没这条路由（没重启）：给明确提示，而不是笼统失败，也不动文件
+    window.__blockDelete = true;
+    rightClick(cellOf("tiny.gif"), 320, 320);
+    clickMenu();
+    await sleep(50);
+    clickMenu();
+    await sleep(300);
+    test("后端没路由时提示重启",
+         (document.querySelector(".kd-toast") || {}).textContent,
+         "删除需要重启一次 ComfyUI（桥接路由还没注册）。");
+    test("没路由时文件不动", await listed("tiny.gif"));
+    window.__blockDelete = false;
+    lib2.querySelector(".kd-btn").click();
+    test("关库同时收掉菜单", !document.querySelector(".kd-lib") && !menu());
 
     // ---------------------------------------------------------------- 贴位几何
     hover(cells()[0], window.innerWidth - 12, window.innerHeight - 12);

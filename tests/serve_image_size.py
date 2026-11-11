@@ -25,8 +25,8 @@ from aiohttp import web
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8897
-# 反向测试的基线：默认拿「选择模式也出预览图」改动前的备份；可用第二个参数换别的备份。
-BACKUP = sys.argv[2] if len(sys.argv) > 2 else "kedou_media.js.bak-20261111-select-preview"
+# 反向测试的基线：默认拿「媒体库右键删除」改动前的备份；可用第二个参数换别的备份。
+BACKUP = sys.argv[2] if len(sys.argv) > 2 else "kedou_media.js.bak-20261111-media-delete"
 # 真·长文件名：11px 下约 480px 宽，超过信息条名字行的 322px 上限，用来验省略号。
 LONG_NAME = "金属臂灵汐_最终版_改改改_再改_交付_真的最终版_还要再改_这次真的不改了_备份_副本_归档.png"
 
@@ -145,11 +145,15 @@ PAGE = """<!doctype html>
   // 数请求 + 可切换成「后端还没有这条路由」的样子
   window.__sizeCalls = [];
   window.__blockSize = false;
+  window.__blockDelete = false;
   window.__testFetch = function (url, opts) {
     const u = String(url);
     if (u.indexOf("/ps/imgsize") >= 0) {
       window.__sizeCalls.push(u);
       if (window.__blockSize) return Promise.resolve(new Response("not found", { status: 404 }));
+    }
+    if (u.indexOf("/ps/media/delete") >= 0 && window.__blockDelete) {
+      return Promise.resolve(new Response("not found", { status: 404 }));
     }
     return fetch(url, opts);
   };
@@ -233,6 +237,28 @@ def main():
         async def fixtures(request):
             return web.json_response({"files": files, "cases": cases, "longName": LONG_NAME})
 
+        @table.get("/trash.json")
+        async def trash_list(request):
+            """回收站里现在有什么（相对路径），给「删除=移进回收站」的断言用。"""
+            base = Path(paths.TRASH_DIR)
+            out = []
+            if base.is_dir():
+                out = sorted(str(p.relative_to(base)).replace("\\", "/")
+                             for p in base.rglob("*") if p.is_file())
+            return web.json_response({"items": out})
+
+        @table.post("/reset")
+        async def reset(request):
+            """每轮断言开跑前重建 fixture：删除类用例会把图真删掉，
+            同一进程里跑第二遍（换主题 / 反向）必须先把图补回来。
+            回收站也清空：否则上一轮删进去的文件会让本轮「进回收站」断言假通过。"""
+            import shutil as _sh
+            base = Path(paths.TRASH_DIR)
+            if base.exists():
+                _sh.rmtree(base, ignore_errors=True)
+            make_fixtures(in_dir, out_dir, nodes)
+            return web.json_response({"ok": True})
+
         @table.get("/view")
         async def view(request):
             """ComfyUI 原生 /view 的替身：大图预览要读原图。"""
@@ -251,7 +277,8 @@ def main():
         @web.middleware
         async def no_store(request, handler):
             resp = await handler(request)
-            if request.path in ("/", "/module.js", "/before.js", "/tests.js", "/fixtures.json"):
+            if request.path in ("/", "/module.js", "/before.js", "/tests.js", "/fixtures.json",
+                                "/trash.json", "/reset"):
                 resp.headers["Cache-Control"] = "no-store"
             return resp
 

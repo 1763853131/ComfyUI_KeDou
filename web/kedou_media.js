@@ -198,6 +198,25 @@ const CSS = [
   "padding:24px;cursor:zoom-out;}",
   ".kd-big img{max-width:92vw;max-height:84vh;object-fit:contain;border-radius:8px;display:block;}",
   ".kd-bigcap{font:12px/1.6 system-ui,sans-serif;color:#e8e8ee;opacity:.85;word-break:break-all;text-align:center;}",
+  // 右键菜单（媒体库删除）：底/字/边都走随主题变的变量对，白黑主题都可读。
+  ".kd-menu{position:fixed;z-index:100002;min-width:136px;padding:4px;border-radius:8px;",
+  "background:var(--interface-panel-surface,#1c1c22);color:var(--fg-color,#e7e7ea);",
+  "border:1px solid var(--interface-stroke,#3a3a44);box-shadow:0 8px 24px rgba(0,0,0,.4);",
+  "font:12px/1.4 system-ui,sans-serif;}",
+  ".kd-menu button{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:6px;",
+  "background:transparent;color:inherit;font:inherit;cursor:pointer;white-space:nowrap;}",
+  ".kd-menu button:hover{background:var(--content-bg,#4e4e4e);}",
+  // 两步确认的「armed」态：与图片排列预设的删除按钮同一口径（白字压错误色）
+  ".kd-menu button.kd-armed{color:#fff;background:var(--error-text,#a33);}",
+  ".kd-menu button:disabled{opacity:.6;cursor:default;}",
+  // 轻提示：删除成功/失败都要有可见反馈，格子消失本身不算说明
+  ".kd-toast{position:fixed;left:50%;bottom:28px;z-index:100003;transform:translateX(-50%) translateY(12px);",
+  "max-width:min(560px,90vw);padding:8px 14px;border-radius:8px;opacity:0;pointer-events:none;",
+  "background:var(--interface-panel-surface,#1c1c22);color:var(--fg-color,#e7e7ea);",
+  "border:1px solid var(--interface-stroke,#3a3a44);box-shadow:0 8px 24px rgba(0,0,0,.4);",
+  "font:12px/1.5 system-ui,sans-serif;transition:opacity .18s,transform .18s;}",
+  ".kd-toast.kd-show{opacity:1;transform:translateX(-50%) translateY(0);}",
+  ".kd-toast.kd-err{border-color:var(--error-text,#a33);color:var(--error-text,#ffb3b3);}",
 ].join("");
 
 let cssDone = false;
@@ -808,6 +827,37 @@ async function fetchLibrary(kind, q, tab) {
   return null;
 }
 
+// 轻提示（删除成功/失败等一次性反馈）。单例，2.4s 自动收；不挡鼠标。
+let kdToastEl = null, kdToastTimer = null;
+function kdToast(msg, isErr) {
+  ensureCss();
+  if (!kdToastEl || !document.contains(kdToastEl)) {
+    kdToastEl = document.createElement("div");
+    kdToastEl.className = "kd-toast";
+    document.body.appendChild(kdToastEl);
+  }
+  kdToastEl.textContent = msg;
+  kdToastEl.classList.toggle("kd-err", !!isErr);
+  kdToastEl.classList.add("kd-show");
+  clearTimeout(kdToastTimer);
+  kdToastTimer = setTimeout(() => kdToastEl.classList.remove("kd-show"), 2400);
+}
+
+// 媒体库删除：POST /ps/media/delete（后端移进回收站，不真删）。
+// 两个前缀都 404 = 后端还没注册这条路由（没重启过），给明确提示而不是笼统的「失败」。
+async function deleteMedia(it) {
+  const body = JSON.stringify({ name: it.name, subfolder: it.subfolder || "", tab: it.tab });
+  for (const p of ["/ps/media/delete", "/api/ps/media/delete"]) {
+    try {
+      const r = await fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      if (r.status === 404) continue;
+      const j = await r.json().catch(() => null);
+      if (j) return j;
+    } catch (e) { /* 试下一个前缀 */ }
+  }
+  return { ok: false, error: t("Deleting needs one ComfyUI restart (bridge route not registered yet).") };
+}
+
 function openLibrary(onPick) {
   ensureCss();   // 样式原本只在节点面板 build() 里注入；从这里单独打开时也得有，否则整个弹窗是裸的
   const picked = new Map();
@@ -855,7 +905,7 @@ function openLibrary(onPick) {
   ov.onclick = (e) => { if (e.target === ov) close(); };
   document.body.appendChild(ov);
 
-  function close() { ov.remove(); }
+  function close() { closeMenu(); ov.remove(); }
   cancelBtn.onclick = close;
   okBtn.onclick = () => {
     const list = [...picked.values()];
@@ -933,6 +983,83 @@ function openLibrary(onPick) {
     },
   });
 
+  // ---- 右键菜单：删除。两步确认，与顶栏「清除」同口径：先变红「确认删除？」，2.5s 内再点才执行 ----
+  let menuEl = null, menuOff = null;
+  function closeMenu() {
+    if (menuEl) { menuEl.remove(); menuEl = null; }
+    if (menuOff) { menuOff(); menuOff = null; }
+  }
+  function openCellMenu(e, it) {
+    closeMenu();
+    kdZoomHide();                       // 悬浮预览别盖在菜单上
+    const m = document.createElement("div");
+    m.className = "kd-menu";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = t("Delete");
+    del.title = t("Moves the file to user/default/kedou_trash (not erased); it can be restored.");
+    let armedAt = 0, timer = null;
+    del.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!armedAt || Date.now() - armedAt > 2500) {
+        armedAt = Date.now();
+        del.textContent = t("Confirm delete?");
+        del.classList.add("kd-armed");
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          armedAt = 0;
+          del.textContent = t("Delete");
+          del.classList.remove("kd-armed");
+        }, 2500);
+        return;
+      }
+      clearTimeout(timer);
+      del.disabled = true;
+      const res = await deleteMedia(it);
+      closeMenu();
+      if (res && res.ok) {
+        const key = (it.subfolder ? it.subfolder + "/" : "") + it.name;
+        picked.delete(key);
+        curItems = curItems.filter((x) => x !== it);
+        shown = Math.max(0, shown - 1);
+        const esc = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, "\\$&");
+        const cell = gridEl && gridEl.querySelector('.kd-cell[data-kd-key="' + esc + '"]');
+        if (cell) cell.remove();
+        if (!curItems.length) {
+          gridEl = null;
+          body.innerHTML = "";
+          body.textContent = t("No matching images.");
+          body.style.color = "var(--descrip-text,#9a9aa6)";
+        }
+        updateOutlines();
+        syncFoot();
+        kdToast(t("Deleted {name} (moved to trash, restorable).", { name: it.name }));
+      } else {
+        kdToast(serverError((res && res.error) || "") || t("Delete failed"), true);
+      }
+    };
+    m.appendChild(del);
+    document.body.appendChild(m);
+    const W = m.offsetWidth, H = m.offsetHeight;
+    let left = e.clientX, top = e.clientY;
+    if (left + W > window.innerWidth - 8) left = window.innerWidth - W - 8;
+    if (top + H > window.innerHeight - 8) top = window.innerHeight - H - 8;
+    m.style.left = Math.max(8, left) + "px";
+    m.style.top = Math.max(8, top) + "px";
+    menuEl = m;
+    const away = (ev) => { if (!m.contains(ev.target)) closeMenu(); };
+    const onKey = (ev) => { if (ev.key === "Escape") closeMenu(); };
+    const onScroll = () => closeMenu();
+    document.addEventListener("mousedown", away, true);
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("scroll", onScroll, true);
+    menuOff = () => {
+      document.removeEventListener("mousedown", away, true);
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("scroll", onScroll, true);
+    };
+  }
+
   function mkCell(it, idx) {
     const key = (it.subfolder ? it.subfolder + "/" : "") + it.name;
     const cell = document.createElement("div");
@@ -953,6 +1080,12 @@ function openLibrary(onPick) {
     // 悬浮层是 344px 见方，格子只有 ~100px：两者不能共用一张图，否则悬浮必糊
     attachZoom(cell, thumbUrl(it.name, it.subfolder, 512, it.tab, "raw"),
                { name: it.name, sub: it.subfolder, tab: it.tab });
+    // 右键 = 删除菜单（两步确认）。左键手势不受影响：kdGesture 只认 button 0。
+    cell.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openCellMenu(ev, it);
+    });
     // 点击逻辑统一由 kdGesture 手势接管（tap 切换/Shift 范围），这里不再挂 onclick
     return cell;
   }

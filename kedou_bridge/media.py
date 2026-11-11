@@ -104,6 +104,48 @@ def pick_media(name, sub="", tab="input") -> dict:
     return {"ok": True, "filename": os.path.basename(dst), "copied": True}
 
 
+def delete_media(name, sub="", tab="input") -> dict:
+    """POST /ps/media/delete —— 媒体库右键删除：移到回收站，不真删。
+
+    与 pack.delete_kapp 一个口径：落到 user/default/kedou_trash/media/<tab>/<sub>/，
+    文件名带时间戳（保留扩展名，捞回来不用猜格式），同一秒删两个同名也不互相覆盖。
+    回收站不在 input/output 里，媒体清单、ComfyUI 自己的列表都扫不到它。
+
+    只认媒体目录内的文件：_media_file 已做 basename + 越界检查；目录不删；
+    扩展名不在媒体清单口径里的也不删（别拿一个误传的路径动到别的东西）。
+    """
+    import shutil                                           # noqa: PLC0415
+    used = "output" if str(tab) == "output" else "input"
+    src = _media_file(name, sub, used)
+    if src is None:
+        return {"ok": False, "error": "文件不存在，或不在输入/输出目录内"}
+    if not os.path.isfile(src):
+        return {"ok": False, "error": "不是文件：%s" % name}
+    ext = os.path.splitext(src)[1].lower()
+    if ext not in set(sum(MEDIA_EXTS.values(), ())):
+        return {"ok": False, "error": "不是媒体库认得的类型：%s" % ext}
+    stem = os.path.splitext(os.path.basename(src))[0]
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dst_dir = os.path.join(paths.TRASH_DIR, "media", used, str(sub or ""))
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": "回收站目录不可写：%s" % e}
+    dst = os.path.join(dst_dir, "%s.%s%s" % (stem, stamp, ext))
+    n = 1
+    while os.path.exists(dst):                              # 同一秒删两个同名
+        dst = os.path.join(dst_dir, "%s.%s-%d%s" % (stem, stamp, n, ext))
+        n += 1
+    if not paths._under(paths.TRASH_DIR, dst):
+        return {"ok": False, "error": "目标路径越界"}
+    try:
+        shutil.move(src, dst)
+    except Exception as e:                                  # noqa: BLE001
+        return {"ok": False, "error": "移到回收站失败：%s" % e}
+    return {"ok": True, "name": os.path.basename(src), "tab": used,
+            "trashed": paths._rel(dst)}
+
+
 # ---------------------------------------------------------------- 真缩略图
 # ComfyUI 自带的 /view?preview= 只重编码、不缩尺寸（server.py 里那句 preview 分支没有
 # 任何 resize），5120x8192 的图照样回 8.7MB，而且全图解码同步跑在 async 处理函数里，
