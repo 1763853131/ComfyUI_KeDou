@@ -25,8 +25,8 @@ from aiohttp import web
 
 ROOT = Path(__file__).resolve().parents[1]
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8897
-# 反向测试的基线：默认拿「合并文件名/尺寸」改动前的备份；可用第二个参数换别的备份。
-BACKUP = sys.argv[2] if len(sys.argv) > 2 else "kedou_media.js.bak-20261111-merge-cap"
+# 反向测试的基线：默认拿「选择模式也出预览图」改动前的备份；可用第二个参数换别的备份。
+BACKUP = sys.argv[2] if len(sys.argv) > 2 else "kedou_media.js.bak-20261111-select-preview"
 # 真·长文件名：11px 下约 480px 宽，超过信息条名字行的 322px 上限，用来验省略号。
 LONG_NAME = "金属臂灵汐_最终版_改改改_再改_交付_真的最终版_还要再改_这次真的不改了_备份_副本_归档.png"
 

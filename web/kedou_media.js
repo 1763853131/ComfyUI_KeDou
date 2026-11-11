@@ -168,9 +168,6 @@ const CSS = [
   "background:rgba(0,0,0,.34);border-top:1px solid rgba(255,255,255,.09);}",
   ".kd-zname{max-width:322px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.82;}",
   ".kd-zdim{display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}",
-  ".kd-zoom.kd-chip{border-radius:8px;border-width:1px;}",
-  ".kd-zoom.kd-chip .kd-zoomcap{border-top:0;background:transparent;padding:4px 10px;}",
-  ".kd-zoom.kd-chip .kd-zname{max-width:300px;}",
   ".kd-zd{font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.2px;}",
   ".kd-za{color:var(--p-primary-color,#4a7dff);}",
   ".kd-zl{opacity:.6;font-size:10px;}",
@@ -436,9 +433,8 @@ function kdZoomShow(url, x, y, info) {
       d.dataset.url = url;
     }
   } else {
-    img.style.display = "none";      // 选择模式：点击留给选中，悬浮只出一条尺寸小浮标
+    img.style.display = "none";      // 没有图可放时只留信息条（兜底，正常调用都带 url）
   }
-  d.classList.toggle("kd-chip", !url);
   d.style.display = "block";
   kdZoomAt = [x, y];
   kdZoomPaintCap(d, info);
@@ -1126,10 +1122,11 @@ function renderPanel(node) {
     };
     img.src = cellSrc();
     cell.appendChild(img);
-    // 悬浮尺寸：普通模式挂在放大图下面；选择模式不出放大图（点击要留给选中），只出一条小浮标。
+    // 悬浮预览两种模式一致：放大图 + 文件名/尺寸信息条。选择模式只是把「点击」留给选中
+    // （kdGesture 接管），悬浮层 pointer-events:none，不挡点击也不挡框选（框选期间会收起）。
     // bucket 每次现取：改对齐分辨率只写状态、不重绘面板，缓存下来就会显示旧的输出尺寸。
     const sizeInfo = () => ({ name: fn, sub: sd, tab, bucket: readState(node).bucket });
-    attachZoom(cell, selMode ? null : () => thumbUrl(fn, sd, 512, tab, "raw"), sizeInfo);
+    attachZoom(cell, () => thumbUrl(fn, sd, 512, tab, "raw"), sizeInfo);
     // 序号：普通模式 = 面板顺序；选择模式下选中的显示选择顺序号（主色徽标），未选中的变暗
     const pk = selMode ? (pickOrder[it.filename] || 0) : 0;
     const no = document.createElement("span");

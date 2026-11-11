@@ -163,12 +163,18 @@
     // ---------------------------------------------------------------- 选择模式
     setState(node, { select: true, bucket: 0 });
     await sleep(40);
-    hover(cells()[0], 150, 150);
+    // 故意悬第二张（rot.jpg）：悬浮层是单例，若选择模式不更新图，src 会停在上一张的宽图上。
+    hover(cells()[1], 150, 150);
     c = await waitNum();
-    test("选择模式也能看到尺寸", dim(c), "1600 × 900");
-    test("选择模式的小浮标也带文件名", nameOf(c), "wide.png");
-    test("选择模式不出放大图（点击留给选中）", zoom().firstElementChild.style.display, "none");
-    test("选择模式用小浮标样式", zoom().classList.contains("kd-chip"));
+    test("选择模式也能看到尺寸", dim(c), "900 × 1600");
+    test("选择模式悬浮也带文件名", nameOf(c), "rot.jpg");
+    test("选择模式悬浮也出放大预览图", zoom().firstElementChild.style.display, "");
+    test("选择模式预览图跟着当前格子换（512 缩略图）",
+         zoom().firstElementChild.src.indexOf("rot.jpg") > 0 &&
+         zoom().firstElementChild.src.indexOf("w=512") > 0);
+    test("选择模式不再用小浮标样式", zoom().classList.contains("kd-chip"), false);
+    test("选择模式悬浮层不挡点击（pointer-events:none）",
+         getComputedStyle(zoom()).pointerEvents, "none");
     // 框选期间不该有悬浮层跟选框抢视线。
     // 手势本来是 build() 挂的，这里只调 renderPanel，所以按 build 的同一套口径补挂一次。
     if (T.kdGesture) {
@@ -182,6 +188,12 @@
     test("框选中收起悬浮层", zoom().style.display, "none");
     document.dispatchEvent(new MouseEvent("mouseup", { clientX: 240, clientY: 240, bubbles: true }));
     await sleep(40);
+    // 悬浮出了预览图，但点击必须仍归选中：不能顺手打开大图预览。
+    cells()[1].click();
+    await sleep(60);
+    test("选择模式点击不打开大图预览（点击留给选中）", document.querySelector(".kd-big"), null);
+    test("选择模式格子不挂 openBig 的 onclick", cells()[1].onclick, null);
+    leave(cells()[1]);
 
     // ---------------------------------------------------------------- 旧后端 / 读不到
     setState(node, { select: false, picked: [] });
