@@ -94,6 +94,12 @@ young female cultivator, ...
 > 在 `execution_success` 时只存这些节点的提示词 —— 画布上没连进这次运行的框、以及从 PS 面板发起的
 > 运行，都不会再被当成「你跑过」存进来。
 
+> **勘误（2026-11-21）**：扫描范围收紧成「多行文本控件」。早先按 `type=string` 全收，但 ComfyUI 的
+> 单行 STRING 大多是参数：`SaveImage.filename_prefix`（`ComfyUI`）、`JsonExtractString.key`
+> （`expanded_caption`）、采样 schedule（`1.0, 0.978…`）、模型/管线名（`Krea2V2`、`video/FastH3_OmniRef`），
+> 历史里因此混进了十几条参数值。现在只收 `text / textarea / customtext` 或 `options.multiline` 的控件，
+> 并对值再筛一层：纯数字列表、单个 ASCII 标识符、JSON 对象/数组都不算提示词。
+
 ---
 
 ## 3. 前端（新文件 `web/promptlib.js`，~400 行，不再塞 kedou_media.js）

@@ -71,6 +71,10 @@ _ID_RE = re.compile(r"^[0-9A-Za-z_.\-\u4e00-\u9fff]+$")
 _BAD_FN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _PLAIN_SCALAR_RE = re.compile(r"^[A-Za-z0-9_./\-\u4e00-\u9fff]+$")
 _NUM_SCALAR_RE = re.compile(r"^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$")
+# 自动历史兜底：整串都是数字（1.0, 0.978… / 8, 16, 32）就不算提示词
+_HIST_NUM_LIST_RE = re.compile(
+    r"^[\s,;]*(?:[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?[\s,;]+)+"
+    r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?[\s,;]*$")
 _YAML_LOOKS_BOOL = {"true", "false", "yes", "no", "on", "off", "null", "~", "none"}
 
 
@@ -1012,6 +1016,27 @@ def save_prompt(body):
     return {"ok": True, "item": _parse_entry(path, rel)}
 
 
+def _looks_like_history_text(text):
+    """自动历史的兜底过滤：数字列表 / JSON 配置不是提示词，不写进历史。
+
+    前端已经只收多行文本控件（web/promptlib.js 的 isMultilineTextWidget /
+    looksLikePrompt）；这里再拦一道，旧前端标签页或直接调 /ps/prompts/history
+    的调用方也不会把参数值存成历史。
+    """
+    s = (text or "").strip()
+    if len(s) < 4:
+        return False
+    if _NUM_SCALAR_RE.match(s) or _HIST_NUM_LIST_RE.match(s):
+        return False
+    if s[:1] in "[{":
+        try:
+            if isinstance(json.loads(s), (dict, list)):
+                return False
+        except ValueError:
+            pass
+    return True
+
+
 def save_history(positive, usage=None):
     """自动历史：只写 .kedou/history.json，绝不生成 .md。
 
@@ -1023,6 +1048,8 @@ def save_history(positive, usage=None):
     positive = (positive or "").strip()
     if len(positive) < 4:
         return {"ok": False, "error": "太短，不存历史"}
+    if not _looks_like_history_text(positive):
+        return {"ok": False, "error": "不像提示词，不存历史"}
     usages = _usage_list(usage)
     h = _hash16(positive)
     now = _now()

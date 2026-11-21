@@ -2784,6 +2784,39 @@ function refreshAllRefThumbs() {
 // 现在已迁进 .kedou/history.json（不再生成 .md）。
 // 换成 execution_success：整条工作流全部跑成功才发一次，语义正好是「我运行了几次」，
 // 而且带 prompt_id —— 用它挡住同一轮重复记录（老写法每来一个事件就全图扫一遍）。
+// 其它节点只收「多行文本」控件。单行 STRING 在 ComfyUI 里几乎全是参数：
+// SaveImage 的文件名前缀（ComfyUI）、JsonExtractString 的 key（expanded_caption）、
+// 采样 schedule（1.0, 0.978…）、模型名/管线名（Krea2V2、video/FastH3_OmniRef）……
+// 早先按 type=string 全收，结果这些参数把历史刷成了参数表。
+// text / textarea / customtext 都是多行控件；string + options.multiline 也算。
+function isMultilineTextWidget(w) {
+  if (!w || typeof w.value !== "string") return false;
+  const opt = w.options || {};
+  if (opt.values) return false;                    // 下拉框：取值是模型/采样器名
+  const wt = String(w.type || "").toLowerCase();
+  if (wt === "combo") return false;
+  return wt === "text" || wt === "textarea" || wt === "customtext" || opt.multiline === true;
+}
+
+// 文本控件的值也再筛一道：多行控件里同样可能装的是 JSON 配置或数字列表。
+// 只放行「像人写的提示词」：至少 4 字，不是纯数字列表，不是单个 ASCII 标识符，
+// 不是 JSON 对象/数组。
+function looksLikePrompt(text) {
+  const s = String(text || "").trim();
+  if (s.length < 4) return false;
+  const parts = s.split(/[\s,;]+/).filter(Boolean);
+  if (parts.length && parts.every((p) => /^[-+]?\d+(?:\.\d+)?$/.test(p))) return false;
+  // 单个 token（无空格/逗号/分号/冒号）：ComfyUI、expanded_caption、video/FastH3_OmniRef
+  if (/^[\x00-\x7F]+$/.test(s) && !/[\s,;:]/.test(s)) return false;
+  if (s[0] === "{" || s[0] === "[") {
+    try {
+      const o = JSON.parse(s);
+      if (o && typeof o === "object") return false;
+    } catch (_) { /* 不是合法 JSON：当普通提示词 */ }
+  }
+  return true;
+}
+
 function recordRunPrompts(onFail, only) {
   const seen = new Set();
   let posted = 0;
@@ -2815,21 +2848,19 @@ function recordRunPrompts(onFail, only) {
       if (key.length >= 4 && !seen.has(key)) post(key, pboxUsage(node));
       continue;
     }
-    // 其它节点：白名单只放文本类控件，combo 的取值也是字符串（采样器名等），
-    // 不收进来就会把一串参数名写进历史。
+    // 其它节点：只认多行文本控件。combo 的取值也是字符串（模型/采样器名），
+    // 单行 STRING 则多是文件名前缀、key、schedule 之类的参数，都不收。
     const usage = USAGES[0];
     const ntitle = String(node.title || "").toLowerCase();
     if (ntitle.indexOf("negative") !== -1 || ntitle.indexOf("负向") !== -1) continue;
     for (const w of node.widgets) {
-      const wt = String(w.type || "").toLowerCase();
-      if (wt !== "textarea" && wt !== "string" && wt !== "text") continue;
-      if (typeof w.value !== "string") continue;
+      if (!isMultilineTextWidget(w)) continue;
       // 负向提示词同样是文本控件：名字里带 negative / 负向 的不收，
       // 否则每轮出图都会把负面词当成一条正向历史存进去。
       const wname = String(w.name || "").toLowerCase();
       if (wname.indexOf("negative") !== -1 || wname.indexOf("负向") !== -1) continue;
       const key = w.value.trim();
-      if (key.length < 4 || seen.has(key)) continue;
+      if (!looksLikePrompt(key) || seen.has(key)) continue;
       post(key, usage);
     }
   }
