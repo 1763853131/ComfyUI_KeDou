@@ -42,9 +42,10 @@ const usageLabel = (u) => t(USAGE_LABELS[u] || u);
 // 依据（2026-10）：Seedance 2.x = @图片N / @Image N；MiniMax H3 = <Picture N>；
 // 万相 2.7 = 图 N / Image N；Vidu Q2+ = @图N；可灵 3.0 Omni API = <<<image_N>>>。
 // 参考写法表。n 一律传「第几张图」（1 基）；写法自己决定怎么写。
-// 每种写法属于哪些用途。视频模型（Seedance / MiniMax H3 / Wan / Vidu / Kling）
-// 的 token 写进「图像编辑」的提示词里模型根本不认，所以按用途过滤下拉 ——
-// 别让用户在一堆用不上的选项里翻。不写 uses 表示所有用途都能用（「通用」就是兜底写法）。
+// 每种写法属于哪些用途。视频模型（Seedance / Wan / Vidu / Kling）的 token 写进
+// 「图像编辑」的提示词里模型根本不认，所以按用途过滤下拉 —— 别让用户在一堆用不上的
+// 选项里翻。例外：MiniMax H3 的图像模型同样用 <Picture N>，所以 H3 两种用途都列。
+// 不写 uses 表示所有用途都能用（「通用」就是兜底写法）。
 // label 只写模型名：下拉里挂着「· @图片N」这种后缀太长，占地方又没用 ——
 // 具体插进去是什么格式由 token 决定，用户写的时候自然就看到结果了。
 // 顺序 = 下拉顺序。「通用」放最后：它不是具体模型，排第一会让人以为要选它。
@@ -54,7 +55,12 @@ const REF_STYLES = [
     token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
   { id: "seedance-en", label: "Seedance EN", uses: VIDEO_REF_USAGES,
     token: (n) => `@Image ${n}`, re: /@Image (\d+)/g },
-  { id: "h3", label: "MiniMax H3", uses: VIDEO_REF_USAGES,
+  // Flux 3 / Kontext：参考图写作 {ref_image_0}，第一张图是 0 号。图像编辑专用。
+  // 放在 H3 前面：图像编辑的默认写法仍是 Flux 3，加了 H3 也不改变老用户的默认值。
+  { id: "flux3", label: "Flux 3", base: 0, uses: ["图像编辑"],
+    token: (n) => `{ref_image_${n - 1}}`, re: /\{ref_image_(\d+)\}/g },
+  // MiniMax H3 视频和图像编辑都用 <Picture N>；视频里另有 <Video N> / <Subject N>。
+  { id: "h3", label: "MiniMax H3", uses: [...VIDEO_REF_USAGES, "图像编辑"],
     token: (n) => `<Picture ${n}>`, re: /<Picture (\d+)>/g },
   { id: "wan-zh", label: "Wan", uses: VIDEO_REF_USAGES,
     token: (n) => `图 ${n}`, re: /图 (\d+)/g },
@@ -64,9 +70,6 @@ const REF_STYLES = [
     token: (n) => `@图${n}`, re: /@图(\d+)/g },
   { id: "kling", label: "Kling Omni API", uses: VIDEO_REF_USAGES,
     token: (n) => `<<<image_${n}>>>`, re: /<<<image_(\d+)>>>/g },
-  // Flux 3 / Kontext：参考图写作 {ref_image_0}，第一张图是 0 号。图像编辑专用。
-  { id: "flux3", label: "Flux 3", base: 0, uses: ["图像编辑"],
-    token: (n) => `{ref_image_${n - 1}}`, re: /\{ref_image_(\d+)\}/g },
   // 兜底写法：不属于任何具体模型，插的就是最朴素的 @图片N。所有用途都能用。
   { id: "generic", label: "通用", token: (n) => `@图片${n}`, re: /@图片(\d+)/g },
 ];
@@ -2438,7 +2441,7 @@ function buildPromptBox(node) {
   refRow.append(refLab, refSel, atBtn);
 
   // 参考行 / @ 菜单 / 元素行只在需要点名图片的用途下出现：
-  // 图生视频、参考生视频，以及现在的图像编辑（Flux 3 这类模型也开始按图里的元素点名了）。
+  // 图生视频、参考生视频，以及图像编辑（Flux 3 / MiniMax H3 图像也按图里的元素点名）。
   const REF_USAGES = ["图像编辑", "图生视频", "参考生视频"];
   function refOn() { return REF_USAGES.indexOf(useSel.value) !== -1; }
 

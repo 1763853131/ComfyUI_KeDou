@@ -188,7 +188,8 @@ custom_nodes/ComfyUI_KeDou/
 弹出的列表里每张图都带缩略图、输出槽号和文件名，不用靠文件名猜。
 下拉里**只写模型名**（`Seedance`、`Wan`、`Flux 3`…，最后一项是兜底的「通用」），
 具体插进去是什么格式由模型决定，不用记。
-下拉还**按用途过滤**：选「图像编辑」时只列 `Flux 3` 和 `通用`，视频模型的写法不会混进来；
+下拉还**按用途过滤**：选「图像编辑」时列 `Flux 3`、`MiniMax H3` 和 `通用`；
+只给视频用的写法（Seedance / Wan / Vidu / 可灵）不会混进来；
 选视频用途时也不列 `Flux 3`。换用途时如果原来选的写法在新用途里用不了，
 会自动换成一个能用的，并把提示词里已经写好的 token 一起改掉（切回去能恢复）。
 **图片本身仍要接到模型**，这里只负责写对提示词。
@@ -196,7 +197,7 @@ custom_nodes/ComfyUI_KeDou/
 | 写法 | 模型 / 入口 | 适用用途 | 示例 |
 |---|---|---|---|
 | `@图片N` / `@Image N` | Seedance 2.x / 通用（兜底） | 全部 | `@图片1 的人物作为主体` |
-| `<Picture N>` | MiniMax H3 | 视频 | `<Subject 1> is the person in <Picture 1>` |
+| `<Picture N>` | MiniMax H3 视频 / H3 图像编辑 | 视频、图像编辑 | `<Subject 1> is the person in <Picture 1>` |
 | `图 N` / `Image N` | 万相 Wan 2.7 | 视频 | `图 1 在图 2 里玩耍` |
 | `@图N` | Vidu Q2+（网页/Studio） | 视频 | `@图3 骑着 @图1，在 @图2 上飞驰` |
 | `<<<image_N>>>` | 可灵 3.0 Omni（API） | 视频 | `一只<<<image_1>>>在月光下奔跑` |
