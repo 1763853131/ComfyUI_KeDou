@@ -94,6 +94,11 @@ young female cultivator, ...
 > 在 `execution_success` 时只存这些节点的提示词 —— 画布上没连进这次运行的框、以及从 PS 面板发起的
 > 运行，都不会再被当成「你跑过」存进来。
 
+> **分类管理（2026-11-21）**：新增 `POST /ps/prompts/categories/rename` 与
+> `/ps/prompts/categories/delete`。改名会同时改分类标签和条目里的 `category`（.md 的 frontmatter /
+> phrases.json 的字段）；删除先把条目挪回未分类（语库为空分类，词库为「我的词 · 未分类」）再摘标签，
+> 不删正文。「未分类」是系统兜底分类，不允许改名或删除。
+
 > **勘误（2026-11-21）**：扫描范围收紧成「多行文本控件」。早先按 `type=string` 全收，但 ComfyUI 的
 > 单行 STRING 大多是参数：`SaveImage.filename_prefix`（`ComfyUI`）、`JsonExtractString.key`
 > （`expanded_caption`）、采样 schedule（`1.0, 0.978…`）、模型/管线名（`Krea2V2`、`video/FastH3_OmniRef`），

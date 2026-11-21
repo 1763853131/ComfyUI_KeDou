@@ -568,6 +568,118 @@ def add_category(scope, name, group=""):
                 "categories": cats[scope]}
 
 
+def _category_scope(value):
+    return "phrases" if str(value or "") == "phrases" else "prompts"
+
+
+def _rewrite_prompt_categories(vault, old, new):
+    """把语库里 category==old 的条目改成 new，返回改了几条。
+
+    分类只存在 frontmatter 的 category 字段里；不把条目一起改掉的话，
+    旧名字会从条目里再长出来，面板上就会出现一个删不掉/改了名还回来的标签。
+    """
+    moved = 0
+    for e in _walk(vault):
+        if (e.get("category") or "") != old:
+            continue
+        path = os.path.join(vault, *str(e["file"]).split("/"))
+        entry = dict(e)
+        entry["category"] = new
+        _atomic_write(path, _serialize(entry))
+        _cache.pop(path, None)
+        moved += 1
+    return moved
+
+
+def _rewrite_phrase_categories(vault, group, old, new):
+    """把某个大组下 category==old 的短词改成 new；改回「未分类」时大组也回「我的词」。"""
+    group = str(group or "").strip() or PHRASE_GROUP_FALLBACK
+    items = _phrase_items(vault)
+    moved = 0
+    for it in items:
+        if it.get("group") != group or (it.get("category") or "") != old:
+            continue
+        it["category"] = new
+        if new == PHRASE_CAT_FALLBACK:
+            it["group"] = PHRASE_GROUP_FALLBACK
+        moved += 1
+    if moved:
+        _write_phrases(vault, items)
+    return moved
+
+
+def rename_category(scope, old, new, group=""):
+    """重命名分类：标签和它下面的条目一起改，条目不会掉回未分类。"""
+    scope = _category_scope(scope)
+    old, new = _cat_name(old), _cat_name(new)
+    if not old or not new:
+        return {"ok": False, "error": "分类名不能为空"}
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    group = str(group or "").strip() or PHRASE_GROUP_FALLBACK
+    if scope == "phrases" and PHRASE_CAT_FALLBACK in (old, new):
+        return {"ok": False, "error": "未分类是系统分类，不能重命名"}
+    if old == new:
+        cats = _category_store(vault)
+        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
+                "moved": 0, "categories": cats[scope]}
+    with _store_lock:
+        if scope == "prompts":
+            moved = _rewrite_prompt_categories(vault, old, new)
+            cats = _category_store(vault)
+            cats["prompts"] = [c for c in cats["prompts"] if c != old]
+            if new not in cats["prompts"]:
+                cats["prompts"].append(new)
+            _write_categories(vault, cats)
+        else:
+            moved = _rewrite_phrase_categories(vault, group, old, new)
+            cats = _category_store(vault)
+            keep = []
+            for x in cats["phrases"]:
+                if x["group"] == group and x["name"] == old:
+                    x = {"group": group, "name": new}
+                if not any(k["group"] == x["group"] and k["name"] == x["name"] for k in keep):
+                    keep.append(x)
+            cats["phrases"] = keep
+            _write_categories(vault, cats)
+        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
+                "moved": moved, "categories": cats[scope]}
+
+
+def delete_category(scope, name, group=""):
+    """删除分类：先把条目挪回未分类（语库为空分类，词库为「我的词 · 未分类」），再摘掉标签。
+
+    不删条目本身 —— 用户删的是「分类」这个整理维度，正文还在，随时能重新归类。
+    """
+    scope = _category_scope(scope)
+    name = _cat_name(name)
+    if not name:
+        return {"ok": False, "error": "分类名不能为空"}
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    group = str(group or "").strip() or PHRASE_GROUP_FALLBACK
+    if scope == "phrases" and name == PHRASE_CAT_FALLBACK:
+        return {"ok": False, "error": "未分类是系统分类，不能删除"}
+    with _store_lock:
+        if scope == "prompts":
+            moved = _rewrite_prompt_categories(vault, name, "")
+            cats = _category_store(vault)
+            cats["prompts"] = [c for c in cats["prompts"] if c != name]
+            _write_categories(vault, cats)
+        else:
+            moved = _rewrite_phrase_categories(vault, group, name, PHRASE_CAT_FALLBACK)
+            cats = _category_store(vault)
+            cats["phrases"] = [
+                x for x in cats["phrases"]
+                if not (x["group"] == group and x["name"] == name)
+            ]
+            _write_categories(vault, cats)
+        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
+                "moved": moved, "categories": cats[scope]}
+
+
 def _history_to_trash(vault, files):
     """旧历史笔记迁走后放进 .trash（可找回），不留在 Obsidian 的笔记树里。"""
     tdir = _trash_dir(vault)
@@ -1420,6 +1532,23 @@ def register_routes(routes):
             add_category, str(body.get("scope") or ""),
             str(body.get("name") or ""), str(body.get("group") or "")))
 
+    @routes.post("/ps/prompts/categories/rename")
+    async def _cats_rename(request):
+        body = await _body(request)
+        if body is None:
+            return web.json_response({"ok": False, "error": "bad json"}, status=400)
+        return web.json_response(await _run(
+            rename_category, str(body.get("scope") or ""),
+            str(body.get("old") or ""), str(body.get("new") or ""),
+            str(body.get("group") or "")))
+
+    @routes.post("/ps/prompts/categories/delete")
+    async def _cats_delete(request):
+        body = await _body(request) or {}
+        return web.json_response(await _run(
+            delete_category, str(body.get("scope") or ""),
+            str(body.get("name") or ""), str(body.get("group") or "")))
+
     @routes.post("/ps/prompts/delete")
     async def _del(request):
         body = await _body(request) or {}
@@ -1446,7 +1575,7 @@ __all__ = [
     "list_prompts", "save_prompt", "save_history", "delete_prompt", "bump_use",
     "list_history", "delete_history", "clear_history",
     "list_phrases", "save_phrase", "delete_phrase", "bump_phrase_use",
-    "list_categories", "add_category",
+    "list_categories", "add_category", "rename_category", "delete_category",
     "register_routes",
     "ENV_KEY", "SETTING_KEY", "CONFIG_NAME",
 ]

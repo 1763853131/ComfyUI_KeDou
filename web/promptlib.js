@@ -290,10 +290,14 @@ const CSS = `
 .kd-plib-q:focus{border-color:var(--p-primary-color,#4a7dff);}
 .kd-plib-tools .kd-pbox-btn{white-space:nowrap;}
 .kd-plib-tools [hidden],.kd-plib-cats[hidden],.kd-plib-subcats[hidden]{display:none !important;}
-.kd-plib-cats,.kd-plib-subcats{display:flex;gap:6px;padding:0 14px 8px;overflow-x:auto;
-  scrollbar-width:none;-ms-overflow-style:none;}
-.kd-plib-cats::-webkit-scrollbar,.kd-plib-subcats::-webkit-scrollbar{display:none;}
-.kd-plib-cat{border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#999);
+.kd-plib-cats,.kd-plib-subcats{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px;
+  max-height:136px;overflow-y:auto;scrollbar-width:thin;
+  scrollbar-color:var(--interface-stroke,#3a3a44) transparent;}
+.kd-plib-cats::-webkit-scrollbar,.kd-plib-subcats::-webkit-scrollbar{width:8px;}
+.kd-plib-cats::-webkit-scrollbar-thumb,.kd-plib-subcats::-webkit-scrollbar-thumb{
+  background:var(--interface-stroke,#3a3a44);border-radius:4px;}
+.kd-plib-cat{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  border:1px solid var(--interface-stroke,#3a3a44);background:transparent;color:var(--fg-color,#999);
   border-radius:999px;padding:3px 11px;font:inherit;font-size:11.5px;cursor:pointer;white-space:nowrap;
   transition:border-color .15s,color .15s,background .15s;}
 .kd-plib-cat:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#6a9bff);}
@@ -700,6 +704,36 @@ function openRowMenu(x, y, entry, kind, onChanged) {
     } catch (e) {
       toast(t("Delete failed") + ": " + serverError(e.message), true);
     }
+  };
+}
+// 分类标签右键菜单：重命名 / 删除。删除只是把条目挪回未分类，摘掉分类标签，
+// 不改条目本身；第二下才执行，和条目/排列的删除口径一致。
+function openCatMenu(x, y, name, onRename, onDelete) {
+  closeMenu();
+  menuEl = document.createElement("div");
+  menuEl.className = "kd-menu";
+  menuEl.innerHTML = `
+    <div class="kd-menu-title">${esc(name)}</div>
+    <button data-a="rename">✎ ${t("Rename")}</button>
+    <button data-a="del">🗑 ${t("Delete")}</button>`;
+  menuEl.style.left = Math.max(6, Math.min(x, window.innerWidth - 170)) + "px";
+  menuEl.style.top = Math.max(6, Math.min(y, window.innerHeight - 120)) + "px";
+  document.body.appendChild(menuEl);
+  void menuEl.offsetWidth;
+  menuEl.classList.add("kd-in");
+  menuEl.querySelector("[data-a=rename]").onclick = () => {
+    closeMenu();
+    onRename();
+  };
+  const del = menuEl.querySelector("[data-a=del]");
+  del.onclick = () => {
+    if (!del.classList.contains("kd-armed")) {
+      del.classList.add("kd-armed");
+      del.textContent = t("Confirm delete?");
+      return;
+    }
+    closeMenu();
+    onDelete();
   };
 }
 document.addEventListener("pointerdown", (e) => {
@@ -1302,6 +1336,90 @@ function openLib(node, tab) {
     input.onpointerdown = (e) => e.stopPropagation();
     input.onclick = (e) => e.stopPropagation();
   }
+
+  // 分类重命名：就地输入，Enter 保存、Esc 取消；条目本身由后端一起改，不会掉回未分类。
+  function renameCategoryInline(btn, scope, oldName, group) {
+    const input = document.createElement("input");
+    input.className = "kd-cat-input";
+    input.value = oldName;
+    input.maxLength = 60;
+    btn.hidden = true;
+    btn.parentNode.insertBefore(input, btn.nextSibling);
+    input.focus();
+    input.select();
+    let done = false, busy = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      input.remove();
+      btn.hidden = false;
+    };
+    const commit = async () => {
+      if (busy || done) return;
+      const name = input.value.trim();
+      if (!name || name === oldName) { finish(); return; }
+      busy = true;
+      try {
+        const r = await api("/categories/rename", { scope, old: oldName, new: name, group: group || "" });
+        if (!r.ok) {
+          toast(t("Save failed: {error}", { error: serverError(r.error) }), true);
+          busy = false;
+          try { input.focus(); } catch (_) { /* ignore */ }
+          return;
+        }
+        finish();
+        if (scope === "prompts") {
+          libState.q.prompts = "";
+          if (libState.promptCat === oldName) libState.promptCat = name;
+        } else {
+          libState.q.phrases = "";
+          libState.phraseInit = true;
+          if (libState.phraseGroup === (r.group || group) && libState.phraseCat === oldName) {
+            libState.phraseCat = name;
+          }
+        }
+        toast(t("Category renamed to {name}", { name }));
+        libInvalidate();
+        refresh();
+      } catch (e) {
+        toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+        busy = false;
+        try { input.focus(); } catch (_) { /* ignore */ }
+      }
+    };
+    input.onkeydown = (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+      else if (ev.key === "Escape") finish();
+    };
+    input.onblur = () => { if (!done && !busy) commit(); };
+    input.onpointerdown = (e) => e.stopPropagation();
+    input.onclick = (e) => e.stopPropagation();
+  }
+
+  // 删除分类：后端把条目挪回未分类后摘掉标签；正停在这个分类上就退回「全部」。
+  async function deleteCategory(scope, name, group) {
+    try {
+      const r = await api("/categories/delete", { scope, name, group: group || "" });
+      if (!r.ok) { toast(t("Delete failed: {error}", { error: serverError(r.error) }), true); return; }
+      if (scope === "prompts" && libState.promptCat === name) {
+        libState.promptCat = ""; libState.q.prompts = "";
+      }
+      if (scope === "phrases" && libState.phraseCat === name
+          && libState.phraseGroup === (r.group || group)) {
+        libState.phraseCat = ""; libState.q.phrases = "";
+      }
+      libInvalidate();
+      const moved = Number(r.moved) || 0;
+      toast(moved
+        ? t("Category deleted · {n} entries moved to Uncategorized", { n: moved })
+        : t("Category deleted"));
+      refresh();
+    } catch (e) {
+      toast(t("Delete failed: {error}", { error: serverError(e.message) }), true);
+    }
+  }
+
   function paintCats() {
     catsEl.innerHTML = "";
     subcatsEl.innerHTML = "";
@@ -1319,6 +1437,19 @@ function openLib(node, tab) {
       b.textContent = label;
       b.onclick = onClick;
       catsEl.appendChild(b);
+      return b;
+    };
+
+    // 分类标签右键：重命名 / 删除。系统性的「全部」「收藏」等不挂菜单。
+    const bindCatMenu = (b, scope, name, group) => {
+      b.title = name + " · " + t("Right-click to rename or delete");
+      b.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openCatMenu(ev.clientX, ev.clientY, name,
+          () => renameCategoryInline(b, scope, name, group),
+          () => deleteCategory(scope, name, group));
+      };
     };
 
     if (libTab === "prompts") {
@@ -1326,9 +1457,12 @@ function openLib(node, tab) {
       add(t("All categories"), !libState.promptCat, () => {
         libState.promptCat = ""; paint();
       });
-      (libData.promptCategories || []).forEach((c) => add(c, libState.promptCat === c, () => {
-        libState.promptCat = c; paint();
-      }));
+      (libData.promptCategories || []).forEach((c) => {
+        const b = add(c, libState.promptCat === c, () => {
+          libState.promptCat = c; paint();
+        });
+        bindCatMenu(b, "prompts", c, "");
+      });
       return;
     }
 
@@ -1368,13 +1502,19 @@ function openLib(node, tab) {
       b.textContent = label;
       b.onclick = onClick;
       subcatsEl.appendChild(b);
+      return b;
     };
     addSub(t("All categories"), !libState.phraseCat, () => {
       libState.phraseCat = ""; paint();
     });
-    cats.forEach((c) => addSub(c, libState.phraseCat === c, () => {
-      libState.phraseCat = c; paint();
-    }));
+    cats.forEach((c) => {
+      const b = addSub(c, libState.phraseCat === c, () => {
+        libState.phraseCat = c; paint();
+      });
+      // 「未分类」是系统兜底分类，不允许改名/删除
+      if (c !== "未分类") bindCatMenu(b, "phrases", c, group);
+      else b.title = c;
+    });
   }
 
   function paintBody() {
