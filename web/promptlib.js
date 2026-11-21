@@ -1337,6 +1337,14 @@ function openLib(node, tab) {
     input.onclick = (e) => e.stopPropagation();
   }
 
+  // 分类改名/删除是新加的后端接口：还没重启 ComfyUI 时页面能硬刷到新前端，
+  // 但接口还是 404。这里给一句明确的提示，别让人以为是网络坏了。
+  function categoryError(e, key) {
+    const msg = e && e.message ? e.message : String(e);
+    if (/HTTP 404/.test(msg)) return t("Restart ComfyUI once to enable category editing");
+    return t(key, { error: serverError(msg) });
+  }
+
   // 分类重命名：就地输入，Enter 保存、Esc 取消；条目本身由后端一起改，不会掉回未分类。
   function renameCategoryInline(btn, scope, oldName, group) {
     const input = document.createElement("input");
@@ -1382,7 +1390,7 @@ function openLib(node, tab) {
         libInvalidate();
         refresh();
       } catch (e) {
-        toast(t("Save failed: {error}", { error: serverError(e.message) }), true);
+        toast(categoryError(e, "Save failed: {error}"), true);
         busy = false;
         try { input.focus(); } catch (_) { /* ignore */ }
       }
@@ -1416,7 +1424,7 @@ function openLib(node, tab) {
         : t("Category deleted"));
       refresh();
     } catch (e) {
-      toast(t("Delete failed: {error}", { error: serverError(e.message) }), true);
+      toast(categoryError(e, "Delete failed: {error}"), true);
     }
   }
 

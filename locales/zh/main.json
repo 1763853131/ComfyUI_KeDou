@@ -224,6 +224,7 @@
   "Category renamed to {name}": "分类已重命名为「{name}」",
   "Category deleted": "分类已删除",
   "Category deleted · {n} entries moved to Uncategorized": "分类已删除 · {n} 条内容已移到未分类",
+  "Restart ComfyUI once to enable category editing": "重启一次 ComfyUI 后即可编辑分类",
   "No prompts in this category yet": "这个分类下还没有语库内容",
   "Category (optional)": "分类（可留空）",
   "Saved under {usage} · {category}": "已保存到「{usage}」·「{category}」",
