@@ -233,7 +233,10 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
         return "video"
     if class_type == "LoadVideo" and name == "file":
         return "video"
-    if class_type in ("VHS_LoadAudio", "LoadAudio") and name == "audio":
+    # VHS_LoadAudio 升版后控件名叫 audio_file（旧版 audio）；两个都认。
+    if class_type == "VHS_LoadAudio" and name in ("audio", "audio_file"):
+        return "audio"
+    if class_type == "LoadAudio" and name == "audio":
         return "audio"
     if _prompt_usage_of(class_type, name):
         return "prompt"

@@ -312,6 +312,47 @@ def run(tmp, paths, pack, apps, common):
     ui["extra"].pop("linearData")
     check("没勾输入时明确拒绝", not pack.kapp_from_linear("x", ui, object_info=fake).get("ok"))
 
+    # ---------------------------------------------------------------- 10. 视频 / 音频 kind
+    print("\n[10] 视频 / 音频输入 kind")
+    media_path = os.path.join(tmp, "media_kind.app.json")
+    media_wf = {
+        "id": "11111111-2222-3333-4444-666666666666",
+        "nodes": [
+            {"id": 1, "type": "LoadVideo", "widgets_values": ["clip.mp4"], "inputs": []},
+            {"id": 2, "type": "LoadAudio", "widgets_values": ["voice.wav"], "inputs": []},
+            {"id": 3, "type": "VHS_LoadAudio", "widgets_values": ["vhs.wav"], "inputs": []},
+        ],
+        "extra": {"linearMode": True, "linearData": {
+            "inputs": [
+                ["11111111-2222-3333-4444-666666666666:1:file", "视频"],
+                ["11111111-2222-3333-4444-666666666666:2:audio", "音频"],
+                ["11111111-2222-3333-4444-666666666666:3:audio_file", "VHS 音频"],
+            ],
+            "outputs": ["1"]}},
+    }
+    with open(media_path, "w", encoding="utf-8") as f:
+        json.dump(media_wf, f, ensure_ascii=False)
+    ms = apps.build_spec(media_path, object_info={})
+    mb = {(p["node"], p["input"]): p for p in ms["params"]}
+    check("LoadVideo.file -> video", (mb.get(("1", "file")) or {}).get("kind") == "video",
+          mb.get(("1", "file")))
+    check("LoadAudio.audio -> audio", (mb.get(("2", "audio")) or {}).get("kind") == "audio",
+          mb.get(("2", "audio")))
+    check("VHS_LoadAudio.audio_file -> audio",
+          (mb.get(("3", "audio_file")) or {}).get("kind") == "audio",
+          mb.get(("3", "audio_file")))
+    check("概述按视频 / 音频计数", "视频" in (ms.get("desc") or "") and "音频" in (ms.get("desc") or ""),
+          ms.get("desc"))
+
+    media_oi = {
+        "LoadVideo": {"input": {"required": {"file": [["clip.mp4"], {}]}}},
+        "VHS_LoadAudio": {"input": {"required": {"audio_file": ["STRING", {}]}}},
+    }
+    check("kapp 特判 LoadVideo.file -> video",
+          pack._suggest_widget(media_oi, "LoadVideo", "file") == "video")
+    check("kapp 特判 VHS_LoadAudio.audio_file -> audio",
+          pack._suggest_widget(media_oi, "VHS_LoadAudio", "audio_file") == "audio")
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -9,6 +9,16 @@ IMAGE_LOADERS = {
     "LoadImage", "LoadImageMask", "LoadImageOutput", "ImageOnlyCheckpointLoader",
     "Load Image (Base64)", "ETN_LoadImageBase64", "LoadImageFromUrl",
 }
+# 视频 / 音频加载节点：官方 .app.json 的 kind 靠这张表，口径与 pack.py 的 kapp 特判一致。
+# VHS_LoadAudio 升版后控件名是 audio_file（旧版是 audio），两个都认。
+VIDEO_INPUTS = {
+    "LoadVideo": {"file"},
+    "VHS_LoadVideo": {"video"},
+}
+AUDIO_INPUTS = {
+    "LoadAudio": {"audio"},
+    "VHS_LoadAudio": {"audio", "audio_file"},
+}
 # 管道参数：不暴露到面板（属于工作流作者范畴，非面向用户的可调项）
 NOISE_INPUTS = {"filename_prefix"}
 
@@ -39,7 +49,8 @@ def _panel_widget(class_type: str, widget: str) -> str:
     return str(widget)
 
 # 给面板用的中文类型名
-KIND_CN = {"text": "提示词", "number": "数值", "bool": "开关", "image": "图像"}
+KIND_CN = {"text": "提示词", "number": "数值", "bool": "开关", "image": "图像",
+           "video": "视频", "audio": "音频"}
 
 # 下拉选项最多带多少条（LoadImage 的文件名列表可能上千条，对面板没意义还占体积）
 OPTIONS_CAP = 200
@@ -49,6 +60,7 @@ FALLBACK_LABEL = {
     "prompt": "提示词", "text": "文本", "text1": "文本 1", "text2": "文本 2",
     "positive": "正向提示词", "negative": "负向提示词",
     "value": "数值", "image": "图像", "mask": "蒙版",
+    "video": "视频", "audio": "音频", "audio_file": "音频", "file": "文件",
     "filename_prefix": "文件名前缀", "seed": "随机种子",
     "steps": "步数", "cfg": "引导强度", "denoise": "重绘幅度",
     "width": "宽度", "height": "高度", "scale": "缩放", "strength": "强度",
@@ -75,10 +87,14 @@ def _clean_label(node: dict, widget: str) -> str:
 
 
 def _kind_of(node: dict, widget: str, default) -> str:
-    """把控件归成四种输入类型：image / number / bool / text"""
+    """把控件归成六种输入类型：image / video / audio / number / bool / text"""
     ntype = str(node.get("type") or "")
     if ntype in IMAGE_LOADERS and widget in ("image", "mask"):
         return "image"
+    if ntype in VIDEO_INPUTS and widget in VIDEO_INPUTS[ntype]:
+        return "video"
+    if ntype in AUDIO_INPUTS and widget in AUDIO_INPUTS[ntype]:
+        return "audio"
     if ntype.startswith("Primitive") or widget in ("seed", "steps", "cfg", "denoise",
                                                    "width", "height", "scale", "value"):
         if isinstance(default, bool):
