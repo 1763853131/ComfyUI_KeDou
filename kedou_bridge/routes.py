@@ -10,11 +10,13 @@ import hashlib
 import json
 import os
 import re
+import threading
 
-from . import apps, compat, image_sets, media, pack, paths, state, version
+from . import apps, av_sets, compat, image_sets, media, pack, paths, segments, state, version
 
 LOCALE_DIR = os.path.join(paths.PLUGIN_DIR, "locales")
 _thumb_pruned = False
+_waveform_pruned = False
 # 缩略图 URL 只带 filename/subfolder/w，**不带内容指纹** —— 源图被同名覆盖
 # （上传时 overwrite=true 是常态）后 URL 一字不变。所以绝不能给 immutable：
 # 那会让浏览器永远不再回源，缩略图永远停在旧图（服务端 key 带 mtime 也没用，
@@ -24,40 +26,41 @@ _THUMB_CACHE_HEADER = {"Cache-Control": "no-cache"}
 # 缩略图解码单独一个池：默认线程池是 min(32, cpu+4)，面板一屏几十格会瞬间塞满，
 # 8K 图单张解码上百 MB，低内存机器直接 OOM 或卡死几十秒。这里限 4 并发，其余排队。
 _thumb_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="kedou-thumb")
+# 队列也必须封顶：只限 worker 的话，突发请求仍会把 Future 无限堆进内存。
+# 80 刚好覆盖面板一屏 80 格全部同时请求；第 81 个起直接 429，避免多屏/刷新风暴堆积。
+_THUMB_MAX_INFLIGHT = 80
+_thumb_slots = threading.BoundedSemaphore(_THUMB_MAX_INFLIGHT)
+_WAVEFORM_TIMEOUT = 120
+
+
+async def _json_object(request):
+    try:
+        body = await request.json()
+    except Exception:                                    # noqa: BLE001
+        return None
+    return body if isinstance(body, dict) else None
 
 
 def register(routes):
 
 
 # ---------------------------------------------------------------- 路由
-    # 首次启动生成写接口令牌文件（外部面板可读取后放进 X-Kedou-Token；
-    # 本机无 Origin 的旧客户端仍放行，设 KEDOU_BRIDGE_REQUIRE_TOKEN=1 可强制令牌）。
-    try:
-        state._get_bridge_token(create=True)
-    except Exception as _e:                            # noqa: BLE001
-        print("[KeDou] 写接口令牌生成失败（本机调用仍可用）:", _e)
-
     # UXP 的 fetch 会做跨域检查，而 ComfyUI 默认不回 CORS 头 →
     # PS 插件请求会被浏览器内核拦掉（表现为"连不上"）。
     # 这里只给 /ps/ 下的路由加 CORS，不影响 ComfyUI 自己的接口。
+    # 插件不实现令牌鉴权；是否需要限制局域网/公网访问由 ComfyUI 启动参数和外层配置负责。
     @compat.web.middleware
     async def _ps_cors_middleware(request, handler):
         if not request.path.startswith("/ps/"):
             return await handler(request)
-        # 写接口先过来源/令牌检查：默认拒绝来自其它网站的写请求。
-        if request.method in ("POST", "PUT", "PATCH", "DELETE") and not state._write_allowed(request):
-            resp = compat.web.json_response(
-                {"ok": False,
-                 "error": "unauthorized: pass X-Kedou-Token (see user/default/kedou_bridge_token.txt)"},
-                status=403)
-        elif request.method == "OPTIONS":
+        if request.method == "OPTIONS":
             resp = compat.web.Response(status=204)
         else:
             resp = await handler(request)
         try:
             resp.headers["Access-Control-Allow-Origin"] = "*"
             resp.headers["Access-Control-Allow-Headers"] = "*"
-            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
         except Exception:                            # noqa: BLE001
             pass
         return resp
@@ -76,7 +79,6 @@ def register(routes):
     @routes.get("/ps/version")
     async def ps_version(request):
         """外部面板握手：协议版本 + 本版关键能力，避免靠猜。"""
-        token_file = state._bridge_token_file()
         return compat.web.json_response({
             "ok": True,
             "bridge": "ComfyUI_KeDou",
@@ -85,16 +87,12 @@ def register(routes):
             "features": {
                 "sidecar_state": True,
                 "graph_cache": True,
-                "write_token": True,
                 "image_sets": True,
                 "image_size": True,
                 "media_delete": True,
+                "av_loader": True,
+                "video_segments": True,
                 "app_formats": ["kapp", "official"],
-            },
-            "write_auth": {
-                "header": "X-Kedou-Token",
-                "token_file": paths._rel(token_file) if os.path.isfile(token_file) else "",
-                "require_token_env": "KEDOU_BRIDGE_REQUIRE_TOKEN",
             },
         })
 
@@ -160,8 +158,12 @@ def register(routes):
         try:
             body = await request.json()
         except Exception:                            # noqa: BLE001
-            body = {}
-        values = (body or {}).get("values") if isinstance(body, dict) else None
+            return compat.web.json_response({"error": "bad json"}, status=400)
+        if not isinstance(body, dict):
+            return compat.web.json_response({"error": "body must be an object"}, status=400)
+        values = body.get("values")
+        if values is not None and not isinstance(values, dict):
+            return compat.web.json_response({"error": "values must be an object or null"}, status=400)
         result = await asyncio.to_thread(apps.build_graph, app_id, values or {})
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
 
@@ -195,16 +197,28 @@ def register(routes):
                                         qq.get("tab", "all"), qq.get("q", ""))
         return compat.web.json_response({"ok": True, "items": items})
 
+    @routes.post("/ps/media/upload")
+    async def ps_media_upload(request):
+        """POST /ps/media/upload?type=image|video|audio&subfolder=...，流式 multipart file。"""
+        result = await media.upload_media(request, request.query.get("type", "image"),
+                                          request.query.get("subfolder", ""))
+        status = 200 if result.get("ok") else (429 if result.get("status") == 429 else 400)
+        return compat.web.json_response(result, status=status)
+
     @routes.post("/ps/media/pick")
     async def ps_media_pick(request):
-        """POST /ps/media/pick {name, subfolder, tab} -> {ok, filename, copied}"""
+        """POST /ps/media/pick {name, subfolder, tab, copy_output?}"""
         try:
             body = await request.json()
         except Exception:                                    # noqa: BLE001
             body = {}
         body = body if isinstance(body, dict) else {}
+        copy_output = body.get("copy_output", True)
+        if not isinstance(copy_output, bool):
+            return compat.web.json_response({"ok": False, "error": "copy_output must be a boolean"},
+                                            status=400)
         result = await asyncio.to_thread(media.pick_media, body.get("name"),
-                                         body.get("subfolder"), body.get("tab"))
+                                         body.get("subfolder"), body.get("tab"), copy_output)
         return compat.web.json_response(result, status=200 if result.get("ok") else 400)
 
     @routes.post("/ps/media/delete")
@@ -212,7 +226,7 @@ def register(routes):
         """POST /ps/media/delete {name, subfolder, tab} -> {ok, name, tab, trashed}
 
         媒体库右键删除：移到 user/default/kedou_trash/media/…，不真删（可捞回）。
-        写接口，来源/令牌检查由中间件统一做；这里只校验参数口径。
+        写接口不做插件级令牌鉴权；这里只校验参数口径。
         """
         try:
             body = await request.json()
@@ -272,11 +286,45 @@ def register(routes):
         result = await asyncio.to_thread(image_sets.delete_set, body.get("id", ""))
         return compat.web.json_response(result, status=200 if result.get("ok") else 404)
 
+    # ---- 音视频排列预设：独立存储，不与图片排列混存 ----
+    @routes.get("/ps/av-sets")
+    async def ps_av_sets_list(request):
+        return compat.web.json_response(await asyncio.to_thread(av_sets.list_sets))
+
+    @routes.post("/ps/av-sets/save")
+    async def ps_av_sets_save(request):
+        body = await _json_object(request) or {}
+        result = await asyncio.to_thread(
+            av_sets.save_set, body.get("name", ""), body.get("videos"), body.get("audios"),
+            body.get("batch", False), body.get("select", False),
+            body.get("picked_videos"), body.get("picked_audios"),
+            body.get("output_mode", "video"), body.get("video_audio", False),
+            body.get("frame_options"), body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/av-sets/load")
+    async def ps_av_sets_load(request):
+        body = await _json_object(request) or {}
+        result = await asyncio.to_thread(av_sets.load_set, body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 404)
+
+    @routes.post("/ps/av-sets/rename")
+    async def ps_av_sets_rename(request):
+        body = await _json_object(request) or {}
+        result = await asyncio.to_thread(av_sets.rename_set, body.get("id", ""), body.get("name", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 400)
+
+    @routes.post("/ps/av-sets/delete")
+    async def ps_av_sets_delete(request):
+        body = await _json_object(request) or {}
+        result = await asyncio.to_thread(av_sets.delete_set, body.get("id", ""))
+        return compat.web.json_response(result, status=200 if result.get("ok") else 404)
+
     @routes.get("/ps/thumb")
     async def ps_thumb(request):
         """GET /ps/thumb?filename=&subfolder=&type=input|output&w=256&fit=3x4 -> image/jpeg|image/png
 
-        只服务图片；不是图 / 解不开 / 越界，一律 404。面板 setThumb 收到 404 会在日志里
+        图片出真缩略图，视频取首帧；不是媒体 / 解不开 / 越界，一律 404。面板 setThumb 收到 404 会在日志里
         留一行「缩略图失败（HTTP 404 …）」，不会拿原图兜底（一屏 80 张 8MB 原图会把面板堵死）。
         格式按源图有没有透明通道定（见 media.THUMB_EXTS 那段注释：UXP 解不了 webp）；
         fit=<宽x高> 让整图缩进这个比例并补边，位图比例严格等于面板格子（见 media.THUMB_PAD_RGB）。
@@ -296,8 +344,11 @@ def register(routes):
         # contain 显示完整）；不传则沿用「补边成精确比例」，PS 面板要的就是那个（UXP 会把
         # max-width/max-height 各自钳位，不给方图就会被拽变形）。
         mode = "raw" if str(qq.get("mode") or "") == "raw" else ""
-        src = media._media_file(qq.get("filename"), qq.get("subfolder"), tab)
+        src, _used = media._resolve_media_file(qq.get("filename"), qq.get("subfolder"), tab)
         if not src:
+            return compat.web.Response(status=404)
+        is_video = src.lower().endswith(media.MEDIA_EXTS["video"])
+        if not is_video and not src.lower().endswith(media.MEDIA_EXTS["image"]):
             return compat.web.Response(status=404)
         if not _thumb_pruned:
             _thumb_pruned = True
@@ -317,14 +368,152 @@ def register(routes):
             if os.path.isfile(hit):
                 return compat.web.FileResponse(hit, headers=_THUMB_CACHE_HEADER)
         base = os.path.join(media.THUMB_DIR, key)
+        # 信号量在提交 Future 前非阻塞获取，等待中和执行中的请求都会计入上限。
+        if not _thumb_slots.acquire(blocking=False):
+            return compat.web.Response(status=429, headers={"Retry-After": "1"})
+        released = False
+
+        def release_once(_done=None):
+            nonlocal released
+            if not released:
+                released = True
+                _thumb_slots.release()
+
         try:
-            dst = await asyncio.get_running_loop().run_in_executor(
-                _thumb_pool, media._make_thumb, src, base, w, fit, mode)
+            loop = asyncio.get_running_loop()
+            future = loop.run_in_executor(
+                _thumb_pool, media._make_video_thumb if is_video else media._make_thumb,
+                src, base, w, fit, mode)
+            # 名额跟 Future 的真实结束绑定；连续取消也不能在 worker 仍解码时提前释放。
+            future.add_done_callback(release_once)
+            dst = await asyncio.shield(future)
+        except asyncio.CancelledError:
+            raise
         except Exception:                              # noqa: BLE001
+            release_once()                              # 提交 Future 前失败等异常路径
             return compat.web.Response(status=404)
         if not os.path.isfile(dst):
             return compat.web.Response(status=404)
         # 文件名带源图指纹，内容变了 key 就变，可以放心让浏览器永久缓存
+        return compat.web.FileResponse(dst, headers=_THUMB_CACHE_HEADER)
+
+    @routes.get("/ps/media/info")
+    async def ps_media_info(request):
+        """GET /ps/media/info?filename=&subfolder=&type=input|output -> 媒体元数据。"""
+        qq = request.query
+        tab = "output" if str(qq.get("type") or "input") == "output" else "input"
+        info = await asyncio.to_thread(media.media_info, qq.get("filename"),
+                                       qq.get("subfolder"), tab)
+        return compat.web.json_response(info, status=200 if info.get("ok") else 404,
+                                        headers={"Cache-Control": "no-cache"})
+
+    # ---- 长视频分段：提交后立即返回 job_id，解码/导出均在 segments 的单线程池里执行 ----
+    @routes.post("/ps/video/segments/analyze")
+    async def ps_video_segments_analyze(request):
+        body = await _json_object(request)
+        if body is None:
+            return compat.web.json_response({"ok": False, "error": "请求 JSON 无效或不是对象"}, status=400)
+        try:
+            job_id = await asyncio.to_thread(segments.start_analyze, body)
+        except segments.QueueFull as exc:
+            return compat.web.json_response({"ok": False, "error": str(exc)}, status=429)
+        except ValueError as exc:
+            return compat.web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except Exception as exc:                           # noqa: BLE001
+            return compat.web.json_response({"ok": False, "error": "分段服务异常：%s" % exc}, status=500)
+        return compat.web.json_response({"ok": True, "job_id": job_id})
+
+    @routes.get("/ps/video/segments/jobs/{job_id}")
+    async def ps_video_segments_job(request):
+        job_id = request.match_info.get("job_id", "")
+        job = await asyncio.to_thread(segments.get_job, job_id)
+        if job is None:
+            return compat.web.json_response({"ok": False, "error": "分段任务不存在"}, status=404)
+        return compat.web.json_response({"ok": True, "job": job}, headers={"Cache-Control": "no-cache"})
+
+    @routes.post("/ps/video/segments/jobs/{job_id}/cancel")
+    async def ps_video_segments_cancel(request):
+        body = await _json_object(request)
+        if body is None:
+            return compat.web.json_response({"ok": False, "error": "请求 JSON 无效或不是对象"}, status=400)
+        job_id = request.match_info.get("job_id", "")
+        job = await asyncio.to_thread(segments.cancel_job, job_id)
+        if job is None:
+            return compat.web.json_response({"ok": False, "error": "分段任务不存在"}, status=404)
+        return compat.web.json_response({"ok": True, "job": job})
+
+    @routes.post("/ps/video/segments/export")
+    async def ps_video_segments_export(request):
+        body = await _json_object(request)
+        if body is None:
+            return compat.web.json_response({"ok": False, "error": "请求 JSON 无效或不是对象"}, status=400)
+        try:
+            job_id = await asyncio.to_thread(segments.start_export, body)
+        except segments.QueueFull as exc:
+            return compat.web.json_response({"ok": False, "error": str(exc)}, status=429)
+        except ValueError as exc:
+            return compat.web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except Exception as exc:                           # noqa: BLE001
+            return compat.web.json_response({"ok": False, "error": "分段服务异常：%s" % exc}, status=500)
+        return compat.web.json_response({"ok": True, "job_id": job_id})
+
+    @routes.get("/ps/waveform")
+    async def ps_waveform(request):
+        """GET /ps/waveform?filename=&subfolder=&type=...&w=1024 -> 音频峰值波形 PNG。"""
+        global _waveform_pruned
+        qq = request.query
+        tab = "output" if str(qq.get("type") or "input") == "output" else "input"
+        try:
+            width = int(qq.get("w") or media.WAVEFORM_WIDTH)
+        except (TypeError, ValueError):
+            width = media.WAVEFORM_WIDTH
+        width = max(128, min(2048, width))
+        src, _used = media._resolve_media_file(qq.get("filename"), qq.get("subfolder"), tab)
+        if not src or not src.lower().endswith(media.MEDIA_EXTS["audio"] + media.MEDIA_EXTS["video"]):
+            return compat.web.Response(status=404)
+        try:
+            st = os.stat(src)
+        except OSError:
+            return compat.web.Response(status=404)
+        if not _waveform_pruned:
+            _waveform_pruned = True
+            await asyncio.to_thread(media._waveform_prune_old)
+        key_src = "%s|%d|%d|%d" % (src, st.st_mtime_ns, st.st_size, width)
+        key = hashlib.sha1(key_src.encode("utf-8")).hexdigest()
+        base = os.path.join(media.WAVEFORM_DIR, key)
+        dst = base + ".png"
+        if os.path.isfile(dst):
+            return compat.web.FileResponse(dst, headers=_THUMB_CACHE_HEADER)
+        if not _thumb_slots.acquire(blocking=False):
+            return compat.web.Response(status=429, headers={"Retry-After": "1"})
+        released = False
+
+        def release_once(_done=None):
+            nonlocal released
+            if not released:
+                released = True
+                _thumb_slots.release()
+            if _done is not None:
+                # 请求取消后没人 await 结果；取出 worker 异常，避免 asyncio 报未读取异常。
+                try:
+                    _done.exception()
+                except (asyncio.CancelledError, concurrent.futures.CancelledError):
+                    pass
+
+        cancel = threading.Event()
+        try:
+            future = asyncio.get_running_loop().run_in_executor(
+                _thumb_pool, media._make_waveform, src, base, width, cancel, _WAVEFORM_TIMEOUT)
+            future.add_done_callback(release_once)
+            dst = await asyncio.shield(future)
+        except asyncio.CancelledError:
+            cancel.set()
+            raise
+        except Exception:                              # noqa: BLE001
+            release_once()
+            return compat.web.Response(status=404)
+        if not os.path.isfile(dst):
+            return compat.web.Response(status=404)
         return compat.web.FileResponse(dst, headers=_THUMB_CACHE_HEADER)
 
     @routes.get("/ps/imgsize")

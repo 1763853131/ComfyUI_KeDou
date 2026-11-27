@@ -70,6 +70,7 @@ def main():
                     filename = "kedou_media.js" if path == "/module.js" else "kedou_media.js.bak-20261107-groups"
                     text = (ROOT / "web" / filename).read_text(encoding="utf-8")
                     text = re.sub(r"^import .*?;\s*$", "", text, flags=re.M)
+                    text = re.sub(r"^export\s*\{[^}]*\};?\s*$", "", text, flags=re.M)
                     prefix = "const app=window.__groupTestApp; const fetch=window.__groupTestFetch;\n"
                     prefix += "const t=window.__groupTestTranslate, locale=()=> 'zh', initI18n=async()=>{}, onLocaleChange=()=>()=>{}, serverError=x=>x;\n"
                     text += "\nwindow.__groupTools={openPackPanel,closePackPanel,doGenerate,collectCandidates,kpCss:KPCSS,kpGroupPrompt:typeof kpGroupPrompt==='function'?kpGroupPrompt:null,kpGroupCandidates:typeof kpGroupCandidates==='function'?kpGroupCandidates:null};"

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 from tempfile import TemporaryDirectory
 from types import ModuleType
 import unittest
@@ -161,6 +162,66 @@ class PackAtomicTests(unittest.TestCase):
         self.assertEqual(result["param_count"], 1)
         self.assertEqual(result["node_count"], 2)
 
+    def test_relative_workflow_path_wins_over_same_basename(self):
+        with self._sandbox("pack_app"):
+            (self.workflows / "A").mkdir()
+            (self.workflows / "B").mkdir()
+            (self.workflows / "A" / "x.json").write_text(json.dumps(workflow("A")), encoding="utf-8")
+            (self.workflows / "B" / "x.json").write_text(json.dumps(workflow("B")), encoding="utf-8")
+            candidates = self.pack.pack_candidates("B/x.json")
+            self.assertEqual(candidates["source"], "B/x.json")
+            self.assertEqual(candidates["candidates"][0]["default"], "B")
+            result = self.pack.pack_app("B/x.json", self.payload["params"], name="archive")
+            self.assertTrue(result["ok"], result)
+            stored = json.loads(self.package_path.read_text(encoding="utf-8"))
+            self.assertEqual(stored["graph"]["1"]["inputs"]["text"], "B")
+
+    def test_legacy_edit_and_delete_do_not_touch_same_stem_archive(self):
+        with self._sandbox("save_kapp", existing=True):
+            legacy_dir = self.workflows / "legacy"
+            legacy_dir.mkdir()
+            legacy = legacy_dir / "foo.kapp.json"
+            legacy.write_text(json.dumps(kapp("legacy")), encoding="utf-8")
+            archived_before = self.workflow_path.read_bytes()
+            target = self.pack._pack_target(str(legacy))
+            result = self.pack.save_kapp("legacy-B", "", kapp("legacy-B"), target=target, workflow=self.ui)
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(self.workflow_path.read_bytes(), archived_before)
+            stored = json.loads(legacy.read_text(encoding="utf-8"))
+            self.assertIn("__", os.path.basename(stored["source"]))
+            resolved = self.pack.load_workflow_file(stored["source"])
+            self.assertEqual(resolved["workflow"], self.ui)
+            deleted = self.pack.delete_kapp(target)
+            self.assertTrue(deleted["ok"], deleted)
+            self.assertEqual(self.workflow_path.read_bytes(), archived_before)
+
+    def test_delete_waits_for_sidecar_update_and_removes_final_state(self):
+        with self._sandbox("save_kapp", existing=True):
+            state_path = Path(self.pack.state._state_path(str(self.package_path)))
+            self.pack.state._save_app_state(str(self.package_path), {"1:text": "old"})
+            entered = threading.Event()
+            release = threading.Event()
+            real_save = self.pack.apps._save_app_state
+
+            def blocked_save(path, updates):
+                entered.set()
+                if not release.wait(3):
+                    raise RuntimeError("test save timeout")
+                return real_save(path, updates)
+
+            with patch.object(self.pack.apps, "_save_app_state", side_effect=blocked_save):
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    update = pool.submit(self.pack.apps.update_values, "archive", {"1:text": "new"})
+                    self.assertTrue(entered.wait(2))
+                    delete = pool.submit(self.pack.delete_kapp, self.pack._pack_target(str(self.package_path)))
+                    time.sleep(0.05)
+                    self.assertFalse(delete.done())
+                    release.set()
+                    self.assertTrue(update.result(timeout=5)["ok"])
+                    self.assertTrue(delete.result(timeout=5)["ok"])
+            self.assertFalse(self.package_path.exists())
+            self.assertFalse(state_path.exists())
+
     def test_validation_failure_keeps_archive_unchanged(self):
         for entry in self.ENTRIES:
             for existing in (False, True):
@@ -258,12 +319,16 @@ class PackAtomicTests(unittest.TestCase):
             self.payload["name"] = "Renamed legacy app"
             result = self.pack.save_kapp(self.payload["name"], "", self.payload,
                                          target="legacy/archive.kapp.json", workflow=self.ui)
-            self._assert_saved(result, name=self.payload["name"])
+            self.assertTrue(result["ok"], result)
             self.assertEqual(result["target"], "legacy/archive.kapp.json")
             self.assertIs(result.get("edited"), True)
+            stored = json.loads(self.package_path.read_text(encoding="utf-8"))
+            self.assertIn("__", os.path.basename(stored["source"]))
+            resolved = self.pack.load_workflow_file(stored["source"])
+            self.assertEqual(resolved["workflow"], self.ui)
             self.assertEqual(old_workflow.read_bytes(), old_bytes)
             self.assertEqual(set(self.root.rglob("*.json")),
-                             {self.workflow_path, self.package_path, old_workflow})
+                             {self.apps / os.path.basename(stored["source"]), self.package_path, old_workflow})
 
     def test_json_serialization_failure_keeps_archive_unchanged(self):
         for entry in self.ENTRIES:

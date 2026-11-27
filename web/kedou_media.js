@@ -112,6 +112,7 @@ const CSS = [
   ".kd-btn:hover{border-color:var(--p-primary-color,#4a7dff);color:var(--p-primary-color,#4a7dff);}",
   ".kd-btn.kd-p{border-color:transparent;background:var(--p-primary-color,#4a7dff);color:#fff;font-weight:600;}",
   ".kd-btn[disabled]{opacity:.45;cursor:default;}",
+  ".kd-card.kd-batch-lock .kd-body{pointer-events:none;user-select:none;}",
   // 图片排列预设：浮在按钮下方的小面板
   ".kd-setsmenu{position:fixed;z-index:100003;width:min(330px,calc(100vw - 24px));max-height:min(440px,72vh);",
   "display:flex;flex-direction:column;gap:7px;padding:10px;border-radius:12px;",
@@ -497,7 +498,8 @@ function kdGesture(container, getCells, handlers) {
     if (handlers.enabled && !handlers.enabled()) return;
     e.preventDefault();                       // 抑制原生图片拖拽与文字选择
     const sx = e.clientX, sy = e.clientY;
-    const startCell = e.target.closest(".kd-cell");
+    const cellSelector = handlers.cellSelector || ".kd-cell";
+    const startCell = e.target.closest(cellSelector);
     const startIdx = startCell ? getCells().indexOf(startCell) : -1;
     const shift = e.shiftKey;
     let dragging = false, box = null;
@@ -535,6 +537,26 @@ function kdGesture(container, getCells, handlers) {
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
   });
+}
+
+function removeMediaStateInput(node) {
+  if (!node || !Array.isArray(node.inputs)) return;
+  const index = node.inputs.findIndex((input) => input && input.name === "media_state");
+  if (index >= 0) node.removeInput(index);
+}
+
+function hideMediaStateInput(node) {
+  if (!node) return;
+  removeMediaStateInput(node);
+  if (node._kdMediaStateInputHidden) return;
+  node._kdMediaStateInputHidden = true;
+  if (typeof node.configure !== "function") return;
+  const configure = node.configure;
+  node.configure = function (info) {
+    const result = configure.call(this, info);
+    removeMediaStateInput(this);
+    return result;
+  };
 }
 
 function hideWidget(w, on) {
@@ -604,7 +626,7 @@ function readState(node) {
   };
 }
 
-function writeState(node, state) {
+function writeState(node, state, quiet) {
   const w = wOf(node, "media_state");
   if (!w) return;
   // batch/cursor/select/picked 必须一起写：批次循环与选择输出都靠它们驱动，
@@ -618,16 +640,18 @@ function writeState(node, state) {
     bucket: Math.max(0, Math.min(BUCKET_MAX, Math.round(Number(state.bucket) || 0))),
   });
   try {
-    if (typeof w.callback === "function") w.callback(w.value);
+    if (typeof w.callback === "function" && !quiet) w.callback(w.value);
   } catch (e) {
     /* callback 不是必须的 */
   }
   node.setDirtyCanvas(true, true);
-  // 提示词框里的引用缩略图靠这个事件跟着换图/换序（promptlib.js 监听）
-  try {
-    window.dispatchEvent(new CustomEvent("kedou:media-changed", { detail: { nodeId: node.id } }));
-  } catch (e) {
-    /* ignore */
+  // 批次提交只改 cursor，不触发整面板重绘/媒体事件；正常操作仍即时通知其它面板。
+  if (!quiet) {
+    try {
+      window.dispatchEvent(new CustomEvent("kedou:media-changed", { detail: { nodeId: node.id } }));
+    } catch (e) {
+      /* ignore */
+    }
   }
 }
 
@@ -827,6 +851,30 @@ async function fetchLibrary(kind, q, tab) {
   return null;
 }
 
+// 选择身份必须带 tab：input/output 允许同名、同子目录，旧 data-kd-key 仍只保留路径供兼容。
+function mediaKey(it) {
+  const path = (it.subfolder ? it.subfolder + "/" : "") + it.name;
+  return String(it.tab || "all") + "|" + path;
+}
+
+// output 先由桥接复制/映射为 input 文件名，再交给加载器，避免同名时又读回 input 的旧图。
+async function pickMedia(it) {
+  if (it.tab !== "output") return { ok: true, filename: (it.subfolder ? it.subfolder + "/" : "") + it.name };
+  const body = JSON.stringify({ name: it.name, subfolder: it.subfolder || "", tab: it.tab });
+  for (const p of ["/ps/media/pick", "/api/ps/media/pick"]) {
+    try {
+      const r = await fetch(p, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      if (r.status === 404) continue;
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok && j.filename) return { filename: j.filename };
+      return { ok: false, error: (j && j.error) || ("HTTP " + r.status) };
+    } catch (e) {
+      if (p === "/api/ps/media/pick") return { ok: false, error: e.message };
+    }
+  }
+  return { ok: false, error: t("Picking needs one ComfyUI restart (bridge route not registered yet).") };
+}
+
 // 轻提示（删除成功/失败等一次性反馈）。单例，2.4s 自动收；不挡鼠标。
 let kdToastEl = null, kdToastTimer = null;
 function kdToast(msg, isErr) {
@@ -861,6 +909,7 @@ async function deleteMedia(it) {
 function openLibrary(onPick) {
   ensureCss();   // 样式原本只在节点面板 build() 里注入；从这里单独打开时也得有，否则整个弹窗是裸的
   const picked = new Map();
+  const prepared = new Map();
   const ov = document.createElement("div");
   ov.className = "kd-lib";
   const win = document.createElement("div");
@@ -905,12 +954,36 @@ function openLibrary(onPick) {
   ov.onclick = (e) => { if (e.target === ov) close(); };
   document.body.appendChild(ov);
 
-  function close() { closeMenu(); ov.remove(); }
+  function close() { renderSeq++; closeMenu(); ov.remove(); }
   cancelBtn.onclick = close;
-  okBtn.onclick = () => {
-    const list = [...picked.values()];
-    close();
-    if (list.length) onPick(list);
+  okBtn.onclick = async () => {
+    if (okBtn.__kdPicking) return;
+    const list = [...picked.values()];   // 转换期间锁定本次选择结果，避免 UI 改动混进这一批
+    if (!list.length) return;
+    okBtn.__kdPicking = true;
+    okBtn.disabled = true;
+    try {
+      const converted = [];
+      for (const it of list) {
+        const key = mediaKey(it);
+        let item = prepared.get(key);
+        if (!item) {
+          item = await pickMedia(it);
+          if (!item.ok && item.error) {
+            kdToast(serverError(item.error) || t("Could not prepare the selected media"), true);
+            return;                     // 失败时选择器保持打开，已选项不会丢
+          }
+          prepared.set(key, item);
+        }
+        converted.push({ filename: item.filename });
+      }
+      if (!ov.isConnected) return;   // 转换期间用户取消：不回调，也不把选择强加给节点
+      close();
+      onPick(converted);
+    } finally {
+      okBtn.__kdPicking = false;
+      syncFoot();
+    }
   };
   // 防抖 300ms：否则每敲一个字符都重新请求后端并重建整个网格（400 张缩略图重来一遍）
   let searchTimer = null;
@@ -936,7 +1009,7 @@ function openLibrary(onPick) {
   function updateOutlines() {
     if (!gridEl) return;
     gridEl.querySelectorAll(".kd-cell").forEach((c) => {
-      c.style.outline = picked.has(c.dataset.kdKey) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
+      c.style.outline = picked.has(c.dataset.kdPickKey) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
     });
   }
 
@@ -950,15 +1023,15 @@ function openLibrary(onPick) {
         for (let k = lo; k <= hi; k++) {
           const it2 = curItems[k];
           if (!it2) continue;
-          const kk = (it2.subfolder ? it2.subfolder + "/" : "") + it2.name;
-          if (!picked.has(kk)) picked.set(kk, { filename: kk });
+          const kk = mediaKey(it2);
+          if (!picked.has(kk)) picked.set(kk, { ...it2 });
         }
       } else {
         const it2 = curItems[idx];
         if (!it2) return;
-        const kk = (it2.subfolder ? it2.subfolder + "/" : "") + it2.name;
+        const kk = mediaKey(it2);
         if (picked.has(kk)) picked.delete(kk);
-        else picked.set(kk, { filename: kk });
+        else picked.set(kk, { ...it2 });
       }
       anchorIdx = idx;
       updateOutlines();
@@ -974,8 +1047,8 @@ function openLibrary(onPick) {
       for (const i of idxs) {
         const it = curItems[i];
         if (!it) continue;
-        const kk = (it.subfolder ? it.subfolder + "/" : "") + it.name;
-        if (!picked.has(kk)) picked.set(kk, { filename: kk });
+        const kk = mediaKey(it);
+        if (!picked.has(kk)) picked.set(kk, { ...it });
       }
       anchorIdx = -1;
       updateOutlines();
@@ -985,7 +1058,8 @@ function openLibrary(onPick) {
 
   // ---- 右键菜单：删除。两步确认，与顶栏「清除」同口径：先变红「确认删除？」，2.5s 内再点才执行 ----
   let menuEl = null, menuOff = null;
-  function closeMenu() {
+  function closeMenu(expected) {
+    if (expected && menuEl !== expected) return;   // 旧删除回调不能关掉等待期间新开的菜单
     if (menuEl) { menuEl.remove(); menuEl = null; }
     if (menuOff) { menuOff(); menuOff = null; }
   }
@@ -1015,15 +1089,18 @@ function openLibrary(onPick) {
       }
       clearTimeout(timer);
       del.disabled = true;
+      // 捕获发起请求时的视图身份；搜索/切 tab/新一轮渲染后，旧回调不得改新列表。
+      const seq = renderSeq, items = curItems, grid = gridEl, tab = curTab;
       const res = await deleteMedia(it);
-      closeMenu();
+      closeMenu(m);                    // 只收自己创建的菜单
       if (res && res.ok) {
-        const key = (it.subfolder ? it.subfolder + "/" : "") + it.name;
+        if (seq !== renderSeq || items !== curItems || grid !== gridEl || tab !== curTab || !ov.isConnected) return;
+        const key = mediaKey(it);
         picked.delete(key);
-        curItems = curItems.filter((x) => x !== it);
+        curItems = items.filter((x) => x !== it);
         shown = Math.max(0, shown - 1);
         const esc = window.CSS && CSS.escape ? CSS.escape(key) : key.replace(/["\\]/g, "\\$&");
-        const cell = gridEl && gridEl.querySelector('.kd-cell[data-kd-key="' + esc + '"]');
+        const cell = gridEl && gridEl.querySelector('.kd-cell[data-kd-pick-key="' + esc + '"]');
         if (cell) cell.remove();
         if (!curItems.length) {
           gridEl = null;
@@ -1062,10 +1139,12 @@ function openLibrary(onPick) {
 
   function mkCell(it, idx) {
     const key = (it.subfolder ? it.subfolder + "/" : "") + it.name;
+    const pickKey = mediaKey(it);
     const cell = document.createElement("div");
     cell.className = "kd-cell";
-    cell.dataset.kdKey = key;
-    cell.style.outline = picked.has(key) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
+    cell.dataset.kdKey = key;          // 保留旧选择器（如 wide.png）兼容现有测试
+    cell.dataset.kdPickKey = pickKey;  // 实际选择身份带 tab，杜绝 input/output 同名冲突
+    cell.style.outline = picked.has(pickKey) ? "2px solid var(--p-primary-color,#4a7dff)" : "none";
     const src = thumbUrl(it.name, it.subfolder, 256, it.tab, "raw");
     const img = document.createElement("img");
     img.loading = "lazy";
@@ -1108,6 +1187,7 @@ function openLibrary(onPick) {
     fetchLibrary("image", search.value, curTab).then((items) => {
       if (seq !== renderSeq) return;   // 过期响应：别把旧结果盖到新搜索上
       body.innerHTML = "";
+      curItems = []; shown = 0; gridEl = null; anchorIdx = -1;
       if (items === null) {
         body.textContent = t("Bridge plugin not loaded: restart ComfyUI once (/ps/media unavailable).");
         body.style.color = "var(--descrip-text,#9a9aa6)";
@@ -1164,7 +1244,7 @@ async function uploadFiles(files) {
 // ---------------------------------------------------------------- 面板
 function renderPanel(node) {
   const ui = node._kdUI;
-  if (!ui) return;
+  if (!ui || node.__kdBatchRun) return;   // 批次排队期间保持冻结视图，结束后再按最终状态重绘
   const state = readState(node);
   // 内容指纹：只有「图片列表 / 选择模式」变了才需要重建 DOM。
   // 单纯改 picked（点选一张图）绝不该重建 —— 否则每格 <img> 都要重新创建、重新解码，
@@ -1276,6 +1356,7 @@ function renderPanel(node) {
     x.textContent = "×";
     x.onclick = (e) => {
       e.stopPropagation();
+      if (node.__kdBatchRun) return;
       const st2 = readState(node);
       st2.images.splice(i, 1);
       if (st2.picked) st2.picked = st2.picked.filter((f) => f !== it.filename);   // 同步清理选择集
@@ -1338,6 +1419,7 @@ function afterPick(node) {
 }
 
 async function uploadFilesWrapper(node, files) {
+  if (node.__kdBatchRun) { kdToast(t("A batch is already being queued"), true); return; }
   uiSetBusy(node, true);
   let res;
   try {
@@ -1387,30 +1469,99 @@ function uiSetBusy(node, busy) {
   }
 }
 
-// 批次运行：把当前选的 N 张图逐张排队 —— 每次改 media_state 的游标再提交，
-// ComfyUI 队列按顺序一张张跑完整条链路。每次下游只吃 1 张，显存恒定，
-// 各张尺寸也可以不同。跑完游标停在最后，下次点批次按钮照常从第 1 张开始。
+function nodeOnCanvas(node) {
+  const local = node && node.graph;
+  const graph = local && (Array.isArray(local._nodes) || typeof local.getNodeById === "function") ? local : app.graph;
+  if (!graph || !node) return false;
+  if (Array.isArray(graph._nodes)) return graph._nodes.indexOf(node) !== -1;
+  return typeof graph.getNodeById === "function" && graph.getNodeById(node.id) === node;
+}
+
+async function settleQueueSubmission(node, token, result) {
+  if (result !== false) return;
+  // ComfyUI 1.55 的 false 表示已放进 app.queueItems，但当前 submission processor 正忙。
+  // 必须等它真正把这一轮 graphToPrompt 读完，才能推进下一张的 cursor。
+  if (typeof app.processingQueue !== "boolean") {
+    throw new Error(t("ComfyUI rejected the batch submission"));
+  }
+  const deadline = Date.now() + 60000;
+  while (app.processingQueue) {
+    if (token.cancelled || !nodeOnCanvas(node)) throw new Error(t("The image node was removed; batch stopped"));
+    if (Date.now() >= deadline) throw new Error(t("Timed out waiting for ComfyUI to finish queue submission"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  // false 已表示本次进入 ComfyUI 内部队列；lastNodeErrors 是全局运行状态，不能据此判本次成败。
+}
+
+function lockBatchUI(node, token) {
+  const ui = node && node._kdUI;
+  const controls = ui && [ui.libBtn, ui.setsBtn, ui.clearBtn, ui.upBtn, ui.fileEl,
+    ui.runBtn, ui.swBatchCb, ui.swSelCb];
+  // 少一个关键控件就不能证明交互已锁住；此时绝不开始提交。
+  if (!ui || !ui.body || !ui.card || controls.some((el) => !el)) return false;
+  const canInert = "inert" in ui.body;
+  if (!canInert && !(window.CSS && CSS.supports && CSS.supports("pointer-events", "none"))) return false;
+  const saved = controls.map((el) => ({ el, disabled: !!el.disabled }));
+  controls.forEach((el) => { el.disabled = true; });
+  if (canInert) ui.body.inert = true;
+  ui.card.classList.add("kd-batch-lock");
+  if (bucketMenu && bucketMenu.node === node) closeBucketMenu();
+  token.restore = () => {
+    saved.forEach(({ el, disabled }) => { el.disabled = disabled; });
+    if (canInert) ui.body.inert = false;
+    ui.card.classList.remove("kd-batch-lock");
+  };
+  return true;
+}
+
+// 批次运行：提交前冻结生效图片、选择模式与 picked；每轮只从该快照取 cursor。
+// 排队期间锁住面板交互，并在每次 await 后复核节点/状态，绝不静默覆盖用户的额外操作。
 async function runBatch(node) {
-  const state = readState(node);
-  const n = effectiveImages(state).length;
+  if (node && node.__kdBatchRun) { kdToast(t("A batch is already being queued"), true); return; }
+  const frozen = readState(node);
+  const images = effectiveImages(frozen).map((it) => ({ filename: it.filename }));
+  const n = images.length;
   if (!n) { kpToast(t("No images to run"), true); return; }
+  const snapshot = {
+    images: frozen.images.map((it) => ({ filename: it.filename })),
+    batch: true, cursor: 0, select: !!frozen.select,
+    picked: (frozen.picked || []).slice(), bucket: frozen.bucket,
+  };
+  const token = { cancelled: false, restore: null };
+  if (node) node.__kdBatchRun = token;
+  if (!node || !nodeOnCanvas(node) || !lockBatchUI(node, token)) {
+    if (node && node.__kdBatchRun === token) node.__kdBatchRun = null;
+    kdToast(t("Cannot safely lock the image panel; no batch was queued"), true);
+    return;
+  }
   uiSetBusy(node, true);
   try {
     for (let i = 0; i < n; i++) {
-      const st = readState(node);
-      st.batch = true;
-      st.cursor = i;
-      writeState(node, st);
-      console.log("[kedou] 批次提交 " + (i + 1) + "/" + n + " cursor=" + i
-        + " widget=" + (wOf(node, "media_state") || {}).value);
-      await app.queuePrompt(0);        // 内部会 graphToPrompt，cursor=i 随图一起进队列
-      kpToast(t("Batch {i}/{n} queued", { i: i + 1, n }));
+      if (token.cancelled || !nodeOnCanvas(node)) throw new Error(t("The image node was removed; batch stopped"));
+      const st = { ...snapshot, images: snapshot.images.map((it) => ({ ...it })),
+        picked: snapshot.picked.slice(), cursor: i };
+      writeState(node, st, true);
+      const expected = (wOf(node, "media_state") || {}).value;
+      console.log("[kedou] 批次提交 " + (i + 1) + "/" + n + " cursor=" + i + " widget=" + expected);
+      const result = await app.queuePrompt(0);      // 内部 graphToPrompt 同步读取本轮冻结的 cursor
+      await settleQueueSubmission(node, token, result);
+      if (token.cancelled || !nodeOnCanvas(node)) throw new Error(t("The image node was removed; batch stopped"));
+      // 被锁住的正常 UI 不会改这里；若有外部路径绕过锁，明确停下并保留它的改动。
+      if ((wOf(node, "media_state") || {}).value !== expected) {
+        throw new Error(t("Image settings changed while queuing; batch stopped without overwriting them"));
+      }
+      kdToast(t("Batch {i}/{n} queued", { i: i + 1, n }));
     }
-    kpToast(t("Batch submitted: {n} images queued, ComfyUI will run them in order", { n }));
+    kdToast(t("Batch submitted: {n} images queued, ComfyUI will run them in order", { n }));
   } catch (e) {
-    kpToast(t("Batch submit failed: {msg}", { msg: e && e.message ? e.message : String(e) }), true);
+    kdToast(t("Batch submit failed: {msg}", { msg: e && e.message ? e.message : String(e) }), true);
   } finally {
-    uiSetBusy(node, false);
+    if (node.__kdBatchRun === token) node.__kdBatchRun = null;
+    if (token.restore) token.restore();
+    if (!token.cancelled && nodeOnCanvas(node)) {
+      uiSetBusy(node, false);
+      renderPanel(node);            // 之前冻结的选择/顺序视图现在按最终真实状态恢复
+    }
   }
 }
 
@@ -1697,6 +1848,7 @@ function bucketLabel(node) {
 
 // 把选中的分辨率写回 media_state（只写状态，不重绘面板）
 function setBucket(node, v) {
+  if (node && node.__kdBatchRun) return;
   v = Math.max(0, Math.min(BUCKET_MAX, Math.round(Number(v) || 0)));
   const st = readState(node);
   if (st.bucket === v) { syncBucketTrigger(node); return; }
@@ -1786,6 +1938,7 @@ function setBucketHi(i, scroll) {
 }
 
 function openBucketMenu(node) {
+  if (node && node.__kdBatchRun) return;
   closeBucketMenu();
   const dd = node.__kdLimitDD;
   if (!dd || !dd.isConnected || !document.body) return;
@@ -1985,6 +2138,7 @@ function build(node) {
   setsBtn.title = t("Save or load an image arrangement");
   setsBtn.onclick = (e) => {
     e.stopPropagation();
+    if (node.__kdBatchRun) return;
     if (setsMenu && setsOwner === node) {
       closeSetsMenu();
       return;
@@ -1999,6 +2153,7 @@ function build(node) {
   clearBtn.textContent = t("Clear");
   let clearArmed = 0;
   clearBtn.onclick = () => {
+    if (node.__kdBatchRun) return;
     const st = readState(node);
     if (!(st.images || []).length) return;
     if (Date.now() - clearArmed < 2500 && clearBtn.textContent.indexOf(t("Confirm clear?")) !== -1) {
@@ -2049,12 +2204,14 @@ function build(node) {
   const swBatch = mkSwitch(t("Batch"), t("Batch mode: when on, click \"Run N\" to queue each effective image one by one, running the workflow once per image and outputting from image 1 in turn"));
   const swSel = mkSwitch(t("Select"), t("Select mode: when on, clicking a panel image selects it (numbered in click order), click again to deselect; only selected images are output and clicking no longer opens the zoom preview"));
   swBatch.cb.onchange = function () {
+    if (node.__kdBatchRun) return;
     const st = readState(node);
     st.batch = swBatch.cb.checked;
     writeState(node, st);
     renderPanel(node);
   };
   swSel.cb.onchange = function () {
+    if (node.__kdBatchRun) return;
     const st = readState(node);
     st.select = swSel.cb.checked;
     if (!st.select) st.picked = [];   // 关掉选择模式 = 回到全部输出，选择集清空
@@ -2067,11 +2224,11 @@ function build(node) {
   body.className = "kd-body";
   card.append(top, body);
 
-  node._kdUI = { card, body, count, libBtn, setsBtn, upBtn, fileEl, runBtn,
+  node._kdUI = { card, body, count, libBtn, setsBtn, clearBtn, upBtn, fileEl, runBtn,
     swBatchCb: swBatch.cb, swSelCb: swSel.cb };
-  // 选择/框选手势（仅选择模式生效）：点击切换、Shift 范围、点击空白清空、拖框多选
+  // 选择/框选手势（仅选择模式且非批次排队期间生效）：点击切换、Shift 范围、点击空白清空、拖框多选
   kdGesture(body, () => Array.from(body.querySelectorAll(".kd-cell")), {
-    enabled: () => !!readState(node).select,
+    enabled: () => !node.__kdBatchRun && !!readState(node).select,
     onCellTap(idx, shift) {
       const st = readState(node);
       st.picked = st.picked || [];
@@ -2114,11 +2271,13 @@ function build(node) {
   // 拖拽排序（普通模式）：拖格子换位置，顺序 = 输出槽顺序；选择模式禁拖（顺序由点击决定）
   let kdSort = null;
   body.addEventListener("mousedown", (e) => {
+    if (node.__kdBatchRun) return;
     const slot = e.target.closest(".kd-cell");
     if (!slot || e.target.closest(".kd-x")) return;
     slot.draggable = !readState(node).select;
   });
   body.addEventListener("dragstart", (e) => {
+    if (node.__kdBatchRun) { e.preventDefault(); return; }
     const slot = e.target.closest(".kd-cell");
     if (!slot) return;
     if (readState(node).select) { slot.draggable = false; e.preventDefault(); return; }
@@ -2140,7 +2299,7 @@ function build(node) {
     slot.classList.add("drag-over");
   });
   body.addEventListener("drop", (e) => {
-    if (!kdSort) return;
+    if (node.__kdBatchRun || !kdSort) return;
     e.preventDefault();
     const slot = e.target.closest(".kd-cell");
     const cells = Array.from(body.querySelectorAll(".kd-cell"));
@@ -2175,11 +2334,13 @@ function build(node) {
 
   upBtn.onclick = () => fileEl.click();
   fileEl.onchange = () => {
+    if (node.__kdBatchRun) return;
     const files = [...(fileEl.files || [])];
     fileEl.value = "";
     if (files.length) uploadFilesWrapper(node, files);
   };
   libBtn.onclick = () => {
+    if (node.__kdBatchRun) return;
     openLibrary((list) => {
       const state = readState(node);
       const have = new Set(state.images.map((it) => it.filename));
@@ -2232,6 +2393,7 @@ function build(node) {
   // 节点被删除时断开 ResizeObserver，否则观察着一个已移除的容器属于白占内存
   const onRm = node.onRemoved;
   node.onRemoved = function () {
+    if (node.__kdBatchRun) node.__kdBatchRun.cancelled = true;
     if (bucketMenu && bucketMenu.node === node) closeBucketMenu();
     if (node.__kdRO) { node.__kdRO.disconnect(); node.__kdRO = null; }
     if (node.__kdLocaleUnsub) { node.__kdLocaleUnsub(); node.__kdLocaleUnsub = null; }
@@ -2247,7 +2409,7 @@ function build(node) {
 window.addEventListener("kedou:media-apply", (ev) => {
   const d = ev.detail || {};
   const node = (app.graph && d.nodeId != null) ? app.graph.getNodeById(d.nodeId) : null;
-  if (!node) return;
+  if (!node || node.__kdBatchRun) return;
   const cur = readState(node);
   writeState(node, {
     images: (d.images || []).map((f) => ({ filename: String(f) })),
@@ -2266,6 +2428,7 @@ app.registerExtension({
   async nodeCreated(node) {
     const cls = (node.constructor && node.constructor.comfyClass) || node.comfyClass || "";
     if (cls !== NODE_CLASS) return;
+    hideMediaStateInput(node);
     // 尺寸必须在 await 之前设（见 applyDefaultSize 的说明）：加载工作流时 nodeCreated
     // 先跑、configure 随后用存档尺寸覆盖，所以这里只影响新建节点。
     applyDefaultSize(node);
@@ -2287,7 +2450,7 @@ app.registerExtension({
 // 的 output 即 API 格式）与勾选参数 POST 到 /ps/pack/save。不依赖工作流先保存。
 // 这套逻辑与上面的 KedouImageLoader 面板完全独立，互不影响。
 
-const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "video", "audio", "kedou_media", "prompt", "bbox"];
+const KP_WIDGETS = ["text", "number", "toggle", "combo", "image", "video", "audio", "kedou_media", "kedou_av", "prompt", "bbox"];
 // 下拉里显示的名字：值是落进 kapp 的协议字段，不能翻；只有显示名走 t()。
 // 说明：toggle 在 PS 面板里渲染成真开关（spec.type == BOOLEAN → .sw），所以叫「开关」；
 // prompt 是「提示词 + 用途」复合控件，启动器里渲染成带词库/历史的完整提示词框；
@@ -2297,6 +2460,7 @@ const KP_WIDGET_LABEL = {
   text: "Text", number: "Number", toggle: "Switch",
   combo: "Dropdown", image: "Image", video: "Video", audio: "Audio",
   kedou_media: "Kedou image loader",
+  kedou_av: "Kedou audio/video loader",
   prompt: "Kedou prompt", bbox: "Bounding boxes",
 };
 // 主题适配（2026-09-28，2026-11-11 复核）：全部颜色改走 ComfyUI 主题变量，白/黑主题自动切换。
@@ -2517,6 +2681,18 @@ function kpToast(msg, isErr) {
 }
 
 function kpPreview(v, widget) {
+  if (widget === "kedou_av") {
+    try {
+      const st = JSON.parse(String(v || "{}"));
+      const name = (it) => it && it.filename ? String(it.filename).split("/").pop() : "";
+      const videos = Array.isArray(st.videos) ? st.videos : (st.video ? [st.video] : []);
+      const audios = Array.isArray(st.audios) ? st.audios : (st.audio ? [st.audio] : []);
+      const parts = [];
+      if (videos.length) parts.push(videos.slice(0, 2).map(name).join(" + ") + (videos.length > 2 ? " +" + videos.length : ""));
+      if (audios.length) parts.push(audios.slice(0, 2).map(name).join(" + ") + (audios.length > 2 ? " +" + audios.length : ""));
+      return parts.join(" / ") || t("(not selected)");
+    } catch (_) { return t("(not selected)"); }
+  }
   if (widget === "image" || widget === "kedou_media" || widget === "video" || widget === "audio") {
     const s = String(v == null ? "" : v);
     return (s.split("/").pop() || t("(not selected)")).slice(0, 40);
@@ -2574,6 +2750,7 @@ function widgetKind(type) {
 function suggestWidget(node, w) {
   const ntype = node.type || node.comfyClass || "";
   if (ntype === "KedouImageLoader" && w.name === "media_state") return "kedou_media";
+  if (ntype === "KedouAVLoader" && w.name === "media_state") return "kedou_av";
   if (ntype === "LoadImage" && w.name === "image") return "image";
   // 视频 / 音频素材：只列「名字和后缀对不上」的几处（VHS 的控件叫 video、原生叫 file/audio），
   // 其余靠下面的后缀表兜底 —— 与后端 pack.py 的 _suggest_widget 同一套规则，两边必须一致。
@@ -2642,7 +2819,7 @@ function collectCandidates() {
       if (absorbed.has(w.name)) continue;
       // DOM 控件是节点自绘的面板 UI 本身（图片选择器 / 提示词输入框），没有值，不能当参数
       if (w.type === "div" || w.name === "kedou_media" || w.name === "kedou_promptbox") continue;
-      const special = ntype === "KedouImageLoader" && w.name === "media_state";
+      const special = (ntype === "KedouImageLoader" || ntype === "KedouAVLoader") && w.name === "media_state";
       if (w.type === "converted-widget" && !special) continue;  // 隐藏格
       // 已转换为输入且连着上游的 widget：值由上游驱动，打包成可调参数会在运行时破坏连线，故不提供勾选
       if (w.type === "converted-widget" && Array.isArray(node.inputs)
@@ -3766,6 +3943,11 @@ function openPackPanel(hostEl) {
         up.className = "kp-pv-up";
         up.textContent = t("Click to upload an image");
         field.appendChild(up);
+      } else if (w === "kedou_av") {
+        const up = document.createElement("div");
+        up.className = "kp-pv-up";
+        up.textContent = t("Choose a reference video and audio");
+        field.appendChild(up);
       } else {
         const box = document.createElement("div");
         box.className = "kp-pv-in" + (w === "prompt" ? " kp-pv-area" : "");
@@ -4225,6 +4407,7 @@ function openPackPanel(hostEl) {
 }
 
 async function doGenerate(ctx) {
+  const graphKey = kpOpenGraph || kpGraphKey();   // 本次候选对应的打开时工作流
   if (kpOpenGraph && kpGraphKey() !== kpOpenGraph) {
     // 候选快照来自另一张图：宁可拒绝，也不要生成一个绑错节点的包
     ctx.err.textContent = t("Workflow changed; reopen the pack panel and try again.");
@@ -4263,9 +4446,19 @@ async function doGenerate(ctx) {
     try {
       if (switches.length) groupPrompt = await kpGroupPrompt(switches);
       const pr = groupPrompt || await app.graphToPrompt();
+      // graphToPrompt/分组图构建都会 await；用户可能在这期间切换了工作流。
+      // 旧候选和旧 API 图不能与新画布混成一个包，面板侧栏轮询还没来得及重建也要拦。
+      if (kpGraphKey() !== graphKey || kpOpenGraph !== graphKey) {
+        ctx.err.textContent = t("Workflow changed; reopen the pack panel and try again.");
+        ctx.gen.disabled = false;
+        ctx.gen.textContent = primary();
+        return;
+      }
       output = (pr && pr.output) || {};
     } catch (e) {
-      ctx.err.textContent = t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
+      ctx.err.textContent = (kpGraphKey() !== graphKey || kpOpenGraph !== graphKey)
+        ? t("Workflow changed; reopen the pack panel and try again.")
+        : t("Failed to get workflow: {msg}", { msg: e && e.message ? e.message : e });
       ctx.gen.disabled = false;
       ctx.gen.textContent = primary();
       return;
@@ -4498,3 +4691,5 @@ app.registerExtension({
     }
   },
 });
+
+export { ensureCss, thumbUrl, fetchLibrary, kdToast, nodeOnCanvas, settleQueueSubmission, kdGesture, hideMediaStateInput };

@@ -10,11 +10,12 @@ ComfyUI_KeDou —— 修图工坊 · ComfyUI 桥接（入口）
       kedou_bridge/paths.py     根目录 / 用户目录 / 工作流目录 / 越界检查
       kedou_bridge/common.py    应用解析共用常量与纯函数
       kedou_bridge/registry.py  object_info、控件声明顺序与控件规格
-      kedou_bridge/state.py     sidecar 状态 + 写接口令牌/来源鉴权
+      kedou_bridge/state.py     sidecar 状态持久化
       kedou_bridge/apps.py      应用发现、规格、sidecar 回写、UI→API、执行图
       kedou_bridge/pack.py      打包候选、kapp 校验/落盘、编辑回写
       kedou_bridge/media.py     媒体清单、媒体选取、真缩略图
-      kedou_bridge/nodes.py     蝌蚪图片加载器 / 提示词框、空槽连线清理
+      kedou_bridge/segments.py  长视频分段分析与片段导出
+      kedou_bridge/nodes.py     蝌蚪图片 / 音视频 / 提示词节点、空槽连线清理
       kedou_bridge/routes.py    /ps/* HTTP 路由注册
 
 路由清单见 README。改完重启 ComfyUI。

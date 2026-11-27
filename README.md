@@ -2,7 +2,7 @@
 
 蝌蚪工具链里跑在 ComfyUI 这一侧的全部东西 —— 不只是一层桥接，是三样装在一个文件夹里：
 
-- **两个画布节点** —— 蝌蚪图片加载器（缩略图网格选图）、蝌蚪提示词输入框（语库 / 词库 / 历史）。搭工作流时直接用。
+- **三个画布节点** —— 蝌蚪图片加载器（缩略图网格选图）、蝌蚪音视频加载器（参考视频＋音频双槽）、蝌蚪提示词输入框（语库 / 词库 / 历史）。搭工作流时直接用。
 - **一层桥接** —— 挂在 ComfyUI 端口上的 `/ps/*` 路由，把「应用、参数、媒体、缩略图」翻译成外部面板能吃的 JSON。
 - **一个打包面板** —— 在画布上勾几个参数，把整张工作流打成「点一下就出图」的应用包。
 
@@ -24,13 +24,13 @@ ComfyUI 本身没有「列出我的工作流和它们的参数」这样的接口
 |---|---|---|
 | **蝌蚪启动器** | 独立程序。列出所有应用，点一下就出图 | 读 `/ps/apps` 拿应用清单与参数定义，按定义提交 `/prompt` |
 | **蝌蚪 PS 面板** | Photoshop 的 UXP 插件。在 PS 里选图、填参数、直接跑工作流 | 同样读应用与参数；另外用 `/ps/media` 挑图、`/ps/thumb` 出缩略图 |
-| **ComfyUI_KeDou** | 本仓库 | 提供上面这些数据，外加两个画布节点和打包面板 |
+| **ComfyUI_KeDou** | 本仓库 | 提供上面这些数据，外加三个画布节点和打包面板 |
 | **ComfyUI** | 真正跑图的那个 | 本插件不碰它的核心，只挂路由、加节点 |
 
 本插件**不启动 ComfyUI、不加载模型、不存业务数据**，只做翻译：把 ComfyUI 已有的东西整理成外部面板
 能用的形状，把「这张工作流哪些参数该给用户填」显式写下来。启动器和 PS 面板暂未开源（见文末「关于这个项目」）。
 
-> 除 ComfyUI 自带的 Pillow / numpy / aiohttp / PyYAML 外不额外安装任何依赖，一个文件夹即装即用。
+> 除 ComfyUI 自带的 Pillow / numpy / aiohttp / PyYAML / PyAV / torch 外不额外安装任何依赖，一个文件夹即装即用。
 
 ---
 
@@ -46,11 +46,13 @@ custom_nodes/ComfyUI_KeDou/
 │   ├── paths.py             # 根目录 / 用户目录 / 工作流目录 / 应用归档目录 / 越界检查
 │   ├── common.py            # 应用解析共用常量与纯函数
 │   ├── registry.py          # object_info、控件声明顺序与控件规格
-│   ├── state.py             # sidecar 状态 + 写接口令牌/来源鉴权
+│   ├── state.py             # sidecar 状态持久化（插件不做令牌鉴权）
 │   ├── apps.py              # 应用发现、规格、回写、UI→API、执行图
 │   ├── pack.py              # 打包候选、kapp 校验/落盘、编辑回写
-│   ├── media.py             # 媒体清单、媒体选取、真缩略图
-│   ├── nodes.py             # 两个自定义节点 + 空槽连线清理
+│   ├── media.py             # 媒体清单、上传、元数据、缩略图与波形
+│   ├── segments.py          # 长视频按时长/镜头分段、后台任务与片段导出
+│   ├── av_state.py          # 音视频 media_state v2 解析
+│   ├── nodes.py             # 图片 / 音视频 / 提示词节点 + 空槽连线清理
 │   └── routes.py            # /ps/* HTTP 路由注册
 ├── ui_to_api.py             # 界面格式 → API 格式转换
 ├── prompt_vault/            # vendored 提示词库实现
@@ -71,14 +73,21 @@ custom_nodes/ComfyUI_KeDou/
 
 | 路由 | 方法 | 用途 |
 |---|---|---|
-| `/ps/version` | GET | 协议握手：`schema_version` + 本版能力（sidecar / 转换缓存 / 写令牌） |
+| `/ps/version` | GET | 协议握手：`schema_version` + 本版能力（sidecar / 转换缓存 / 音视频节点） |
 | `/ps/apps` | GET | 列出全部「应用」：`{id, name, desc, param_count, has_image_input, node_count, format}` |
 | `/ps/apps/{app_id}` | GET | 取单个应用定义：参数列表 + 输出节点；参数默认值已叠加 sidecar 保存值 |
 | `/ps/apps/{app_id}/values` | POST | 把面板上的编辑存到 sidecar 状态文件（**不改工作流文件**） |
 | `/ps/apps/{app_id}/graph` | POST | 界面格式 → **API 格式**，返回可直接 `POST /prompt` 的图；转换结果按文件版本缓存 |
 | `/ps/media` | GET | 列媒体文件：`?type=image\|video\|audio&tab=all\|input\|output&q=关键词` |
+| `/ps/media/upload` | POST | 上传 image/video/audio：multipart `file` + `?type=`，校验扩展名/大小/媒体完整性后原子发布到 input |
+| `/ps/media/info` | GET | 媒体元数据：时长、视频宽高/fps/帧数、音频采样率/声道数 |
+| `/ps/video/segments/analyze` | POST | 长视频分段分析：按时长或按镜头，返回后台任务 ID |
+| `/ps/video/segments/jobs/{job_id}` | GET | 分段/导出任务进度、取消状态与分析结果 |
+| `/ps/video/segments/jobs/{job_id}/cancel` | POST | 取消分段分析或片段导出 |
+| `/ps/video/segments/export` | POST | 把勾选片段流复制导出到 input，边界按关键帧近似 |
+| `/ps/waveform` | GET | 音频波形 PNG：`?filename=&subfolder=&type=&w=256`，按源文件指纹缓存 |
 | `/ps/media/delete` | POST | `{name, subfolder, tab}` 把媒体文件**移到回收站** `user/default/kedou_trash/media/<tab>/<sub>/`（带时间戳、保留扩展名，不真删）；只认媒体目录内的媒体类型，越界 / 缺文件 / 目录一律拒绝 |
-| `/ps/thumb` | GET | 真缩略图：`?filename=&subfolder=&type=&w=256&fit=3x4`，按源图指纹落盘缓存；不透明出 JPEG、带透明出 PNG（**不能用 webp —— PS 面板的 `<img>` 走 Adobe 解码器，解不出来就是一片空白**）；`fit=<宽x高>` 把整图缩进这个比例再按 `#1a1a1a` 补边（**不裁边**，缩略图要让人认出画面；UXP 的 `max-*` 不锁宽高比，所以位图比例必须严格等于面板格子）；ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡 |
+| `/ps/thumb` | GET | 真缩略图：图片出 JPEG/PNG，视频取首帧；`?filename=&subfolder=&type=&w=256&fit=3x4`，按源文件指纹落盘缓存。图片 `fit=<宽x高度>` 会把整图缩进比例再补边；ComfyUI 自带的 `/view?preview=` 只重编码不缩尺寸，一屏原图必卡 |
 | `/ps/imgsize` | GET | 原图像素尺寸：`?filename=&subfolder=&type=` → `{ok,width,height,bytes,tab,format}`。只读文件头、不解码整图，按路径 + mtime + 字节数缓存；宽高按 EXIF 方向摆正（与缩略图、节点出图一致）；`type` 指的目录里没有就自动试另一个并回报命中的 `tab`；不是图 / 读不出 / 越界回 404 |
 | `/ps/pack/candidates` | GET | 打包前：列出工作流里**可暴露成参数的控件候选** |
 | `/ps/pack` | POST | 按已有工作流文件生成应用包：`<stem>.kapp.json` + 同名工作流副本，都放进 `user/default/kedou_apps/` |
@@ -103,6 +112,7 @@ custom_nodes/ComfyUI_KeDou/
 | 节点 | 显示名 | 说明 |
 |---|---|---|
 | `KedouImageLoader` | 蝌蚪图片加载器 | 直接在节点上选图（缩略图网格，由 `web/kedou_media.js` 渲染），输出一批图像。 |
+| `KedouAVLoader` | 蝌蚪音视频加载器 | 视频/音频各自多选，按顺序配对；普通模式同时输出最多8组，批次模式逐组排队，每组提供 VIDEO/AUDIO/IMAGE。 |
 | `KedouPromptBox` | 蝌蚪提示词输入框 | 提示词输入 + 按用途过滤的语库/词库/历史（`web/promptlib.js`），直通输出 prompt。 |
 
 图片加载器底栏（节点底部 KeDou 那一行）有 **「对齐分辨率」** 下拉：
@@ -129,6 +139,30 @@ custom_nodes/ComfyUI_KeDou/
 批次模式固定 1 路（+1 空位），选择模式的张数 = 选中张数（+1 空位）；
 已连线的槽一律保留（临时删图不断线），空槽的连线在后端 `/prompt` 入口被剔掉，
 所以接到 Batch Images 这类下游不会因为 `None` 崩掉。
+
+### 音视频加载器
+
+`KedouAVLoader` 面向参考生视频：面板有 **视频** 和 **音频** 两个多选列表，可分别从媒体库选择或上传。普通模式最多同时输出 8 组；批次模式逐组排队，列表最多可保存 500 段。
+
+视频卡片悬浮会弹出可播放预览；在视频画面上或时间条上横向拖动，松手即可保存该素材的起止时间。已选区间可整体前后拖动，播放按钮会切换播放/暂停状态。音频按采样位置精确切片；视频帧模式按时间窗口解码；视频输出模式使用不重编码的缓存裁剪，边界按关键帧近似，速度更快但不保证逐帧精确。
+
+预览工具条的 **「分段」** 提供两种模式：
+
+- **按时长**：设置每段秒数与尾段处理（保留、并入前段、丢弃）。
+- **按镜头**：可选快速灰度帧差、TransNetV2 或 OmniShotCut 高精度模型；可调灵敏度与最短镜头，结果显示置信度，支持人工修改起止、删除、合并和在播放处切分。TransNetV2 权重约 31MB，OmniShotCut v1.5 约 202MB，均优先读取 ComfyUI 模型目录，首次按需下载，之后本地运行，支持 CUDA/CPU。
+
+分段分析在后台执行，可取消并按源文件指纹缓存。勾选片段可加入当前 AV Loader：普通模式最多 8 段，批次模式最多 500 段，同一源文件通过稳定 `segment_id` 区分；也可流复制导出到媒体库。导出不重编码，边界按关键帧近似。TransNetV2 使用 100 帧窗口/50 帧步长流式推理，检测完卸载模型并释放显存。权重优先读取 `ComfyUI/models/transnetv2/` 或 `ComfyUI/models/omnishotcut/`，其次读取 `user/default/kedou_segments/models/` 缓存，都不存在时才下载。
+
+端口按当前模式动态排列：
+
+- 视频模式显示 `视频N`，视频帧模式显示 `视频帧N`，二者互斥。
+- 开启“视频自带音频”后，每组显示 `视频N音频`，与视频或视频帧交错排列。
+- 纯音频端口统一排在最底部，按 `音频1`、`音频2` 顺序向下排列。
+- 模式切换或关闭视频音轨时，对应端口从画布移除并暂存已有连线，切回后恢复。
+- 端口按“已连线数量 + 1 个空位”增长：初始显示当前媒体口和音频口，每连上一个自动长出下一个，不预铺一堆空端口。
+
+帧模式提供起始帧、最大帧数、抽帧间隔和长边上限；默认 16 帧 / 512，受内存估算保护。所有音频（含视频自带音轨）和帧解码共享 2GB 内存预算。批次模式每次只输出当前游标组，因此 500 段不会同时占用内存。
+打包时使用 `kedou_av` 复合把手；旧版启动器/UXP 需要升级后才显示双素材槽，未升级时不能把它当普通文本框使用。
 
 ---
 
@@ -335,7 +369,7 @@ Flux 3 除了参考图，还能按**图里的具体元素**下指令：`replace 
   API 图反推不回位置与连线，所以 **kapp 不能直接转成官方包**；反过来官方包随时可以打成 kapp。
 - 每条参数按 `"<顶层id>:<节点id>:<控件名>"` 写进 `linearData.inputs`，三段都 `encodeURIComponent`；
   顶层 `id` 缺失时自动补一个 uuid（前端加载时会认回来）。
-- 自绘节点写的是 DOM 把手：`media_state → kedou_media`、`prompt_state → kedou_promptbox`
+- 自绘节点写的是 DOM 把手：`media_state → kedou_media`、AV 节点 `media_state → kedou_av`、`prompt_state → kedou_promptbox`
   （与真机 App Builder 落到文件里的形态一致）。
 - 校验不过不落盘：画布上不存在的控件、不存在的节点/输出节点都如实报错，绝不静默丢弃。
 - 写出来的文件 ComfyUI 自己的 **Apps 侧栏**（按 `*.app.json` 后缀）也能直接打开；
@@ -462,7 +496,7 @@ mousedown / mouseup / click，不会顺手把参数带进输入状态。老渲�
   （旧式 `[节点 id, 控件名]` 仍兼容）。以前会把中文标签当成控件名，默认值和类型全丢。
 - 控件值优先读 `widgets_values_named`（前端 1.55+ 才有，键就是控件名），不再受"按位置对位"错位影响；
   老工作流没有这个字段时仍按声明顺序取下标。
-- 自绘节点的 DOM 把手（`kedou_media` / `kedou_promptbox`）读回时还原成数据控件
+- 自绘节点的 DOM 把手（`kedou_media` / `kedou_av` / `kedou_promptbox`）读回时还原成数据控件
   （`media_state` / `prompt_state`），类型按图像输入 / 提示词处理，默认值取真实控件那份。
 - `BOUNDING_BOX` / `BOUNDING_BOXES`（「创建边界框」的框选控件）识别成 **`bbox`**：
   它是会写进 `widgets_values` 的真控件，漏掉会让同节点的参数下标整体错位；
@@ -471,7 +505,7 @@ mousedown / mouseup / click，不会顺手把参数带进输入状态。老渲�
 
 ---
 
-## 应用状态、缓存与写接口安全
+## 应用状态、缓存与连接
 
 **参数值不再写回工作流。** `/ps/apps/{id}/values` 保存在
 `user/default/kedou_app_state/<相对路径hash>.json`（原子写入），工作流文件保持只读。
@@ -482,14 +516,9 @@ mousedown / mouseup / click，不会顺手把参数带进输入状态。老渲�
 运行期只做深拷贝 + 注值。工作流改动或节点增删后自动失效；每次返回里的 `cache`
 字段是 `hit` / `miss` / `off`，便于排查。
 
-**写接口默认拒绝外部网站来源。** 启动时会生成
-`user/default/kedou_bridge_token.txt`。外部面板可以在 POST 请求里带
-`X-Kedou-Token: <文件内容>`；本机无 Origin、`null`、loopback `http(s)`、
-以及 `file://` / `plugin://` / `uxp://` / `app://` 这类本地面板来源仍可直接调用。
-设置环境变量 `KEDOU_BRIDGE_REQUIRE_TOKEN=1` 后，所有写接口都必须带令牌。
-如果面板发来的 Origin 不在上述范围，可用 `KEDOU_BRIDGE_ALLOWED_ORIGINS` 追加
-（逗号分隔，例如 `plugin://com.adobe.photoshop`）。
-如果 ComfyUI 暴露到局域网，建议同时开启严格模式，并只给可信面板分发令牌。
+**插件不实现令牌鉴权。** `/ps/` 路由只为 UXP 提供 CORS，写接口不要求
+`X-Kedou-Token`，也不会生成令牌文件。是否需要限制局域网/公网访问，由 ComfyUI 自身的
+启动参数、监听地址或外层反向代理统一负责；个人本机使用保持直接连接。
 
 ---
 

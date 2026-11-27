@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """应用打包：候选清单、UI→API 打包、kapp 校验与落盘。"""
 
+import hashlib
 import json
 import os
 import re
@@ -11,8 +12,8 @@ import time
 import urllib.parse
 import uuid
 
-from . import apps, compat, groups, paths
-from .common import (_clean_label, _dom_handle, _panel_widget, _ref_parts,
+from . import apps, compat, groups, paths, state
+from .common import (DOM_HANDLES, _clean_label, _dom_handle, _panel_widget, _ref_parts,
                      _widget_values)
 from .registry import (build_object_info, widget_spec, _ctl_after_gen,
                        _declared_widgets, _find_spec, _widget_index)
@@ -22,14 +23,24 @@ from .state import _load_app_state, _state_path
 _PACK_WRITE_LOCK = threading.Lock()
 
 
-def _write_kapp_files(out_path, kapp, workflow=None):
+def _archive_workflow_path(out_path):
+    stem = paths._stem(os.path.basename(out_path))
+    if paths._under(paths.APPS_DIR, out_path):
+        filename = stem + ".json"
+    else:
+        rel = os.path.relpath(out_path, paths.WORKFLOW_DIR).replace("\\", "/")
+        digest = hashlib.sha1(rel.encode("utf-8")).hexdigest()[:8]
+        filename = "%s__%s.json" % (stem, digest)
+    return os.path.join(paths.APPS_DIR, filename)
+
+
+def _write_kapp_files(out_path, kapp, workflow=None, workflow_path=None):
     if not (paths._under(paths.APPS_DIR, out_path)
             or paths._under(paths.WORKFLOW_DIR, out_path)):
         raise ValueError("应用包路径越出允许目录")
     wf_path = None
     if workflow is not None:
-        stem = paths._stem(os.path.basename(out_path))
-        wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
+        wf_path = workflow_path or _archive_workflow_path(out_path)
         if not paths._under(paths.APPS_DIR, wf_path):
             raise ValueError("工作流副本路径越出应用归档目录")
 
@@ -87,7 +98,19 @@ def _find_workflow_file(name: str):
     两个根都找：工作流目录 + 应用归档目录（打包后副本就存在那儿，从面板「切回工作流」
     打开的正是它，再打包时还得能按名字找回它）。
     """
-    want = os.path.basename(str(name or ""))
+    raw = str(name or "").strip().replace("\\", "/")
+    if raw and not raw.startswith("/") and not re.match(r"^[A-Za-z]:", raw):
+        if raw.startswith(paths.APPS_PREFIX):
+            base, rest = paths.APPS_DIR, raw[len(paths.APPS_PREFIX):]
+        else:
+            base, rest = paths.WORKFLOW_DIR, raw
+        parts = [part for part in rest.split("/") if part and part != "."]
+        if parts and not any(part == ".." for part in parts):
+            exact = os.path.join(base, *parts)
+            if (paths._under(base, exact) and os.path.isfile(exact)
+                    and not exact.lower().endswith((".kapp.json", ".app.json"))):
+                return exact
+    want = os.path.basename(raw)
     if not want or not paths._safe_id(want):
         return None
     roots = [r for r in (paths.WORKFLOW_DIR, paths.APPS_DIR) if os.path.isdir(r)]
@@ -225,6 +248,8 @@ def _suggest_widget(object_info: dict, class_type: str, name: str, node: dict = 
     判为 text 会使应用中的下拉退化为输入框（ResolutionSelector 的 aspect_ratio 即如此）。"""
     if class_type == "KedouImageLoader" and name == "media_state":
         return "kedou_media"
+    if class_type == "KedouAVLoader" and name == "media_state":
+        return "kedou_av"
     if class_type == "LoadImage" and name == "image":
         return "image"
     # 视频 / 音频素材：品牌特判只列「名字和后缀对不上」的几处（VHS 的控件叫 video、
@@ -353,7 +378,7 @@ def pack_candidates(source: str) -> dict:
                     udef = saved[_usk]
                 item["usage_default"] = udef
             out.append(item)
-    return {"ok": True, "source": os.path.basename(path), "candidates": out}
+    return {"ok": True, "source": _src_rel(path), "candidates": out}
 
 
 def _param_value(node, object_info, ctype, name, saved=None, nid=""):
@@ -429,6 +454,11 @@ def _build_kapp(wf, decls, name, desc, saved, object_info=None, source=""):
             "node_type": ctype,
             "node_title": ((node.get("title") or "").strip() if node else ""),
         }
+        description = str(p.get("desc") or p.get("description") or "").strip()
+        if description:
+            item["desc"] = description
+        if "height" in p:
+            item["height"] = p["height"]
         if widget == "number":
             item["min"] = spec.get("min")
             item["max"] = spec.get("max")
@@ -515,7 +545,7 @@ def pack_app(source: str, params: list, name: str = None, desc: str = "") -> dic
         return built
     out_path = os.path.join(paths.APPS_DIR, stem + ".kapp.json")
     try:
-        _write_kapp_files(out_path, built["kapp"], wf)
+        _write_kapp_files(out_path, built["kapp"], wf, workflow_path=wf_path)
     except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": paths._rel(out_path), "param_count": len(built["params"]),
@@ -558,12 +588,16 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
         if stored and stored not in (widget_name, ref_name):
             label = stored                                # 构建器里改过的名字
         descr = ""
+        height = None
         if len(entry) > 2 and isinstance(entry[2], dict):
             descr = str(entry[2].get("description") or "").strip()
+            height = entry[2].get("height")
         decl = {"node": str(node_id), "input": widget_name, "label": label,
                 "widget": _suggest_widget(object_info, ctype, widget_name, node)}
         if descr:
             decl["desc"] = descr
+        if height is not None:
+            decl["height"] = height
         decls.append(decl)
     if errs:
         return {"ok": False, "error": "；".join(errs[:8])}
@@ -588,7 +622,7 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
         out_dir = paths.APPS_DIR
         out_path = os.path.join(out_dir, stem + ".kapp.json")
 
-    wf_path = os.path.join(paths.APPS_DIR, stem + ".json")
+    wf_path = _archive_workflow_path(out_path)
     source = _src_rel(wf_path)
 
     built = _build_kapp(workflow, decls, raw or stem, desc, {}, object_info,
@@ -606,7 +640,7 @@ def kapp_from_linear(name, workflow, desc: str = "", target: str = None,
     if not paths._under(out_dir, out_path):
         return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
-        _write_kapp_files(out_path, kapp, workflow)
+        _write_kapp_files(out_path, kapp, workflow, workflow_path=wf_path)
     except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "id": stem, "file": paths._rel(out_path),
@@ -805,13 +839,13 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
     # （原来是读 ComfyUI 的 activeWorkflow.path，新建/未保存的画布拿到空串，
     #   包就永远不记得自己从哪来，用户 2026-10-26 就是被这个坑的。）
     ui_wf = workflow if isinstance(workflow, dict) else None
+    wf_path = None
     if ui_wf is not None and not isinstance(ui_wf.get("nodes"), list):
         return {"ok": False, "error": "workflow 必须是画布序列化结果（需含 nodes 列表）"}
     if ui_wf is not None:
         # 副本名跟随 kapp 文件名的 stem，不跟 name —— 编辑时改了应用名也不至于
         # 让副本和应用包变成两个名字。
-        file_stem = paths._stem(os.path.basename(out_path))
-        wf_path = os.path.join(paths.APPS_DIR, file_stem + ".json")
+        wf_path = _archive_workflow_path(out_path)
         kapp = dict(kapp, source=_src_rel(wf_path))
     else:
         # source：前端记下的「这包是从哪个工作流打的」，只用于「切回工作流」。
@@ -837,7 +871,7 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
     if not paths._under(out_dir, out_path):
         return {"ok": False, "error": "应用名解析后落在允许目录之外，已拒绝写入：%s" % name}
     try:
-        _write_kapp_files(out_path, kapp, ui_wf)
+        _write_kapp_files(out_path, kapp, ui_wf, workflow_path=wf_path)
     except Exception as e:
         return {"ok": False, "error": "写入失败：%s" % e}
     return {"ok": True, "file": paths._rel(out_path), "target": _pack_target(out_path),
@@ -846,7 +880,7 @@ def save_kapp(name: str, desc, kapp, target: str = None, workflow=None) -> dict:
 
 
 def delete_kapp(target: str) -> dict:
-    with _PACK_WRITE_LOCK:
+    with _PACK_WRITE_LOCK, state._STATE_LOCK:
         return _delete_kapp_locked(target)
 
 
@@ -870,6 +904,20 @@ def _delete_kapp_locked(target: str) -> dict:
     if not os.path.isfile(p):
         return {"ok": False, "error": "文件不存在：%s" % target}
     base = os.path.basename(p)
+    wf_src = None
+    try:
+        with open(p, "r", encoding="utf-8-sig") as handle:
+            stored = json.load(handle)
+        source = str(stored.get("source") or "").strip() if isinstance(stored, dict) else ""
+        candidate = _resolve_workflow_rel(source) if source else None
+        if candidate and paths._under(paths.APPS_DIR, candidate) and os.path.isfile(candidate):
+            wf_src = candidate
+    except (OSError, ValueError, TypeError):
+        pass
+    if wf_src is None and paths._under(paths.APPS_DIR, p):
+        candidate = os.path.join(paths.APPS_DIR, paths._stem(base) + ".json")
+        if os.path.isfile(candidate):
+            wf_src = candidate
     stamp = time.strftime("%Y%m%d-%H%M%S")
     try:
         os.makedirs(paths.TRASH_DIR, exist_ok=True)
@@ -889,11 +937,10 @@ def _delete_kapp_locked(target: str) -> dict:
         shutil.move(p, dst)
     except Exception as e:                           # noqa: BLE001
         return {"ok": False, "error": "移到回收站失败：%s" % e}
-    # 工作流副本（应用归档目录里的 <同名>.json）
+    # 工作流副本按包内 source 精确定位；旧目录包没有 source 时绝不猜全局同名文件。
     wf_moved = ""
-    wf_src = os.path.join(paths.APPS_DIR, paths._stem(base) + ".json")
     try:
-        if os.path.isfile(wf_src):
+        if wf_src and os.path.isfile(wf_src):
             shutil.move(wf_src, _trash_name(os.path.basename(wf_src)))
             wf_moved = paths._rel(wf_src)
     except Exception:                                # noqa: BLE001
@@ -935,11 +982,17 @@ def _app_widget_id(graph_id, node_id, name) -> str:
 
 
 def _app_node_widgets(node: dict) -> list:
-    """画布上该节点真实存在的控件名（含自绘 DOM 控件；socket 输入不算）。"""
+    """画布上该节点真实存在的控件名（含自绘 DOM 控件；socket 输入不算）。
+
+    serialize:false 的 DOM 控件可能只出现在 widgets_values_named 的真实数据控件里，
+    因此命名映射表中的把手也必须合法，不能要求它真的序列化成独立 widget。
+    """
     named = node.get("widgets_values_named")
-    if isinstance(named, dict) and named:
-        return list(named.keys())
-    return _ui_widget_names(node)
+    names = list(named.keys()) if isinstance(named, dict) and named else _ui_widget_names(node)
+    for real, handle in (DOM_HANDLES.get(str(node.get("type") or "")) or {}).items():
+        if real in names and handle not in names:
+            names.append(handle)
+    return names
 
 
 def _resolve_app_target(target: str):
@@ -962,7 +1015,7 @@ def save_official_app(name, workflow, params, outputs, target: str = None) -> di
     workflow = 画布上那份 **UI 格式**工作流（app.graph.serialize()），原样落盘，只改 extra：
       * 顶层 id 缺失时补一个 uuid（官方 ref 的第一段就是它，前端自己也会认回来）；
       * 每个参数按「节点 + 控件」换成 "<图id>:<节点id>:<控件名>"，自绘控件换成 DOM 把手
-        （media_state -> kedou_media，prompt_state -> kedou_promptbox）；
+        （media_state -> kedou_media/kedou_av，prompt_state -> kedou_promptbox）；
       * outputs 列节点 id。
     校验不过就不落盘（画布上没有的控件、不存在的节点/输出都如实报错，绝不静默丢弃）。
     """
@@ -1001,7 +1054,14 @@ def save_official_app(name, workflow, params, outputs, target: str = None) -> di
                         % (nid, ntype, handle))
             continue
         label = str(p.get("label") or "").strip() or handle
-        inputs.append([_app_widget_id(gid, nid, handle), label])
+        meta = {}
+        description = str(p.get("desc") or p.get("description") or "").strip()
+        if description:
+            meta["description"] = description
+        if "height" in p:
+            meta["height"] = p["height"]
+        inputs.append([_app_widget_id(gid, nid, handle), label, meta] if meta
+                      else [_app_widget_id(gid, nid, handle), label])
 
     outs = []
     for o in (outputs or []):

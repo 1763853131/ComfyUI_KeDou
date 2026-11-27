@@ -492,49 +492,50 @@ function reducedMotion() {
 }
 
 // ───────── 三套数据各自缓存：语库是 .md，词库/历史是后端 JSON，互不混 ─────────
-let libCache = null;          // 语库 { items, dirs }
-let libStamp = 0;
-async function lib(force) {
-  if (force || !libCache || Date.now() - libStamp > 30000) {
-    libCache = await api("");
-    libStamp = Date.now();
-  }
-  return libCache;
+// 每类请求独立编号。force/失效会使在途请求失效，晚到的旧响应既不能写缓存，
+// 也不能被 reload 当成新数据提交到面板。
+function sequencedCache(read) {
+  const entry = { value: null, stamp: 0, seq: 0, inflight: null };
+  return {
+    async load(force) {
+      if (!force && entry.value && Date.now() - entry.stamp <= 30000) return entry.value;
+      // 普通读取共享在途 Promise，避免多个节点同时把 chips 清空；force 才允许 supersede。
+      if (!force && entry.inflight) return entry.inflight;
+      const seq = ++entry.seq;
+      const request = (async () => {
+        const value = await read();
+        if (seq !== entry.seq) return null;
+        entry.value = value;
+        entry.stamp = Date.now();
+        return value;
+      })();
+      if (!force) {
+        entry.inflight = request;
+        const clear = () => { if (entry.inflight === request) entry.inflight = null; };
+        request.then(clear, clear);
+      }
+      return request;
+    },
+    invalidate() { entry.seq++; entry.value = null; entry.stamp = 0; entry.inflight = null; },
+  };
 }
-let phraseCache = null;       // 词库（短词/标签）
-let phraseStamp = 0;
-async function phraseLib(force) {
-  if (force || !phraseCache || Date.now() - phraseStamp > 30000) {
-    phraseCache = await api("/phrases");
-    phraseStamp = Date.now();
-  }
-  return phraseCache;
-}
-let histCache = null;         // 自动历史
-let histStamp = 0;
-async function historyLib(force) {
-  if (force || !histCache || Date.now() - histStamp > 30000) {
-    histCache = await api("/history");
-    histStamp = Date.now();
-  }
-  return histCache;
-}
+const libStore = sequencedCache(() => api(""));
+const phraseStore = sequencedCache(() => api("/phrases"));
+const histStore = sequencedCache(() => api("/history"));
 // 图片排列存在词库目录（<vault>/.kedou/image_sets.json），词库面板里单独一组展示。
 const SETS_API = "/ps/image-sets";
 const SETS_GROUP = "__sets";
-let setsCache = null;
-let setsStamp = 0;
-async function setsLib(force) {
-  if (force || !setsCache || Date.now() - setsStamp > 30000) {
-    setsCache = await apiAbs(SETS_API);
-    setsStamp = Date.now();
-  }
-  return setsCache;
+const setsStore = sequencedCache(() => apiAbs(SETS_API));
+const lib = (force) => libStore.load(force);
+const phraseLib = (force) => phraseStore.load(force);
+const historyLib = (force) => histStore.load(force);
+const setsLib = (force) => setsStore.load(force);
+function libInvalidate() {
+  libStore.invalidate(); phraseStore.invalidate(); histStore.invalidate(); setsStore.invalidate();
 }
-function libInvalidate() { libCache = phraseCache = histCache = setsCache = null; }
 // 图片加载器上的「排列」菜单增删后，词库面板里的同一份记录要跟着更新
 window.addEventListener("kedou:sets-changed", () => {
-  setsCache = null;
+  setsStore.invalidate();
   if (libPanel && libTab === "phrases" && libState.phraseGroup === SETS_GROUP && libRefresh) {
     libRefresh();
   }
@@ -1159,59 +1160,49 @@ function openLib(node, tab) {
   // ---- 数据 ----
   async function reload(force) {
     const seq = ++reloadSeq;
-    const reads = [
-      (async () => {
-        try {
-          const d = await lib(force);
-          libData.prompts = d.items || [];
-          libData.promptCategories = d.categories || [];
-          if (d.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
-          libErrors.prompts = "";
-        } catch (e) {
-          libErrors.prompts = serverError(e.message);
-          loc.error = libErrors.prompts;
-        }
-      })(),
-      (async () => {
-        try {
-          const d = await phraseLib(force);
-          libData.phrases = d.items || [];
-          libData.groups = d.groups || [];
-          libData.categories = d.categories || [];
-          if (d.vault && !loc.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
-          libErrors.phrases = "";
-          if (!libState.phraseInit && libData.groups.length) {
-            libState.phraseInit = true;   // 只在第一次选默认分类；之后记住用户的选择
-            libState.phraseGroup = libData.groups[0];
-            const cats = libData.categories.filter((c) => c.group === libState.phraseGroup);
-            libState.phraseCat = cats.length ? cats[0].name : "";
-          }
-        } catch (e) {
-          libErrors.phrases = serverError(e.message);
-        }
-      })(),
-      (async () => {
-        try {
-          const d = await setsLib(force);
-          libData.sets = d.items || [];
-          libErrors.sets = "";
-        } catch (e) {
-          libErrors.sets = serverError(e.message);
-        }
-      })(),
-      (async () => {
-        try {
-          const d = await historyLib(force);
-          libData.history = d.items || [];
-          if (d.vault && !loc.vault) loc = { vault: d.vault, source: d.vault_source || "default", error: d.error || "" };
-          libErrors.history = "";
-        } catch (e) {
-          libErrors.history = serverError(e.message);
-        }
-      })(),
-    ];
-    await Promise.all(reads);
-    if (seq !== reloadSeq || session !== libSession || !libPanel) return;
+    const panel = libPanel;
+    // 子请求只返回独立结果；Promise.all 之后统一检查并一次性提交共享状态。
+    // 否则旧请求会在等待期间先污染 libData/loc，最后的 seq 检查根本救不回来。
+    const settled = (promise) => promise.then((data) => ({ data })).catch((e) => ({ error: e }));
+    const [prompts, phrases, sets, history] = await Promise.all([
+      settled(lib(force)), settled(phraseLib(force)),
+      settled(setsLib(force)), settled(historyLib(force)),
+    ]);
+    if (seq !== reloadSeq || session !== libSession || libPanel !== panel || libOwner !== node || !panel) return;
+    const nextData = {
+      prompts: prompts.data ? (prompts.data.items || []) : libData.prompts,
+      promptCategories: prompts.data ? (prompts.data.categories || []) : libData.promptCategories,
+      phrases: phrases.data ? (phrases.data.items || []) : libData.phrases,
+      groups: phrases.data ? (phrases.data.groups || []) : libData.groups,
+      categories: phrases.data ? (phrases.data.categories || []) : libData.categories,
+      sets: sets.data ? (sets.data.items || []) : libData.sets,
+      history: history.data ? (history.data.items || []) : libData.history,
+    };
+    const nextErrors = {
+      prompts: prompts.error ? serverError(prompts.error.message) : "",
+      phrases: phrases.error ? serverError(phrases.error.message) : "",
+      sets: sets.error ? serverError(sets.error.message) : "",
+      history: history.error ? serverError(history.error.message) : "",
+    };
+    let nextLoc = { vault: "", source: "default", error: "" };
+    for (const result of [prompts, phrases, history]) {
+      if (result.data && result.data.vault) {
+        nextLoc = { vault: result.data.vault, source: result.data.vault_source || "default", error: result.data.error || "" };
+        break;
+      }
+    }
+    if (!nextLoc.vault && loc.vault) nextLoc = { ...loc };
+    if (nextErrors.prompts) nextLoc.error = nextErrors.prompts;
+
+    libData = nextData;
+    libErrors = nextErrors;
+    loc = nextLoc;
+    if (!libState.phraseInit && nextData.groups.length) {
+      libState.phraseInit = true;   // 只在第一次拿全数据后选默认分类；之后记住用户的选择
+      libState.phraseGroup = nextData.groups[0];
+      const cats = nextData.categories.filter((c) => c.group === libState.phraseGroup);
+      libState.phraseCat = cats.length ? cats[0].name : "";
+    }
     loading = false;
     if (!locEditing) showLoc();
     paint();
@@ -1793,7 +1784,7 @@ function openLib(node, tab) {
       try {
         const r = await apiAbs(SETS_API + "/rename", { id: entry.id, name });
         if (!r.ok) { toast(t("Save failed: {error}", { error: serverError(r.error) }), true); return; }
-        setsCache = null;
+        setsStore.invalidate();
         libState.setEditId = null;
         toast(t("Renamed to “{name}”", { name }));
         onSaved();
@@ -1840,7 +1831,7 @@ function openLib(node, tab) {
       try {
         const r = await apiAbs(SETS_API + "/delete", { id: entry.id });
         if (!r.ok) { toast(t("Delete failed: {error}", { error: serverError(r.error) }), true); return; }
-        setsCache = null;
+        setsStore.invalidate();
         if (libState.setEditId === entry.id) libState.setEditId = null;
         toast(t("Deleted"));
         onChanged();
@@ -2310,7 +2301,9 @@ function buildPromptBox(node) {
   // 实测「新建节点」和「加载工作流」都只触发一次 nodeCreated，这里只是防着别的路径重复触发。
   if (node.__kdPbox && (node.widgets || []).some((w) => w && w.name === "kedou_promptbox")) return;
   const pw = (node.widgets || []).find((w) => w.name === "prompt_state");
-  const uw = (node.widgets || []).find((w) => w.name === "usage");
+  // uw 只用于构建时的初始值/隐藏；节点重载会替换 widgets 对象，后续读写必须现查。
+  function uwNow() { return (node.widgets || []).find((w) => w && w.name === "usage"); }
+  const uw = uwNow();
   if (!pw) return;
   try { pw.options = pw.options || {}; pw.options.hidden = true; } catch (_) { /* ignore */ }
   try { uw.options = uw.options || {}; uw.options.hidden = true; } catch (_) { /* ignore */ }
@@ -2331,7 +2324,8 @@ function buildPromptBox(node) {
   });
   useSel.value = String((uw && uw.value) || USAGES[0]);
   useSel.onchange = () => {
-    if (uw) uw.value = useSel.value;
+    const usageWidget = uwNow();
+    if (usageWidget) usageWidget.value = useSel.value;
     try { node.setDirtyCanvas(true, true); } catch (_) { /* ignore */ }
     paintRefOptions();        // 换用途：引用下拉只留这个用途认的写法
     updateRefRow();
@@ -2525,7 +2519,7 @@ function buildPromptBox(node) {
     try {
       const [pd] = await Promise.allSettled([lib()]);
       const use = useSel.value;
-      const prompts = pd.status === "fulfilled"
+      const prompts = pd.status === "fulfilled" && pd.value
         ? (pd.value.items || []).filter((e) => (e.use_for || []).indexOf(use) !== -1) : [];
       const pool = prompts.filter((e) => e.pinned).slice(0, 5)
         .map((e) => ({ e, kind: "prompt" }));
@@ -2840,7 +2834,7 @@ function buildPromptBox(node) {
     setTimeout(() => {
       ta.value = String((pwNow() || {}).value || "");
       ta.__kdIns = null;          // 工作流切换/重载：旧的插入记录不再可信
-      useSel.value = String((uw && uw.value) || USAGES[0]);
+      useSel.value = String((uwNow() || {}).value || USAGES[0]);
       // 加载工作流：写法按用途筛一遍，但绝不改写已经写好的提示词
       seedRefPick();
       paintRefOptions(false);
@@ -2968,7 +2962,41 @@ function looksLikePrompt(text) {
   return true;
 }
 
-function recordRunPrompts(onFail, only) {
+function captureRunPrompts(apiGraph) {
+  const out = [];
+  const submitted = apiGraph && typeof apiGraph === "object"
+    ? new Set(Object.keys(apiGraph).map(String)) : null;
+  for (const node of ((app.graph && app.graph._nodes) || [])) {
+    if (!node.widgets || (submitted && !submitted.has(String(node.id)))) continue;
+    const apiNode = apiGraph ? (apiGraph[String(node.id)] || apiGraph[node.id]) : null;
+    const apiInputs = apiNode && apiNode.inputs && typeof apiNode.inputs === "object" ? apiNode.inputs : null;
+    const isPbox = ((node.constructor && node.constructor.comfyClass) || node.comfyClass || "") === PBOX_CLASS;
+    if (isPbox) {
+      if (apiInputs && Array.isArray(apiInputs.prompt_state)) continue;
+      const pw = node.widgets.find((w) => w.name === "prompt_state");
+      const key = String((apiInputs && typeof apiInputs.prompt_state === "string"
+        ? apiInputs.prompt_state : (pw && pw.value)) || "").trim();
+      const usage = apiInputs && typeof apiInputs.usage === "string" ? apiInputs.usage : pboxUsage(node);
+      if (key.length >= 4) out.push({ nodeId: Number(node.id), key, usage });
+      continue;
+    }
+    // 其它节点只收多行文本控件；参数/负向提示词在提交快照阶段就排除。
+    const ntitle = String(node.title || "").toLowerCase();
+    if (ntitle.indexOf("negative") !== -1 || ntitle.indexOf("负向") !== -1) continue;
+    for (const w of node.widgets) {
+      if (!isMultilineTextWidget(w)) continue;
+      const wname = String(w.name || "").toLowerCase();
+      if (wname.indexOf("negative") !== -1 || wname.indexOf("负向") !== -1) continue;
+      if (apiInputs && Array.isArray(apiInputs[w.name])) continue;
+      const key = String((apiInputs && typeof apiInputs[w.name] === "string"
+        ? apiInputs[w.name] : w.value) || "").trim();
+      if (looksLikePrompt(key)) out.push({ nodeId: Number(node.id), key, usage: USAGES[0] });
+    }
+  }
+  return out;
+}
+
+function recordSnapshotPrompts(snapshot, onFail, only) {
   const seen = new Set();
   let posted = 0;
   const post = (key, usage) => {
@@ -2985,35 +3013,10 @@ function recordRunPrompts(onFail, only) {
       })
       .catch((e) => onFail(e && e.message ? e.message : String(e)));
   };
-  for (const node of ((app.graph && app.graph._nodes) || [])) {
-    if (!node.widgets) continue;
-    // 只记这一轮真跑过的节点：画布上常挂着好几条工作流的提示词框，从 PS 面板发起的运行
-    // 也不该把浏览器里开着的图存档成「你跑过」。
-    if (only && only.size && !only.has(Number(node.id))) continue;
-    const isPbox = ((node.constructor && node.constructor.comfyClass) || node.comfyClass || "") === PBOX_CLASS;
-    // 提示词框按 widget 名字取（prompt_state）：它是我们自己的控件，类型名随 ComfyUI 版本
-    // 叫 string / text / textarea 都有可能，按名字取就绕开了这个坑。
-    const pw = isPbox ? node.widgets.find((w) => w.name === "prompt_state") : null;
-    if (isPbox) {
-      const key = pw && typeof pw.value === "string" ? pw.value.trim() : "";
-      if (key.length >= 4 && !seen.has(key)) post(key, pboxUsage(node));
-      continue;
-    }
-    // 其它节点：只认多行文本控件。combo 的取值也是字符串（模型/采样器名），
-    // 单行 STRING 则多是文件名前缀、key、schedule 之类的参数，都不收。
-    const usage = USAGES[0];
-    const ntitle = String(node.title || "").toLowerCase();
-    if (ntitle.indexOf("negative") !== -1 || ntitle.indexOf("负向") !== -1) continue;
-    for (const w of node.widgets) {
-      if (!isMultilineTextWidget(w)) continue;
-      // 负向提示词同样是文本控件：名字里带 negative / 负向 的不收，
-      // 否则每轮出图都会把负面词当成一条正向历史存进去。
-      const wname = String(w.name || "").toLowerCase();
-      if (wname.indexOf("negative") !== -1 || wname.indexOf("负向") !== -1) continue;
-      const key = w.value.trim();
-      if (!looksLikePrompt(key) || seen.has(key)) continue;
-      post(key, usage);
-    }
+  for (const item of snapshot || []) {
+    // 只记本轮确实执行/命中的节点；ran 为空时宁可不记，也不把快照里的无关节点算进来。
+    if (!only || !only.has(item.nodeId)) continue;
+    if (!seen.has(item.key)) post(item.key, item.usage);
   }
   return posted;
 }
@@ -3026,47 +3029,127 @@ function pboxUsage(node) {
   return USAGES.indexOf(v) !== -1 ? v : USAGES[0];
 }
 
-function hookHistory(apiObj) {
+const HISTORY_SNAPSHOT_CAP = 256;
+const HISTORY_PAIR_TTL = 10 * 60 * 1000;
+const runSnapshots = new Map();   // prompt_id -> { snapshot, at }
+const earlySuccess = new Map();   // 成功事件先于队列 HTTP 响应到达时暂存
+const ranByPrompt = new Map();    // prompt_id -> { ids:Set, at }，并发执行互不污染
+const completedPrompts = new Set();
+
+function trimPromptMap(map) {
+  while (map.size > HISTORY_SNAPSHOT_CAP) map.delete(map.keys().next().value);
+}
+function prunePromptState(now) {
+  for (const [pid, rec] of runSnapshots) {
+    if (!ranByPrompt.has(pid) && !completedPrompts.has(pid) && now - rec.at > HISTORY_PAIR_TTL) runSnapshots.delete(pid);
+  }
+  for (const [pid, at] of earlySuccess) if (now - at > HISTORY_PAIR_TTL) earlySuccess.delete(pid);
+  for (const [pid, rec] of ranByPrompt) {
+    if (!completedPrompts.has(pid) && now - rec.at > HISTORY_PAIR_TTL) ranByPrompt.delete(pid);
+  }
+  trimPromptMap(runSnapshots); trimPromptMap(earlySuccess); trimPromptMap(ranByPrompt);
+  while (completedPrompts.size > HISTORY_SNAPSHOT_CAP) completedPrompts.delete(completedPrompts.values().next().value);
+}
+function historyEnabled() {
+  try { return localStorage.getItem("kedou_plib_hist") !== "0"; }
+  catch (_) { return true; }
+}
+
+function hookHistory(appObj, apiObj) {
   if (!apiObj || typeof apiObj.addEventListener !== "function") {
     console.warn("[kedou] 自动历史没接上：拿不到 api.addEventListener");
     return;
   }
-  let lastPid = "";
-  let lastAt = 0;
   let warned = false;
-  let ran = new Set();          // 本轮真正执行过的节点 id
   const onFail = (msg) => {
-    // 一次出图会写好几条，失败提示整个会话只弹一次，别把画布变成弹窗堆；原文进 console
     console.warn("[kedou] 自动历史失败：" + msg);
     if (warned) return;
     warned = true;
     try { toast(t("Auto-history failed: {error}", { error: serverError(msg) }), true); } catch (_) { /* ignore */ }
   };
-  // executing 带 node（跑完时为 null）、execution_cached 带 nodes（被跳过的复用节点）。
-  // 两类都算「这一轮跑过」——缓存节点同样用到了那条提示词。
-  apiObj.addEventListener("execution_start", () => { ran = new Set(); });
+  const eventPid = (ev) => String((ev && ev.detail && ev.detail.prompt_id) || "");
+  const touchRan = (pid) => {
+    let rec = ranByPrompt.get(pid);
+    if (!rec) { rec = { ids: new Set(), at: Date.now() }; ranByPrompt.set(pid, rec); }
+    rec.at = Date.now();
+    if (ranByPrompt.size > HISTORY_SNAPSHOT_CAP) prunePromptState(rec.at);
+    return rec.ids;
+  };
+  const finish = (pid) => {
+    const rec = runSnapshots.get(pid);
+    if (!rec) return;
+    const only = ranByPrompt.has(pid) ? ranByPrompt.get(pid).ids : new Set();
+    runSnapshots.delete(pid); earlySuccess.delete(pid); ranByPrompt.delete(pid);
+    completedPrompts.add(pid);
+    if (!historyEnabled()) return;
+    try { recordSnapshotPrompts(rec.snapshot, onFail, only); }
+    catch (e) { console.warn("[kedou] 自动历史快照记录失败：" + (e && e.message ? e.message : String(e))); }
+  };
+  const pairSnapshot = (pid, snapshot) => {
+    if (!pid || completedPrompts.has(pid)) return;
+    runSnapshots.delete(pid);
+    runSnapshots.set(pid, { snapshot, at: Date.now() });
+    if (earlySuccess.has(pid)) finish(pid);
+    prunePromptState(Date.now());
+  };
+
+  // 真实 ComfyUI：app.queuePrompt() 只返回 boolean，真正返回 {prompt_id} 的是 api.queuePrompt()。
+  // 在 API 出口捕获快照，兼容 app.queuePrompt 的内部队列与 batchCount，不依赖它的返回值。
+  const apiTarget = appObj && appObj.api;
+  if (apiTarget && typeof apiTarget.queuePrompt === "function" && !apiTarget.__kdHistoryQueue) {
+    const orig = apiTarget.queuePrompt;
+    apiTarget.queuePrompt = async function () {
+      const data = arguments[1];
+      const snapshot = captureRunPrompts(data && data.output);
+      const result = await orig.apply(this, arguments);
+      if (result && result.prompt_id != null && !(result.node_errors || []).length) {
+        pairSnapshot(String(result.prompt_id), snapshot);
+      }
+      return result;
+    };
+    apiTarget.__kdHistoryQueue = true;
+  } else if (appObj && typeof appObj.queuePrompt === "function" && !appObj.__kdQueueHistory) {
+    // 旧前端兼容回退：只有对象返回值才带 prompt_id。
+    const orig = appObj.queuePrompt;
+    appObj.queuePrompt = async function () {
+      const snapshot = captureRunPrompts();
+      const result = await orig.apply(this, arguments);
+      const pid = result && result.prompt_id != null ? String(result.prompt_id) : "";
+      if (pid) pairSnapshot(pid, snapshot);
+      return result;
+    };
+    appObj.__kdQueueHistory = true;
+  }
+
+  apiObj.addEventListener("execution_start", (ev) => {
+    const pid = eventPid(ev); if (!pid || completedPrompts.has(pid)) return;
+    touchRan(pid);                         // 不重置可能已先到的 execution_cached
+  });
   apiObj.addEventListener("executing", (ev) => {
+    const pid = eventPid(ev); if (!pid || completedPrompts.has(pid)) return;
     const n = ev && ev.detail && ev.detail.node;
-    if (n !== null && n !== undefined) ran.add(Number(n));
+    if (n !== null && n !== undefined) touchRan(pid).add(Number(n));
   });
   apiObj.addEventListener("execution_cached", (ev) => {
-    ((ev && ev.detail && ev.detail.nodes) || []).forEach((id) => ran.add(Number(id)));
+    const pid = eventPid(ev); if (!pid || completedPrompts.has(pid)) return;
+    const ids = touchRan(pid);
+    ((ev && ev.detail && ev.detail.nodes) || []).forEach((id) => ids.add(Number(id)));
   });
   apiObj.addEventListener("execution_success", (ev) => {
-    const d = (ev && ev.detail) || {};
-    const pid = String(d.prompt_id || "");
-    // detail 里没有 prompt_id 时（前端版本差异）退化成 3 秒窗口去重
-    if (pid ? pid === lastPid : Date.now() - lastAt < 3000) return;
-    if (pid) lastPid = pid; else lastAt = Date.now();
-    if (localStorage.getItem("kedou_plib_hist") === "0") return;
-    try {
-      // ran 为空（没收到 executing，比如老前端只发 executed）就退回全图扫描，宁多不漏
-      recordRunPrompts(onFail, ran);
-    } catch (e) {
-      console.warn("[kedou] 自动历史扫描失败：" + (e && e.message ? e.message : e));
-    }
-    ran = new Set();   // 用完即清：下一轮万一漏了 execution_start，也不会拿上一轮的节点集去筛
+    const pid = eventPid(ev); if (!pid || completedPrompts.has(pid)) return;
+    touchRan(pid);                         // 即使没有 executing/cached，也保留“先到成功”的对账标记
+    if (runSnapshots.has(pid)) finish(pid);
+    else earlySuccess.set(pid, Date.now());
+    prunePromptState(Date.now());
   });
+  const discard = (ev) => {
+    const pid = eventPid(ev); if (!pid) return;
+    runSnapshots.delete(pid); earlySuccess.delete(pid); ranByPrompt.delete(pid);
+    completedPrompts.add(pid);
+    prunePromptState(Date.now());
+  };
+  apiObj.addEventListener("execution_error", discard);
+  apiObj.addEventListener("execution_interrupted", discard);
 }
 
 // ───────── 挂载 ─────────
@@ -3098,7 +3181,7 @@ app.registerExtension({
     // 自动历史挂在 setup 而不是 registerApiHandlers：setup() 一定被调用（样式就是在这里挂上的，
     // 节点界面能正常显示即证明），而 registerApiHandlers 有没有触发我们无法在用户机器上验证。
     try {
-      hookHistory(app.api);
+      hookHistory(app, app.api);
     } catch (e) {
       console.error("[kedou] 历史 hook 失败", e);
     }

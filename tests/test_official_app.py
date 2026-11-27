@@ -78,11 +78,15 @@ def main():
     tmp = tempfile.mkdtemp(prefix="kedou_official_")
     paths.WORKFLOW_DIR = tmp
     old_root = paths.COMFY_ROOT
+    old_apps = paths.APPS_DIR
     paths.COMFY_ROOT = os.path.dirname(tmp)
+    paths.APPS_DIR = os.path.join(tmp, "kedou_apps")
+    os.makedirs(paths.APPS_DIR, exist_ok=True)
     try:
         run(tmp, paths, pack, apps, common)
     finally:
         paths.COMFY_ROOT = old_root
+        paths.APPS_DIR = old_apps
         shutil.rmtree(tmp, ignore_errors=True)
     print("\n%s（%d 项失败）" % ("全部通过" if not FAILS else "有失败项", len(FAILS)))
     return 1 if FAILS else 0
@@ -92,70 +96,71 @@ def run(tmp, paths, pack, apps, common):
     # ---------------------------------------------------------------- 1. 真机工作流对账
     src = os.path.join(WORKFLOWS, "千问2.1多图编辑.json")
     kapp_path = os.path.join(WORKFLOWS, "千问2.1多图编辑.kapp.json")
-    if not (os.path.isfile(src) and os.path.isfile(kapp_path)):
-        print("跳过：找不到真机工作流 %s" % src)
-        return
-    with open(src, "r", encoding="utf-8") as f:
-        ui_wf = json.load(f)
-    with open(kapp_path, "r", encoding="utf-8") as f:
-        kapp = json.load(f)
+    have_sample = os.path.isfile(src) and os.path.isfile(kapp_path)
+    if have_sample:
+        with open(src, "r", encoding="utf-8") as f:
+            ui_wf = json.load(f)
+        with open(kapp_path, "r", encoding="utf-8") as f:
+            kapp = json.load(f)
 
-    print("\n[1] 真机工作流 -> 官方包")
-    params = [{"node": p["node"], "input": p["input"], "label": p.get("label")}
-              for p in kapp["params"]]
-    res = pack.save_official_app("千问2.1多图编辑", ui_wf, params, kapp["outputs"])
-    check("写入成功", res.get("ok"), res)
-    out = os.path.join(tmp, "千问2.1多图编辑.app.json")
-    check("文件落在工作流目录内", os.path.isfile(out), res.get("file"))
+        print("\n[1] 真机工作流 -> 官方包")
+        params = [{"node": p["node"], "input": p["input"], "label": p.get("label")}
+                  for p in kapp["params"]]
+        res = pack.save_official_app("千问2.1多图编辑", ui_wf, params, kapp["outputs"])
+        check("写入成功", res.get("ok"), res)
+        out = os.path.join(tmp, "千问2.1多图编辑.app.json")
+        check("文件落在工作流目录内", os.path.isfile(out), res.get("file"))
 
-    with open(out, "r", encoding="utf-8") as f:
-        written = json.load(f)
-    gid = written.get("id")
-    ld = (written.get("extra") or {}).get("linearData") or {}
-    check("顶层 id 保留原 uuid", gid == ui_wf["id"], gid)
-    check("linearMode = true", (written.get("extra") or {}).get("linearMode") is True)
-    check("inputs 数量与 kapp 一致", len(ld.get("inputs") or []) == len(kapp["params"]),
-          ld.get("inputs"))
-    check("outputs 一致", ld.get("outputs") == [str(x) for x in kapp["outputs"]],
-          ld.get("outputs"))
+        with open(out, "r", encoding="utf-8") as f:
+            written = json.load(f)
+        gid = written.get("id")
+        ld = (written.get("extra") or {}).get("linearData") or {}
+        check("顶层 id 保留原 uuid", gid == ui_wf["id"], gid)
+        check("linearMode = true", (written.get("extra") or {}).get("linearMode") is True)
+        check("inputs 数量与 kapp 一致", len(ld.get("inputs") or []) == len(kapp["params"]),
+              ld.get("inputs"))
+        check("outputs 一致", ld.get("outputs") == [str(x) for x in kapp["outputs"]],
+              ld.get("outputs"))
 
-    wid = re.compile(r"^(?P<graphId>[^:]+):(?P<nodeId>[^:]+):(?P<name>[^:]+)$")
-    all_refs_ok = all(wid.match(e[0]) for e in ld["inputs"])
-    check("每条 ref 都是 <图id>:<节点>:<控件>", all_refs_ok, ld["inputs"])
-    check("ref 第一段 = 顶层 id", all(e[0].split(":")[0] == gid for e in ld["inputs"]))
+        wid = re.compile(r"^(?P<graphId>[^:]+):(?P<nodeId>[^:]+):(?P<name>[^:]+)$")
+        all_refs_ok = all(wid.match(e[0]) for e in ld["inputs"])
+        check("每条 ref 都是 <图id>:<节点>:<控件>", all_refs_ok, ld["inputs"])
+        check("ref 第一段 = 顶层 id", all(e[0].split(":")[0] == gid for e in ld["inputs"]))
 
-    loader = [e for e in ld["inputs"] if ":477:" in e[0]]
-    check("图片加载器写的是 DOM 把手 kedou_media",
-          loader and loader[0][0].endswith(":kedou_media"), loader)
+        loader = [e for e in ld["inputs"] if ":477:" in e[0]]
+        check("图片加载器写的是 DOM 把手 kedou_media",
+              loader and loader[0][0].endswith(":kedou_media"), loader)
 
-    # ---------------------------------------------------------------- 2. 读回
-    print("\n[2] build_spec 读回（官方格式）")
-    spec = apps.build_spec(out, object_info={})
-    check("format = official", spec.get("format") == "official", spec.get("format"))
-    check("linear_mode = true", spec.get("linear_mode") is True)
-    by = {(p["node"], p["input"]): p for p in spec["params"]}
-    check("返回真实控件名 media_state（不是把手）", ("477", "media_state") in by, list(by))
-    p_loader = by.get(("477", "media_state")) or {}
-    check("图片输入 kind = image", p_loader.get("kind") == "image", p_loader.get("kind"))
-    check("图片默认值取到了媒体状态", isinstance(p_loader.get("default"), str)
-          and "images" in (p_loader.get("default") or ""), p_loader.get("default"))
-    check("把手名另存在 app_widget", p_loader.get("app_widget") == "kedou_media",
-          p_loader.get("app_widget"))
+        # ---------------------------------------------------------------- 2. 读回
+        print("\n[2] build_spec 读回（官方格式）")
+        spec = apps.build_spec(out, object_info={})
+        check("format = official", spec.get("format") == "official", spec.get("format"))
+        check("linear_mode = true", spec.get("linear_mode") is True)
+        by = {(p["node"], p["input"]): p for p in spec["params"]}
+        check("返回真实控件名 media_state（不是把手）", ("477", "media_state") in by, list(by))
+        p_loader = by.get(("477", "media_state")) or {}
+        check("图片输入 kind = image", p_loader.get("kind") == "image", p_loader.get("kind"))
+        check("图片默认值取到了媒体状态", isinstance(p_loader.get("default"), str)
+              and "images" in (p_loader.get("default") or ""), p_loader.get("default"))
+        check("把手名另存在 app_widget", p_loader.get("app_widget") == "kedou_media",
+              p_loader.get("app_widget"))
 
-    # 与源工作流对账：读回的默认值必须等于 UI 工作流里 widgets_values_named 的值
-    # （不能拿 kapp 的默认值比：kapp 是当时打包的快照，工作流后来改过）
-    ui_named = {}
-    for n in ui_wf.get("nodes") or []:
-        for k, v in (n.get("widgets_values_named") or {}).items():
-            ui_named[(str(n.get("id")), k)] = v
-    same, diffs = 0, []
-    for key, want in ui_named.items():
-        sp = by.get(key)
-        if sp is not None and sp.get("default") == want:
-            same += 1
-        elif sp is not None:
-            diffs.append((key, sp.get("default"), want))
-    check("读回的默认值与源工作流逐条一致（%d/%d）" % (same, len(by)), same == len(by), diffs)
+        # 与源工作流对账：读回的默认值必须等于 UI 工作流里 widgets_values_named 的值
+        # （不能拿 kapp 的默认值比：kapp 是当时打包的快照，工作流后来改过）
+        ui_named = {}
+        for n in ui_wf.get("nodes") or []:
+            for k, v in (n.get("widgets_values_named") or {}).items():
+                ui_named[(str(n.get("id")), k)] = v
+        same, diffs = 0, []
+        for key, want in ui_named.items():
+            sp = by.get(key)
+            if sp is not None and sp.get("default") == want:
+                same += 1
+            elif sp is not None:
+                diffs.append((key, sp.get("default"), want))
+        check("读回的默认值与源工作流逐条一致（%d/%d）" % (same, len(by)), same == len(by), diffs)
+    else:
+        print("跳过：找不到真机工作流 %s；继续运行合成兼容性用例" % src)
 
     # ---------------------------------------------------------------- 3. widgets_values_named 优先
     print("\n[3] widgets_values_named 优先（位置对位错）")
@@ -201,17 +206,18 @@ def run(tmp, paths, pack, apps, common):
               ls["params"])
 
     # ---------------------------------------------------------------- 5. 校验失败不落盘
-    print("\n[5] 校验失败不落盘")
-    base = os.path.join(tmp, "不落盘.app.json")
-    r1 = pack.save_official_app("不落盘", ui_wf,
-                                [{"node": "9999", "input": "seed"}], ["461"])
-    check("节点不存在 -> 拒绝", r1.get("ok") is False and "9999" in r1.get("error", ""), r1)
-    r2 = pack.save_official_app("不落盘", ui_wf,
-                                [{"node": "483", "input": "不存在的控件"}], ["461"])
-    check("控件不存在 -> 拒绝", r2.get("ok") is False, r2)
-    r3 = pack.save_official_app("不落盘", ui_wf, [{"node": "483", "input": "seed"}], [])
-    check("没有输出 -> 拒绝", r3.get("ok") is False and "输出" in r3.get("error", ""), r3)
-    check("三次拒绝都没写文件", not os.path.exists(base))
+    if have_sample:
+        print("\n[5] 校验失败不落盘")
+        base = os.path.join(tmp, "不落盘.app.json")
+        r1 = pack.save_official_app("不落盘", ui_wf,
+                                    [{"node": "9999", "input": "seed"}], ["461"])
+        check("节点不存在 -> 拒绝", r1.get("ok") is False and "9999" in r1.get("error", ""), r1)
+        r2 = pack.save_official_app("不落盘", ui_wf,
+                                    [{"node": "483", "input": "不存在的控件"}], ["461"])
+        check("控件不存在 -> 拒绝", r2.get("ok") is False, r2)
+        r3 = pack.save_official_app("不落盘", ui_wf, [{"node": "483", "input": "seed"}], [])
+        check("没有输出 -> 拒绝", r3.get("ok") is False and "输出" in r3.get("error", ""), r3)
+        check("三次拒绝都没写文件", not os.path.exists(base))
 
     # ---------------------------------------------------------------- 6. kapp 遮蔽 app
     print("\n[6] 同 stem：kapp 遮蔽官方包")
@@ -285,14 +291,14 @@ def run(tmp, paths, pack, apps, common):
         ],
         "extra": {"linearMode": True, "linearData": {
             "inputs": [["g:1:kedou_media", "图片"],
-                       ["g:3:steps", "步数", {"description": "越大越细"}]],
+                       ["g:3:steps", "步数", {"description": "越大越细", "height": 240}]],
             "outputs": ["2"],
         }},
     }
     res = pack.kapp_from_linear("构建器测试", ui, object_info=fake)
     check("生成成功", res.get("ok"), res)
-    kp = os.path.join(tmp, "构建器测试.kapp.json")
-    check("落在工作流目录", os.path.isfile(kp), res.get("file"))
+    kp = os.path.join(paths.APPS_DIR, "构建器测试.kapp.json")
+    check("落在应用归档目录", os.path.isfile(kp), res.get("file"))
     kapp2 = None
     if os.path.isfile(kp):
         with open(kp, "r", encoding="utf-8") as f:
@@ -309,6 +315,15 @@ def run(tmp, paths, pack, apps, common):
         check("outputs 用构建器的勾选", kapp2["outputs"] == ["2"], kapp2["outputs"])
         check("graph 是 API 格式", kapp2["graph"]["1"]["class_type"] == "KedouImageLoader",
               list(kapp2["graph"])[:3])
+        check("构建器描述进入 kapp", kapp2["params"][1].get("desc") == "越大越细", kapp2["params"][1])
+        check("构建器高度进入 kapp", kapp2["params"][1].get("height") == 240, kapp2["params"][1])
+        official = pack.save_official_app("构建器元数据", ui, kapp2["params"], ["2"])
+        check("kapp 元数据写回官方包成功", official.get("ok"), official)
+        if official.get("ok"):
+            with open(os.path.join(paths.COMFY_ROOT, official["file"]), "r", encoding="utf-8") as f:
+                official_wf = json.load(f)
+            meta = official_wf["extra"]["linearData"]["inputs"][1][2]
+            check("官方包保留描述和高度", meta == {"description": "越大越细", "height": 240}, meta)
     ui["extra"].pop("linearData")
     check("没勾输入时明确拒绝", not pack.kapp_from_linear("x", ui, object_info=fake).get("ok"))
 

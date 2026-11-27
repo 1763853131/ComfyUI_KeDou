@@ -74,6 +74,13 @@ class MediaDeleteTest(unittest.TestCase):
         self.assertEqual(len(list((self.trash / "media" / "output").glob("b.*.png"))), 1)
         self.assertFalse((self.trash / "media" / "input").exists())
 
+    def test_invalid_tab_is_rejected_without_touching_input(self):
+        r = self.media.delete_media("a.png", "", "ouput")
+        self.assertFalse(r["ok"])
+        self.assertIn("input", r["error"])
+        self.assertTrue((self.in_dir / "a.png").exists())
+        self.assertFalse(self.trash.exists())
+
     def test_subfolder_preserved_in_trash(self):
         r = self.media.delete_media("c.jpg", "sub", "input")
         self.assertTrue(r["ok"], r)

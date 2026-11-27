@@ -13,6 +13,26 @@
       "1": { "name": "image_2" }
     }
   },
+  "KedouAVLoader": {
+    "display_name": "Kedou AV Loader",
+    "description": "Multi-select reference videos and audios; they are paired in order, with up to 500 items per list. Normal mode emits the first 8 groups at once; Batch queues one group at a time and supports up to 500 segments. Enable the top switch to expose each video's built-in audio. Hover a video to play it and drag a time range. Ports follow video, video-audio, frames and independent-audio semantics; disabled ports are hidden while existing links are preserved.",
+    "inputs": {
+      "media_state": {
+        "name": "media_state",
+        "tooltip": "JSON describing the reference video, reference audio and output mode. Hidden by the node UI; do not wire or edit it by hand."
+      }
+    },
+    "outputs": {
+      "0": { "name": "output_1" }, "1": { "name": "output_2" }, "2": { "name": "output_3" }, "3": { "name": "output_4" },
+      "4": { "name": "output_5" }, "5": { "name": "output_6" }, "6": { "name": "output_7" }, "7": { "name": "output_8" },
+      "8": { "name": "output_9" }, "9": { "name": "output_10" }, "10": { "name": "output_11" }, "11": { "name": "output_12" },
+      "12": { "name": "output_13" }, "13": { "name": "output_14" }, "14": { "name": "output_15" }, "15": { "name": "output_16" },
+      "16": { "name": "output_17" }, "17": { "name": "output_18" }, "18": { "name": "output_19" }, "19": { "name": "output_20" },
+      "20": { "name": "output_21" }, "21": { "name": "output_22" }, "22": { "name": "output_23" }, "23": { "name": "output_24" },
+      "24": { "name": "output_25" }, "25": { "name": "output_26" }, "26": { "name": "output_27" }, "27": { "name": "output_28" },
+      "28": { "name": "output_29" }, "29": { "name": "output_30" }, "30": { "name": "output_31" }, "31": { "name": "output_32" }
+    }
+  },
   "KedouPromptBox": {
     "display_name": "Kedou Prompt Box",
     "description": "Prompt input box with a built-in phrase library: type on the node, append entries from the library dropdown, pin/recall recent prompts and save the current text as a preset. Connect prompt to the positive conditioning input of a text encoder.",

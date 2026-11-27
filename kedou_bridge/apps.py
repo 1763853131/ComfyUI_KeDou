@@ -6,7 +6,7 @@ import importlib.util
 import json
 import os
 
-from . import compat, groups, paths
+from . import compat, groups, paths, state
 from .common import (DOM_HANDLE_KIND, KIND_CN, NOISE_INPUTS, _clean_label,
                      _kind_of, _panel_widget, _ref_parts, _widget_values)
 from .registry import (build_object_info, widget_spec, _find_spec, _unknown_in_ui,
@@ -68,9 +68,10 @@ def find_app_files(root: str = None) -> list:
 # 插件仍是纯通道：声明是什么就是什么，不针对任何应用做特判。
 
 _KAPP_WIDGETS = ("text", "number", "toggle", "combo", "image", "video", "audio",
-                 "kedou_media", "prompt", "bbox")
+                 "kedou_media", "kedou_av", "prompt", "bbox")
 _KAPP_KIND = {"text": "text", "number": "number", "toggle": "bool",
               "combo": "combo", "image": "image", "kedou_media": "text",
+              "kedou_av": "av",
               # video / audio 是「素材选择」控件（VHS_LoadVideo.video、LoadVideo.file、
               # VHS_LoadAudio.audio/audio_file、LoadAudio.audio 这类）。kind 报自己的名字，
               # 启动器渲染成「下拉 + 播放器预览 + 拖入 + 媒体库」；不认识它们的旧客户端按
@@ -341,6 +342,12 @@ def build_spec(path: str, object_info: dict = None) -> dict:
             "node_type": node_type,
             "node_title": (node.get("title") or "").strip(),
         }
+        if len(entry) > 2 and isinstance(entry[2], dict):
+            description = str(entry[2].get("description") or "").strip()
+            if description:
+                item["desc"] = description
+            if "height" in entry[2]:
+                item["height"] = entry[2]["height"]
         if ref_name != widget:
             # 写回官方 .app.json 时要用的把手名；面板不需要它，但别丢信息
             item["app_widget"] = ref_name
@@ -405,12 +412,21 @@ def list_apps() -> list:
             # 不静默吞掉：把错误带出去，方便排查
             apps.append({"id": fname, "name": fname, "desc": "", "param_count": 0,
                          "node_count": 0, "has_image_input": False,
+                         "has_video_input": False, "has_audio_input": False,
+                         "has_av_input": False,
                          "linear_mode": False, "filename": fname, "format": fmt,
                          "error": "%s: %s" % (type(e).__name__, e)})
             continue
         item = {k: spec[k] for k in
                 ("id", "name", "desc", "param_count", "node_count",
                  "has_image_input", "linear_mode", "filename")}
+        visible = [p for p in spec.get("params", []) if not p.get("hidden")]
+        item["has_video_input"] = any(p.get("widget") == "video" or p.get("kind") == "video"
+                                      for p in visible)
+        item["has_audio_input"] = any(p.get("widget") == "audio" or p.get("kind") == "audio"
+                                      for p in visible)
+        item["has_av_input"] = any(p.get("widget") == "kedou_av" or p.get("kind") == "av"
+                                   for p in visible)
         item["format"] = fmt
         apps.append(item)
     return apps
@@ -485,6 +501,11 @@ def get_app(app_id: str, object_info: dict = None):
 
 
 def update_values(app_id: str, values: dict, object_info: dict = None) -> dict:
+    with state._STATE_LOCK:
+        return _update_values_locked(app_id, values, object_info)
+
+
+def _update_values_locked(app_id: str, values: dict, object_info: dict = None) -> dict:
     """把 {"<节点id>:<控件名>": 值} 持久化到 sidecar 状态文件。
 
     工作流文件保持只读；这里仍会按 UI/kapp 结构校验节点、输入是否存在、是否连线，

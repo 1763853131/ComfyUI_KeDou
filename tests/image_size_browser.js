@@ -6,12 +6,22 @@
 // 不拿前端自己的计算当期望值。
 (async function () {
   const T = window.__kdTools || {};
+  const app = window.__app;
   const host = document.getElementById("host");
   const out = document.getElementById("out");
   const results = [];
   const test = (name, actual, expected = true) => results.push({
     name, pass: JSON.stringify(actual) === JSON.stringify(expected), actual, expected });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (fn, timeout = 3000) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+      const value = fn();
+      if (value) return value;
+      await sleep(25);
+    }
+    return fn();
+  };
   const fx = await (await fetch("/fixtures.json")).json();
   const want = (w, h, res) => fx.cases.find((c) => c.w === w && c.h === h && c.res === res);
 
@@ -26,7 +36,7 @@
     return {
       id: 1, size: [460, 380], outputs: [],
       widgets: [{ name: "media_state", value: JSON.stringify({
-        images: images.map((f) => ({ filename: f })), batch: false, cursor: 0,
+        images: images.map((f) => ({ filename: f })), batch: !!opts.batch, cursor: 0,
         select: !!opts.select, picked: opts.picked || [], bucket: opts.bucket || 0 }) }],
       graph: { links: {}, getLink: () => null },
       setSize(s) { this.size = s; },
@@ -83,6 +93,19 @@
     // 删除类用例会真删 fixture：每轮开跑前先重建，换主题 / 反向跑同一进程也干净
     await fetch("/reset", { method: "POST" });
     T.ensureCss();
+    const internalState = { filename: "internal.png" };
+    const internalNode = {
+      inputs: [{ name: "media_state", type: "STRING", widget: { name: "media_state" } }],
+      widgets: [{ name: "media_state", value: JSON.stringify({ images: [internalState] }) }],
+      removeInput(index) { this.inputs.splice(index, 1); },
+      configure(info) { this.inputs.push(...info.inputs); },
+    };
+    T.hideMediaStateInput(internalNode);
+    test("内部状态接口隐藏且控件值保留", [internalNode.inputs.length,
+      T.readState(internalNode).images[0].filename], [0, "internal.png"]);
+    internalNode.configure({ inputs: [{ name: "media_state", type: "STRING" }] });
+    test("工作流重新加载后内部状态接口仍隐藏", [internalNode.inputs.length,
+      T.readState(internalNode).images[0].filename], [0, "internal.png"]);
     const node = makeNode(["wide.png", "rot.jpg", "gen.png", "small.webp", "fixed.png"]);
     T.renderPanel(node);
     await sleep(60);
@@ -246,7 +269,7 @@
     const menuBtn = () => (menu() ? menu().querySelector("button") : null);
     // 反向基线没有菜单：用空点击占位，让每条断言逐条失败而不是整页抛 TypeError
     const clickMenu = () => { const b = menuBtn(); if (b) b.click(); };
-    const rightClick = (el, x, y) => {
+    const rightClickCell = (el, x, y) => {
       const ev = new MouseEvent("contextmenu", { clientX: x, clientY: y, bubbles: true, cancelable: true });
       el.dispatchEvent(ev);
       return ev;
@@ -255,7 +278,7 @@
       const j = await (await fetch("/ps/media?type=image&tab=all")).json();
       return (j.items || []).some((i) => i.name === name);
     };
-    const rc = rightClick(cellOf("small.webp"), 300, 300);
+    const rc = rightClickCell(cellOf("small.webp"), 300, 300);
     test("右键阻止浏览器默认菜单", rc.defaultPrevented);
     test("右键出删除菜单", menuBtn() ? menuBtn().textContent : null, "删除");
     clickMenu();
@@ -276,19 +299,19 @@
     test("文件真的进了回收站（可捞回）",
          (trash.items || []).some((p) => /^media\/input\/small\..+\.webp$/.test(p)));
     // 超时回退：armed 后 2.5s 不点第二下，回到「删除」，文件不动
-    rightClick(cellOf("tiny.gif"), 320, 320);
+    rightClickCell(cellOf("tiny.gif"), 320, 320);
     clickMenu();
     await sleep(2700);
     test("超过 2.5s 确认态自动回退", menuBtn() ? menuBtn().textContent : null, "删除");
     test("回退后文件没被删", await listed("tiny.gif"));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     test("Esc 收起菜单", !menu());
-    rightClick(cellOf("tiny.gif"), 320, 320);
+    rightClickCell(cellOf("tiny.gif"), 320, 320);
     document.dispatchEvent(new MouseEvent("mousedown", { clientX: 5, clientY: 5, bubbles: true }));
     test("点菜单外收起", !menu());
     // 后端还没这条路由（没重启）：给明确提示，而不是笼统失败，也不动文件
     window.__blockDelete = true;
-    rightClick(cellOf("tiny.gif"), 320, 320);
+    rightClickCell(cellOf("tiny.gif"), 320, 320);
     clickMenu();
     await sleep(50);
     clickMenu();
@@ -300,6 +323,248 @@
     window.__blockDelete = false;
     lib2.querySelector(".kd-btn").click();
     test("关库同时收掉菜单", !document.querySelector(".kd-lib") && !menu());
+
+    // ---------------------------------------------------------------- 批次快照与交互锁
+    const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), { status });
+    const tapCell = (el, shift = false) => {
+      el.dispatchEvent(new MouseEvent("mousedown", { button: 0, clientX: 20, clientY: 20, shiftKey: shift, bubbles: true }));
+      document.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 20, clientY: 20, shiftKey: shift, bubbles: true }));
+    };
+    const confirmDelete = async () => {
+      rightClickCell(document.querySelector(".kd-lib .kd-cell[data-kd-pick-key='input|tiny.gif']"));
+      const b = document.querySelector(".kd-menu button");
+      b.click(); await sleep(20); b.click(); await sleep(20);
+    };
+    const batchNode = () => {
+      const n = makeNode(["wide.png", "rot.jpg", "gen.png"], {
+        batch: true, select: true, picked: ["rot.jpg", "wide.png"],
+      });
+      const ui = n._kdUI;
+      ["libBtn", "setsBtn", "clearBtn", "upBtn"].forEach((name) => {
+        ui[name] = document.createElement("button");
+      });
+      ui.fileEl = document.createElement("input");
+      T.renderPanel(n);
+      app.graph._nodes = [n];
+      return n;
+    };
+    const oldQueue = app.queuePrompt;
+    try {
+      const bn = batchNode();
+      const releases = [], queued = [];
+      app.queuePrompt = () => new Promise((resolve) => releases.push(resolve));
+      const job = T.runBatch(bn);
+      await sleep(0);
+      test("批次开始后关键交互全部禁用", ["libBtn", "setsBtn", "clearBtn", "upBtn", "runBtn", "swBatchCb", "swSelCb"]
+        .every((k) => bn._kdUI[k].disabled), true);
+      test("批次开始后网格 inert", bn._kdUI.body.inert, true);
+      // 即使用脚本绕过 disabled 点删除，处理器也必须拒绝，不能悄悄改冻结快照。
+      bn._kdUI.body.querySelector(".kd-x").click();
+      for (let i = 0; i < 2; i++) {
+        queued.push(JSON.parse(bn.widgets[0].value));
+        releases.shift()(); await sleep(0);
+      }
+      await job;
+      test("批次每轮从冻结 picked 顺序取图", queued.map((s) => [s.cursor, s.select, s.picked]), [
+        [0, true, ["rot.jpg", "wide.png"]], [1, true, ["rot.jpg", "wide.png"]],
+      ]);
+      test("批次结束后恢复交互", bn._kdUI.body.inert && bn._kdUI.libBtn.disabled, false);
+      const after = T.readState(bn);
+      test("批次结束保留冻结图片/选择", [after.images.length, after.picked, after.cursor], [3, ["rot.jpg", "wide.png"], 1]);
+
+      // 外部路径绕过 UI 锁改状态时必须明确中止，并保留用户改动。
+      const changed = batchNode();
+      let releaseChanged;
+      let changedCalls = 0;
+      app.queuePrompt = () => {
+        changedCalls++;
+        return changedCalls === 1 ? new Promise((resolve) => { releaseChanged = resolve; }) : Promise.resolve();
+      };
+      const changedJob = T.runBatch(changed);
+      await sleep(0);
+      const userState = T.readState(changed);
+      userState.picked = ["gen.png"];
+      T.writeState(changed, userState);
+      releaseChanged(); await changedJob;
+      test("排队期间外部改状态会中止且不覆盖", [changedCalls, T.readState(changed).picked], [1, ["gen.png"]]);
+      test("外部改状态给出可见错误", (document.querySelector(".kd-toast") || {}).textContent,
+        "批次提交失败：排队期间图片设置被修改，批次已停止且未覆盖你的修改");
+
+      // 节点在 await 期间被移除：不能继续排第二轮。
+      const removed = batchNode();
+      let releaseRemoved, removedCalls = 0;
+      app.queuePrompt = () => {
+        removedCalls++;
+        return removedCalls === 1 ? new Promise((resolve) => { releaseRemoved = resolve; }) : Promise.resolve();
+      };
+      const removedJob = T.runBatch(removed);
+      await sleep(0);
+      app.graph._nodes = [];
+      releaseRemoved(); await removedJob;
+      test("节点移除后批次立即停止", removedCalls, 1);
+      test("节点移除给出可见错误", (document.querySelector(".kd-toast") || {}).textContent,
+        "批次提交失败：图片节点已被移除，批次已停止");
+
+      // 真实 ComfyUI 的 false 表示已进入内部 queueItems：等 processor 读完本轮再推进 cursor。
+      const busy = batchNode(), busyStates = [];
+      const oldProcessing = app.processingQueue;
+      let busyCalls = 0;
+      app.processingQueue = true;
+      app.queuePrompt = () => {
+        busyCalls++;
+        busyStates.push([JSON.parse(busy.widgets[0].value).cursor, app.processingQueue]);
+        if (busyCalls === 1) {
+          setTimeout(() => { app.processingQueue = false; }, 30);
+          return Promise.resolve(false);
+        }
+        return Promise.resolve(true);
+      };
+      await T.runBatch(busy);
+      test("queuePrompt=false 时等待内部队列处理完再推进", busyStates, [[0, true], [1, false]]);
+      app.processingQueue = oldProcessing;
+
+      const rejected = batchNode();
+      let rejectedCalls = 0;
+      app.processingQueue = undefined;
+      app.queuePrompt = () => { rejectedCalls++; return Promise.resolve(false); };
+      await T.runBatch(rejected);
+      test("无 processor 的 false 明确停止且不误报成功", rejectedCalls, 1);
+      test("拒绝提交有可见错误", (document.querySelector(".kd-toast") || {}).textContent,
+        "批次提交失败：ComfyUI 拒绝了这次批次提交");
+      app.processingQueue = oldProcessing;
+
+      const invalid = batchNode();
+      let invalidCalls = 0;
+      const oldErrors = app.lastNodeErrors;
+      app.processingQueue = true;
+      app.lastNodeErrors = [{ message: "validation failed" }];
+      app.queuePrompt = () => {
+        invalidCalls++;
+        setTimeout(() => { app.processingQueue = false; }, 20);
+        return Promise.resolve(false);
+      };
+      await T.runBatch(invalid);
+      test("全局 lastNodeErrors 不干扰已入队批次", invalidCalls, 2);
+      test("全局错误不误报本次拒绝", ((document.querySelector(".kd-toast") || {}).textContent || "").includes("拒绝"), false);
+      app.lastNodeErrors = oldErrors;
+      app.processingQueue = oldProcessing;
+    } finally {
+      app.queuePrompt = oldQueue;
+      app.graph._nodes = [];
+    }
+
+    // ---------------------------------------------------------------- 同名媒体选择 / output 转 input
+    await fetch("/reset", { method: "POST" });
+    let libraryPick = null;
+    T.openLibrary((list) => { libraryPick = list; });
+    await sleep(450);
+    let libSame = document.querySelector(".kd-lib");
+    const inBoth = libSame.querySelector("[data-kd-pick-key='input|both.png']");
+    const outBoth = libSame.querySelector("[data-kd-pick-key='output|both.png']");
+    test("同名 input/output 有不同选择键", [inBoth.dataset.kdPickKey, outBoth.dataset.kdPickKey],
+      ["input|both.png", "output|both.png"]);
+    test("旧 data-kd-key 选择器仍兼容", libSame.querySelectorAll("[data-kd-key='both.png']").length, 2);
+    tapCell(inBoth); tapCell(outBoth);
+    test("同名两项可同时选中", [inBoth.style.outline, outBoth.style.outline],
+      ["2px solid var(--p-primary-color,#4a7dff)", "2px solid var(--p-primary-color,#4a7dff)"]);
+    window.__blockPick = true;
+    libSame.querySelector(".kd-libfoot .kd-p").click();
+    await sleep(80);
+    test("output 转换失败不关闭选择器", !!document.querySelector(".kd-lib"), true);
+    test("output 转换失败有可见错误", document.querySelector(".kd-toast").classList.contains("kd-err"), true);
+    test("output 转换走已有 pick 路由", window.__pickCalls.filter((u) => u.indexOf("/ps/media/pick") >= 0).length, 2);
+    window.__blockPick = false;
+    libSame.querySelector(".kd-libfoot .kd-p").click();
+    await sleep(500);
+    test("确定后 output 使用转换出的 input 文件名", libraryPick && libraryPick.map((x) => x.filename),
+      ["both.png", "both_库1.png"]);
+    test("成功后选择器关闭", !!document.querySelector(".kd-lib"), false);
+    await fetch("/ps/media/delete", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "both_库1.png", subfolder: "", tab: "input" }) });
+
+    await fetch("/reset", { method: "POST" });
+    const pickBase = window.__pickCalls.length;
+    window.__pickFailAt = pickBase + 2;
+    T.openLibrary((list) => { libraryPick = list; });
+    await sleep(450);
+    libSame = document.querySelector(".kd-lib");
+    tapCell(libSame.querySelector("[data-kd-pick-key='output|both.png']"));
+    tapCell(libSame.querySelector("[data-kd-pick-key='output|gen.png']"));
+    libSame.querySelector(".kd-libfoot .kd-p").click();
+    await sleep(150);
+    test("第二项转换失败时选择器保持打开", !!document.querySelector(".kd-lib"), true);
+    libSame.querySelector(".kd-libfoot .kd-p").click();
+    await sleep(500);
+    test("重试不重复复制已成功输出文件", [window.__pickCalls.length - pickBase,
+      libraryPick && libraryPick.map((x) => x.filename),
+      libraryPick && libraryPick.some((x) => x.filename === "both_库2.png")],
+      [3, ["both_库1.png", "gen.png"], false]);
+    window.__pickFailAt = 0;
+    for (const name of ["both_库1.png", "gen.png"]) {
+      await fetch("/ps/media/delete", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, subfolder: "", tab: "input" }) });
+    }
+    await fetch("/reset", { method: "POST" });
+
+    // 删除选中项只清理对应 tab，不能把另一目录的同名选择也删掉。
+    T.openLibrary(() => {});
+    await sleep(450);
+    libSame = document.querySelector(".kd-lib");
+    tapCell(libSame.querySelector("[data-kd-pick-key='input|both.png']"));
+    tapCell(libSame.querySelector("[data-kd-pick-key='output|both.png']"));
+    rightClickCell(libSame.querySelector("[data-kd-pick-key='input|both.png']"));
+    const delSame = document.querySelector(".kd-menu button");
+    delSame.click(); await sleep(20); delSame.click(); await sleep(300);
+    test("删除同名 input 后 output 格子仍在", !!libSame.querySelector("[data-kd-pick-key='output|both.png']"), true);
+    test("删除同名 input 后 output 选择仍在", libSame.querySelector("[data-kd-pick-key='output|both.png']").style.outline,
+      "2px solid var(--p-primary-color,#4a7dff)");
+    libSame.querySelector(".kd-libtop > .kd-btn, .kd-libfoot .kd-btn").click();
+
+    // ---------------------------------------------------------------- 删除乱序回调不污染新视图/新菜单
+    await fetch("/reset", { method: "POST" });
+    T.openLibrary(() => {});
+    await waitFor(() => document.querySelector(".kd-lib .kd-cell[data-kd-pick-key='input|tiny.gif']"));
+    window.__holdDelete = true;
+    await confirmDelete();
+    test("删除请求已挂起", window.__deleteRequests.length, 1);
+    const pendingDelete = window.__deleteRequests.shift();
+    const search = document.querySelector(".kd-libtop input");
+    const previousGrid = document.querySelector(".kd-lib .kd-grid");
+    search.value = "tiny"; search.dispatchEvent(new Event("input", { bubbles: true }));
+    const freshTiny = await waitFor(() => {
+      const grid = document.querySelector(".kd-lib .kd-grid");
+      const cell = document.querySelector(".kd-lib [data-kd-pick-key='input|tiny.gif']");
+      return cell && grid && grid !== previousGrid ? cell : null;
+    });
+    rightClickCell(freshTiny);                 // 等待期间新开一个菜单
+    const freshMenu = document.querySelector(".kd-menu");
+    const realDelete = await fetch(pendingDelete.url, pendingDelete.opts);
+    pendingDelete.resolve(realDelete);
+    await sleep(100);
+    window.__holdDelete = false;
+    test("旧删除响应不关掉新菜单", document.querySelector(".kd-menu") === freshMenu, true);
+    test("旧删除响应不删新视图格子", !!document.querySelector(".kd-lib [data-kd-pick-key='input|tiny.gif']"), true);
+    document.querySelector(".kd-lib").querySelector(".kd-libfoot .kd-btn").click();
+
+    // ---------------------------------------------------------------- 打包 await 后工作流竞态
+    const savesBefore = window.__packSaves;
+    app.graph.id = "graph-old";
+    T.setPackGraph("graph-old");
+    let releaseGraph;
+    app.graphToPrompt = () => new Promise((resolve) => { releaseGraph = resolve; });
+    const genBtn = { disabled: false, textContent: "" }, genErr = { textContent: "" };
+    const genJob = T.doGenerate({
+      rows: [{ cb: { checked: true }, c: { node: "1", input: "text", label: "old" }, lab: { value: "" }, sel: { value: "text" } }],
+      nameInput: { value: "race" }, descInput: { value: "" }, err: genErr, gen: genBtn,
+      graphCb: { checked: true }, order: () => [], editing: () => null, groups: () => [], refreshList() {},
+    });
+    await sleep(0);
+    app.graph.id = "graph-new";
+    releaseGraph({ output: { "1": { class_type: "OldNode" } } });
+    await genJob;
+    test("打包 await 期间换图不提交旧候选", window.__packSaves, savesBefore);
+    test("打包竞态恢复按钮", genBtn.disabled, false);
+    test("打包竞态有明确错误", genErr.textContent, "工作流已切换，请重新打开打包面板再生成。");
 
     // ---------------------------------------------------------------- 贴位几何
     hover(cells()[0], window.innerWidth - 12, window.innerHeight - 12);
@@ -323,7 +588,12 @@
     }
     longHost.dispatchEvent(new MouseEvent("mouseenter", { clientX: 40, clientY: 40 }));
     longHost.dispatchEvent(new MouseEvent("mousemove", { clientX: 40, clientY: 40 }));
-    await sleep(300);
+    await waitFor(() => {
+      const z = zoom(), n = z && z.querySelector(".kd-zname");
+      const row = z && (z.querySelector(".kd-zdim") || z);
+      const d = row && row.querySelector(".kd-zd");
+      return z && n && n.scrollWidth > n.clientWidth && d && d.textContent ? z : null;
+    });
     const lz = zoom();
     const lnm = lz ? lz.querySelector(".kd-zname") : null;
     test("长文件名也进同一条信息", lnm ? lnm.textContent : null, longName);
@@ -333,6 +603,209 @@
     test("长文件名时尺寸行仍完整可见", dim(cap()), "1600 × 900");
     longHost.dispatchEvent(new MouseEvent("mouseleave"));
     longHost.remove();
+
+    // ---------------------------------------------------------------- promptlib：控件重查 / 缓存 / 提交快照
+    window.__promptControl = true;
+    const P = await import("/promptlib.js?races=" + Date.now()).then((m) => m.__promptTools || window.__promptTools);
+    const drainPromptReplies = (data) => {
+      const reqs = window.__promptRequests.splice(0);
+      reqs.forEach((r) => r.resolve(jsonResponse(data || { ok: true, items: [], groups: [], categories: [] })));
+    };
+    const PNode = function () {};
+    PNode.comfyClass = "KedouPromptBox";
+    const oldUsage = { name: "usage", value: "文生图", options: {} };
+    const pnode = {
+      id: 701, constructor: PNode, size: [440, 430], widgets: [
+        { name: "prompt_state", value: "initial prompt", options: {} }, oldUsage,
+      ],
+      setDirtyCanvas() {}, setSize(s) { this.size = s; },
+      addDOMWidget(_name, _type, el) { document.getElementById("host").appendChild(el); },
+      onConfigure: null,
+    };
+    app.graph._nodes = [pnode];
+    P.buildPromptBox(pnode);
+    await sleep(0);
+    drainPromptReplies();
+    const newUsage = { name: "usage", value: "文生视频", options: {} };
+    pnode.widgets = [{ name: "prompt_state", value: "loaded prompt", options: {} }, newUsage];
+    pnode.onConfigure();
+    await sleep(20);
+    test("onConfigure 重查替换后的 usage 控件", pnode.__kdPbox.useSel.value, "文生视频");
+    pnode.__kdPbox.useSel.value = "图生视频";
+    pnode.__kdPbox.useSel.dispatchEvent(new Event("change"));
+    test("onchange 写当前 usage 控件", newUsage.value, "图生视频");
+    test("onchange 不写旧 usage 控件", oldUsage.value, "文生图");
+
+    const papi = new EventTarget();
+    let queueIds = ["p1", "pa", "pb"];
+    let pendingReply = null, releaseReply = null;
+    let linkedPrompt = false;
+    const apiGraph = () => ({ [pnode.id]: { class_type: "KedouPromptBox", inputs: {
+      prompt_state: linkedPrompt ? ["upstream", 0] : pnode.widgets.find((w) => w.name === "prompt_state").value,
+      usage: pnode.widgets.find((w) => w.name === "usage").value,
+    } } });
+    app.api.queuePrompt = () => pendingReply
+      ? new Promise((resolve) => { releaseReply = resolve; })
+      : Promise.resolve({ prompt_id: queueIds.shift() });
+    // 真实 1.55：app.queuePrompt 返回 boolean，prompt_id 只从 api.queuePrompt 返回。
+    app.queuePrompt = async () => { await app.api.queuePrompt(0, { output: apiGraph() }); return true; };
+    P.hookHistory(app, papi);
+    localStorage.setItem("kedou_plib_hist", "1");
+    window.__historyPosts = [];
+    const start = (pid) => {
+      papi.dispatchEvent(new CustomEvent("execution_start", { detail: { prompt_id: pid } }));
+      papi.dispatchEvent(new CustomEvent("executing", { detail: { prompt_id: pid, node: pnode.id } }));
+    };
+    const success = (pid) => { start(pid); papi.dispatchEvent(new CustomEvent("execution_success", { detail: { prompt_id: pid } })); };
+    pnode.__kdPbox.ta.value = "submitted original prompt"; pnode.__kdPbox.sync();
+    await app.queuePrompt();
+    pnode.__kdPbox.ta.value = "modified after submission"; pnode.__kdPbox.sync();
+    success("p1"); await sleep(30);
+    test("自动历史记提交快照而非当前画布", window.__historyPosts.map((x) => x.positive), ["submitted original prompt"]);
+    test("自动历史记提交时 usage", window.__historyPosts[0].usage, "图生视频");
+    pnode.__kdPbox.ta.value = "batch first prompt"; pnode.__kdPbox.sync(); await app.queuePrompt();
+    pnode.__kdPbox.ta.value = "batch second prompt"; pnode.__kdPbox.sync(); await app.queuePrompt();
+    pnode.__kdPbox.ta.value = "never submitted current prompt"; pnode.__kdPbox.sync();
+    start("pa"); start("pb");
+    papi.dispatchEvent(new CustomEvent("execution_success", { detail: { prompt_id: "pa" } })); await sleep(20);
+    papi.dispatchEvent(new CustomEvent("execution_success", { detail: { prompt_id: "pb" } })); await sleep(20);
+    test("交错执行各 prompt 不串用 ran 集合", window.__historyPosts.map((x) => x.positive),
+      ["submitted original prompt", "batch first prompt", "batch second prompt"]);
+
+    // 成功事件先于队列 HTTP 响应：响应到达后必须补记，不能永久丢弃。
+    pendingReply = true;
+    pnode.__kdPbox.ta.value = "early success prompt"; pnode.__kdPbox.sync();
+    const earlyJob = app.queuePrompt();
+    await sleep(0);
+    success("early"); await sleep(20);
+    test("早到成功事件暂存等待快照", window.__historyPosts.length, 3);
+    releaseReply({ prompt_id: "early" }); pendingReply = null;
+    await earlyJob; await sleep(30);
+    test("快照到达后补记早到成功", window.__historyPosts.map((x) => x.positive),
+      ["submitted original prompt", "batch first prompt", "batch second prompt", "early success prompt"]);
+    success("external-without-snapshot"); await sleep(20);
+    test("无匹配快照不硬记当前画布", window.__historyPosts.length, 4);
+
+    linkedPrompt = true;
+    pnode.__kdPbox.ta.value = "stale local prompt"; pnode.__kdPbox.sync();
+    queueIds.push("linked"); await app.queuePrompt(); success("linked"); await sleep(30);
+    test("连线驱动 prompt_state 不记录陈旧本地文本", window.__historyPosts.length, 4);
+    linkedPrompt = false;
+
+    pnode.__kdPbox.ta.value = "long running prompt"; pnode.__kdPbox.sync();
+    queueIds.push("long"); await app.queuePrompt(); start("long");
+    const realNow = Date.now;
+    Date.now = () => realNow() + 11 * 60 * 1000;
+    start("prune-trigger");
+    Date.now = realNow;
+    success("long"); await sleep(30);
+    test("运行超过TTL的任务成功仍记历史", window.__historyPosts.some((x) => x.positive === "long running prompt"), true);
+
+    for (let i = 0; i < 300; i++) {
+      papi.dispatchEvent(new CustomEvent("execution_error", { detail: { prompt_id: "failed-" + i } }));
+    }
+    test("错误终态集合保持有界", P.completed() <= 256, true);
+    for (let i = 0; i < 300; i++) {
+      papi.dispatchEvent(new CustomEvent("execution_start", { detail: { prompt_id: "running-" + i } }));
+    }
+    test("无终态执行集合保持有界", P.running() <= 256, true);
+    await sleep(1000);              // 等历史写入触发的 libTouch 完成
+    drainPromptReplies();
+    await sleep(50);
+    drainPromptReplies();
+
+    const cacheCases = [
+      [P.libStore, "/ps/prompts"], [P.phraseStore, "/ps/prompts/phrases"],
+      [P.histStore, "/ps/prompts/history"], [P.setsStore, "/ps/image-sets"],
+    ];
+    for (const [store, url] of cacheCases) {
+      const first = store.load(true), second = store.load(true);
+      const reqs = window.__promptRequests.filter((r) => r.url === url);
+      const older = reqs[0], newer = reqs[reqs.length - 1];
+      newer.resolve(jsonResponse({ ok: true, items: ["new"] }));
+      await sleep(0);
+      older.resolve(jsonResponse({ ok: true, items: ["old"] }));
+      const values = await Promise.all([first, second]);
+      const cached = await store.load(false);
+      test("分类缓存旧响应不覆盖新值 " + url, [values[0], values[1].items, cached.items], [null, ["new"], ["new"]]);
+      store.invalidate();
+      const beforeShared = window.__promptRequests.filter((r) => r.url === url).length;
+      const shared1 = store.load(false), shared2 = store.load(false);
+      const sharedReqs = window.__promptRequests.filter((r) => r.url === url);
+      test("普通缓存读取共享一个在途请求 " + url, sharedReqs.length - beforeShared, 1);
+      sharedReqs[sharedReqs.length - 1].resolve(jsonResponse({ ok: true, items: ["shared"] }));
+      test("共享请求双方都拿到数据 " + url, (await Promise.all([shared1, shared2])).map((x) => x.items), [["shared"], ["shared"]]);
+
+      store.invalidate();
+      const stale = store.load(false);
+      const staleReqs = window.__promptRequests.filter((r) => r.url === url);
+      const staleReq = staleReqs[staleReqs.length - 1];
+      store.invalidate();
+      const fresh = store.load(false);
+      const freshReqs = window.__promptRequests.filter((r) => r.url === url);
+      const freshReq = freshReqs[freshReqs.length - 1];
+      freshReq.resolve(jsonResponse({ ok: true, items: ["fresh"] }));
+      const freshValue = await fresh;
+      staleReq.resolve(jsonResponse({ ok: true, items: ["stale"] }));
+      const staleValue = await stale;
+      test("invalidate 后不复用旧在途请求 " + url, [staleValue, freshValue.items, (await store.load(false)).items],
+        [null, ["fresh"], ["fresh"]]);
+    }
+
+    // reload 的子请求在 Promise.all 前不得写 libData/loc；旧一轮全部完成后仍保持新数据。
+    P.openLib(pnode, "prompts");
+    await sleep(0);
+    P.refresh(true);
+    await sleep(0);
+    const primaryUrls = ["/ps/prompts", "/ps/prompts/phrases", "/ps/image-sets", "/ps/prompts/history"];
+    for (const url of primaryUrls) {
+      const reqs = window.__promptRequests.filter((r) => r.url === url);
+      const newer = reqs[reqs.length - 1];
+      newer.resolve(jsonResponse({ ok: true, items: ["new-" + url], groups: ["new-group"],
+        categories: [{ group: "new-group", name: "new-cat" }], vault: "D:/new" }));
+    }
+    await sleep(30);
+    test("reload 新一波统一提交四类数据", primaryUrls.map((url) => P.data()[
+      url === "/ps/prompts" ? "prompts" : url === "/ps/prompts/phrases" ? "phrases" :
+      url === "/ps/image-sets" ? "sets" : "history"][0]), primaryUrls.map((url) => "new-" + url));
+    test("reload 默认分类来自新结果", [P.state().phraseGroup, P.state().phraseCat], ["new-group", "new-cat"]);
+    window.__promptRequests.splice(0).forEach((r) => r.resolve(jsonResponse({ ok: true,
+      items: ["old"], groups: ["old-group"], categories: [], vault: "D:/old" })));
+    await sleep(30);
+    test("reload 旧一波不污染数据/位置/分类", [P.data().prompts[0], P.state().phraseGroup,
+      (document.querySelector(".kd-plib-vault") || {}).textContent], ["new-/ps/prompts", "new-group", "D:/new默认位置"]);
+    P.closeLib(true);
+    window.__promptControl = false;
+
+    // ---------------------------------------------------------------- i18n 语言请求竞态 / 英文回退
+    const i18nRequests = [], i18nChanges = [];
+    const i18nListeners = new Map();
+    const i18nApi = {
+      ui: { settings: { getSettingValue: async () => "en" } },
+      api: { addEventListener: (type, fn) => i18nListeners.set(type, fn) },
+    };
+    window.__i18nApp = i18nApi;
+    window.__i18nFetch = () => new Promise((resolve, reject) => i18nRequests.push({ resolve, reject }));
+    const I = await import("/i18n-test.js?races=" + Date.now());
+    I.onLocaleChange((loc) => i18nChanges.push(loc));
+    await I.initI18n(i18nApi);
+    test("en 快速路径不发语言包请求", i18nRequests.length, 0);
+    const setLocale = (loc) => i18nListeners.get("SettingChanged")(["Comfy.Locale", loc]);
+    setLocale("zh"); setLocale("en"); await sleep(0);
+    i18nRequests.shift().resolve(jsonResponse({ ok: true, messages: { Hello: "你好" } }));
+    await sleep(0);
+    test("切回 en 后旧中文响应不能生效", [I.locale(), I.t("Hello"), i18nChanges.length], ["en", "Hello", 0]);
+    setLocale("zh"); setLocale("zh-TW"); await sleep(0);
+    i18nRequests[1].resolve(jsonResponse({ ok: true, messages: { Hello: "繁體" } }));
+    await sleep(0);
+    i18nRequests[0].resolve(jsonResponse({ ok: true, messages: { Hello: "简体" } }));
+    await sleep(0);
+    test("只允许最新语言请求写 dict", [I.locale(), I.t("Hello"), i18nChanges], ["zh-TW", "繁體", ["zh-TW"]]);
+    setLocale("zh"); await sleep(0);
+    i18nRequests[2].reject(new Error("offline")); await sleep(0);
+    test("语言包失败回落英文但仍通知生效语言", [I.locale(), I.t("Hello"), i18nChanges.length], ["zh", "Hello", 2]);
+    setLocale("en"); await sleep(0);
+    test("英文快速路径不请求且通知一次", [I.locale(), i18nRequests.length, i18nChanges.length], ["en", 3, 3]);
   } catch (e) {
     results.push({ name: "运行中抛异常", pass: false, actual: String(e && e.stack || e), expected: "无异常" });
   }

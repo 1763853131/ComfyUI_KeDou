@@ -53,38 +53,96 @@ def _store_path():
 
 
 def _migrate_legacy(target):
-    """把旧位置的文件搬到词库里；新文件已存在时不覆盖。调用方持有 _LOCK。"""
+    """把旧位置的文件搬到词库里；失败时本次操作继续读写旧位置。调用方持有 _LOCK。"""
     legacy = _legacy_path()
     if os.path.abspath(legacy) == os.path.abspath(target):
-        return
+        return target
     if not os.path.isfile(legacy) or os.path.exists(target):
-        return
+        return target
     try:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         shutil.move(legacy, target)
         print("[KeDou] 图片排列已迁入词库：%s" % target)
+        return target
     except OSError as e:
         print("[KeDou] 图片排列迁移失败（继续用旧位置）：%s" % e)
+        return legacy
 
 
-def _read():
-    path = _store_path()
-    _migrate_legacy(path)
+def _bad_archives(path):
+    """列出曾因损坏留档的 .bad-* 文件；原文件缺失时仍据此阻止静默新建。"""
+    directory = os.path.dirname(path) or "."
+    prefix = os.path.basename(path) + ".bad-"
+    try:
+        return [os.path.join(directory, fn) for fn in os.listdir(directory)
+                if fn.startswith(prefix)]
+    except OSError:
+        return []
+
+
+def _archive_corrupt(path):
+    """尽量把损坏原文件改名留档；同秒多次损坏也不会互相覆盖。"""
+    bad = path + ".bad-" + time.strftime("%Y%m%d-%H%M%S")
+    n = 2
+    while os.path.lexists(bad):
+        bad = "%s.bad-%s-%d" % (path, time.strftime("%Y%m%d-%H%M%S"), n)
+        n += 1
+    try:
+        os.replace(path, bad)
+        return bad
+    except OSError as e:
+        print("[KeDou] 图片排列损坏文件留档失败：%s（%s）" % (path, e))
+        return ""
+
+
+def _corrupt_result(path, error, bad_path=None):
+    if bad_path is None:
+        bad_path = _archive_corrupt(path)
+    if bad_path:
+        message = ("图片排列数据已损坏，原内容已留档到 %s；"
+                   "请修复后移回 %s，或先移走该 .bad 文件" % (bad_path, path))
+    else:
+        message = ("图片排列数据已损坏且无法留档：%s；"
+                   "请先修复或移走 %s，再继续读写" % (error, path))
+    return {"ok": False, "error": message, "bad_file": bad_path}
+
+
+def _read(path=None):
+    path = path or _migrate_legacy(_store_path())
+    if not os.path.exists(path):
+        bad = _bad_archives(path)
+        if bad:
+            return _corrupt_result(path, "原文件缺失，但损坏留档仍存在", sorted(bad)[-1])
+        return {"v": 1, "items": []}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except Exception:                                   # noqa: BLE001
+        if (not isinstance(data, dict) or not isinstance(data.get("items"), list)
+                or any(not isinstance(it, dict) for it in data["items"])):
+            raise ValueError("顶层必须是含 items 数组的对象，且每条排列必须是对象")
+    except FileNotFoundError:
+        bad = _bad_archives(path)
+        if bad:
+            return _corrupt_result(path, "原文件缺失，但损坏留档仍存在", sorted(bad)[-1])
         return {"v": 1, "items": []}
-    items = data.get("items") if isinstance(data, dict) else None
-    return {"v": 1, "items": items if isinstance(items, list) else []}
+    except ValueError as e:
+        return _corrupt_result(path, e)
+    except OSError as e:
+        # 读不到不等于 JSON 损坏；不要随便挪走可能有效的文件，但同样拒绝继续写。
+        return {"ok": False, "error": "图片排列数据读取失败，已拒绝继续写：%s" % e}
+    return {"v": 1, "items": data["items"]}
 
 
-def _write(items):
-    path = _store_path()
+def _write(items, path=None, keep_id=None):
+    path = path or _migrate_legacy(_store_path())
+    if keep_id is not None:
+        pinned = [item for item in items if str(item.get("id")) == str(keep_id)]
+        others = [item for item in items if str(item.get("id")) != str(keep_id)]
+        ordered = pinned + sorted(others, key=lambda x: str(x.get("updated") or ""), reverse=True)
+    else:
+        ordered = sorted(items, key=lambda x: str(x.get("updated") or ""), reverse=True)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # 超上限时按更新时间留最新的，刚保存的那条一定在
-    keep = sorted(items, key=lambda x: str(x.get("updated") or ""), reverse=True)[:MAX_ITEMS]
-    paths._dump_json_atomic(path, {"v": 1, "items": keep})
+    paths._dump_json_atomic(path, {"v": 1, "items": ordered[:MAX_ITEMS]})
 
 
 def _clean_images(images):
@@ -102,7 +160,11 @@ def _clean_images(images):
 
 def list_sets():
     with _LOCK:
-        items = _read()["items"]
+        path = _migrate_legacy(_store_path())
+        data = _read(path)
+        if data.get("ok") is False:
+            return {"ok": False, "error": data["error"], "items": []}
+        items = data["items"]
     items = sorted(items, key=lambda x: str(x.get("updated") or ""), reverse=True)
     return {"ok": True, "items": items}
 
@@ -114,7 +176,10 @@ def save_set(name="", images=None, batch=False, select=False, picked=None, set_i
     name = str(name or "").strip()[:60] or time.strftime("排列 %Y-%m-%d %H:%M")
     picked = [x for x in (picked if isinstance(picked, list) else []) if x in images]
     with _LOCK:
-        data = _read()
+        path = _migrate_legacy(_store_path())
+        data = _read(path)
+        if data.get("ok") is False:
+            return {"ok": False, "error": data["error"]}
         items = data["items"]
         target = None
         if set_id:
@@ -130,7 +195,7 @@ def save_set(name="", images=None, batch=False, select=False, picked=None, set_i
             "name": name, "images": images, "batch": bool(batch),
             "select": bool(select), "picked": picked, "updated": now,
         })
-        _write(items)
+        _write(items, path, keep_id=target.get("id"))
     return {"ok": True, "item": target}
 
 
@@ -140,24 +205,30 @@ def rename_set(set_id="", name=""):
     if not name:
         return {"ok": False, "error": "名字不能为空"}
     with _LOCK:
-        data = _read()
+        path = _migrate_legacy(_store_path())
+        data = _read(path)
+        if data.get("ok") is False:
+            return {"ok": False, "error": data["error"]}
         target = next((x for x in data["items"] if str(x.get("id")) == str(set_id)), None)
         if target is None:
             return {"ok": False, "error": "排列不存在"}
         target["name"] = name
         target["updated"] = _now()
-        _write(data["items"])
+        _write(data["items"], path, keep_id=target.get("id"))
     return {"ok": True, "item": target}
 
 
 def delete_set(set_id=""):
     with _LOCK:
-        data = _read()
+        path = _migrate_legacy(_store_path())
+        data = _read(path)
+        if data.get("ok") is False:
+            return {"ok": False, "error": data["error"]}
         before = len(data["items"])
         data["items"] = [x for x in data["items"] if str(x.get("id")) != str(set_id)]
         if len(data["items"]) == before:
             return {"ok": False, "error": "排列不存在"}
-        _write(data["items"])
+        _write(data["items"], path)
     return {"ok": True}
 
 
@@ -178,7 +249,11 @@ def _find_file(filename):
 
 def load_set(set_id=""):
     with _LOCK:
-        item = next((x for x in _read()["items"] if str(x.get("id")) == str(set_id)), None)
+        path = _migrate_legacy(_store_path())
+        data = _read(path)
+        if data.get("ok") is False:
+            return {"ok": False, "error": data["error"]}
+        item = next((x for x in data["items"] if str(x.get("id")) == str(set_id)), None)
     if item is None:
         return {"ok": False, "error": "排列不存在"}
     found, missing = [], []

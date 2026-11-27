@@ -142,6 +142,10 @@ _cache = {}
 _state = {"seed_checked": False, "backups": set(), "created": set(), "migrated": set()}
 # 历史 / 词库是整文件读改写，多个请求同时保存会互相覆盖，改动必须串行
 _store_lock = threading.RLock()
+# Markdown 条目另用独立锁串行 save_prompt / delete_prompt / bump_use 的读改写。
+# 历史/短词仍只走 _store_lock；调用历史/短词兜底前不持有本锁，避免嵌套锁顺序死锁。
+_prompt_lock = threading.RLock()
+_backup_lock = threading.Lock()
 
 SAMPLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample")
 
@@ -578,17 +582,15 @@ def _rewrite_prompt_categories(vault, old, new):
     分类只存在 frontmatter 的 category 字段里；不把条目一起改掉的话，
     旧名字会从条目里再长出来，面板上就会出现一个删不掉/改了名还回来的标签。
     """
-    moved = 0
+    updates = []
     for e in _walk(vault):
         if (e.get("category") or "") != old:
             continue
         path = os.path.join(vault, *str(e["file"]).split("/"))
         entry = dict(e)
         entry["category"] = new
-        _atomic_write(path, _serialize(entry))
-        _cache.pop(path, None)
-        moved += 1
-    return moved
+        updates.append((path, _serialize(entry)))
+    return len(updates), updates
 
 
 def _rewrite_phrase_categories(vault, group, old, new):
@@ -603,9 +605,25 @@ def _rewrite_phrase_categories(vault, group, old, new):
         if new == PHRASE_CAT_FALLBACK:
             it["group"] = PHRASE_GROUP_FALLBACK
         moved += 1
-    if moved:
-        _write_phrases(vault, items)
-    return moved
+    return moved, items
+
+
+def _rewrite_prompt_category_store(vault, old, new, remove_old=False):
+    """Markdown 条目与分类 JSON 一起更新；固定按 _prompt_lock -> _store_lock 获取。"""
+    with _prompt_lock:
+        with _store_lock:
+            moved, updates = _rewrite_prompt_categories(vault, old, new)
+            cats = _category_store(vault)
+            if remove_old:
+                cats["prompts"] = [c for c in cats["prompts"] if c != old]
+            elif old in cats["prompts"]:
+                cats["prompts"] = [new if c == old else c for c in cats["prompts"]]
+            if new and new not in cats["prompts"]:
+                cats["prompts"].append(new)
+            updates.append((_store_path(vault, CATEGORIES_FILE),
+                            json.dumps(cats, ensure_ascii=False, indent=1)))
+            _write_files_transaction(updates)
+            return moved, cats["prompts"]
 
 
 def rename_category(scope, old, new, group=""):
@@ -624,27 +642,29 @@ def rename_category(scope, old, new, group=""):
         cats = _category_store(vault)
         return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
                 "moved": 0, "categories": cats[scope]}
+    if scope == "prompts":
+        moved, categories = _rewrite_prompt_category_store(vault, old, new)
+        return {"ok": True, "scope": scope, "group": "", "moved": moved,
+                "categories": categories}
     with _store_lock:
-        if scope == "prompts":
-            moved = _rewrite_prompt_categories(vault, old, new)
-            cats = _category_store(vault)
-            cats["prompts"] = [c for c in cats["prompts"] if c != old]
-            if new not in cats["prompts"]:
-                cats["prompts"].append(new)
-            _write_categories(vault, cats)
-        else:
-            moved = _rewrite_phrase_categories(vault, group, old, new)
-            cats = _category_store(vault)
-            keep = []
-            for x in cats["phrases"]:
-                if x["group"] == group and x["name"] == old:
-                    x = {"group": group, "name": new}
-                if not any(k["group"] == x["group"] and k["name"] == x["name"] for k in keep):
-                    keep.append(x)
-            cats["phrases"] = keep
-            _write_categories(vault, cats)
-        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
-                "moved": moved, "categories": cats[scope]}
+        moved, items = _rewrite_phrase_categories(vault, group, old, new)
+        cats = _category_store(vault)
+        keep = []
+        for x in cats["phrases"]:
+            if x["group"] == group and x["name"] == old:
+                x = {"group": group, "name": new}
+            if not any(k["group"] == x["group"] and k["name"] == x["name"] for k in keep):
+                keep.append(x)
+        cats["phrases"] = keep
+        updates = []
+        if moved:
+            updates.append((_store_path(vault, PHRASES_FILE),
+                            json.dumps({"version": 1, "items": items}, ensure_ascii=False, indent=1)))
+        updates.append((_store_path(vault, CATEGORIES_FILE),
+                        json.dumps(cats, ensure_ascii=False, indent=1)))
+        _write_files_transaction(updates)
+        return {"ok": True, "scope": scope, "group": group, "moved": moved,
+                "categories": cats[scope]}
 
 
 def delete_category(scope, name, group=""):
@@ -662,22 +682,26 @@ def delete_category(scope, name, group=""):
     group = str(group or "").strip() or PHRASE_GROUP_FALLBACK
     if scope == "phrases" and name == PHRASE_CAT_FALLBACK:
         return {"ok": False, "error": "未分类是系统分类，不能删除"}
+    if scope == "prompts":
+        moved, categories = _rewrite_prompt_category_store(vault, name, "", remove_old=True)
+        return {"ok": True, "scope": scope, "group": "", "moved": moved,
+                "categories": categories}
     with _store_lock:
-        if scope == "prompts":
-            moved = _rewrite_prompt_categories(vault, name, "")
-            cats = _category_store(vault)
-            cats["prompts"] = [c for c in cats["prompts"] if c != name]
-            _write_categories(vault, cats)
-        else:
-            moved = _rewrite_phrase_categories(vault, group, name, PHRASE_CAT_FALLBACK)
-            cats = _category_store(vault)
-            cats["phrases"] = [
-                x for x in cats["phrases"]
-                if not (x["group"] == group and x["name"] == name)
-            ]
-            _write_categories(vault, cats)
-        return {"ok": True, "scope": scope, "group": group if scope == "phrases" else "",
-                "moved": moved, "categories": cats[scope]}
+        moved, items = _rewrite_phrase_categories(vault, group, name, PHRASE_CAT_FALLBACK)
+        cats = _category_store(vault)
+        cats["phrases"] = [
+            x for x in cats["phrases"]
+            if not (x["group"] == group and x["name"] == name)
+        ]
+        updates = []
+        if moved:
+            updates.append((_store_path(vault, PHRASES_FILE),
+                            json.dumps({"version": 1, "items": items}, ensure_ascii=False, indent=1)))
+        updates.append((_store_path(vault, CATEGORIES_FILE),
+                        json.dumps(cats, ensure_ascii=False, indent=1)))
+        _write_files_transaction(updates)
+        return {"ok": True, "scope": scope, "group": group, "moved": moved,
+                "categories": cats[scope]}
 
 
 def _history_to_trash(vault, files):
@@ -709,7 +733,6 @@ def _migrate_history(vault):
     key = os.path.normcase(os.path.abspath(vault))
     if key in _state["migrated"]:
         return
-    _state["migrated"].add(key)
     old = []
     for e in _walk(vault):
         rel = str(e.get("file") or "")
@@ -723,6 +746,7 @@ def _migrate_history(vault):
                 os.rmdir(hd)
         except OSError:
             pass
+        _state["migrated"].add(key)
         return
     with _store_lock:
         items = _history_items(vault)
@@ -745,6 +769,7 @@ def _migrate_history(vault):
                 })
         items.sort(key=lambda x: x.get("updated") or "", reverse=True)
         _write_history(vault, items)
+    _state["migrated"].add(key)
     _history_to_trash(vault, [os.path.join(vault, *str(e["file"]).split("/")) for e in old])
     try:
         hd = os.path.join(vault, HISTORY_DIR)
@@ -810,7 +835,8 @@ def _parse_entry(path, rel):
         if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
             return hit[2]
         # errors="replace"：GBK/UTF-16 手改文件也不能让整个 /ps/prompts 挂掉
-        text = open(path, encoding="utf-8-sig", errors="replace").read()
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            text = f.read()
         meta, body = _split_fm(text)
         if meta is None:
             # frontmatter 坏了也保留正文：至少能在列表里看到并删掉，而不是永久隐身
@@ -917,6 +943,37 @@ def _atomic_write(path, content):
         raise
 
 
+def _write_files_transaction(updates):
+    originals = []
+    for path, _content in updates:
+        try:
+            with open(path, "rb") as handle:
+                originals.append((path, handle.read()))
+        except FileNotFoundError:
+            originals.append((path, None))
+    written = []
+    try:
+        for path, content in updates:
+            _atomic_write(path, content)
+            written.append(path)
+    except Exception:
+        for path, original in reversed(originals):
+            try:
+                if original is None:
+                    try:
+                        os.remove(path)
+                    except FileNotFoundError:
+                        pass
+                else:
+                    _atomic_write(path, original.decode("utf-8"))
+            except OSError as rollback_error:
+                print("[kedou词库] 分类变更回滚失败：%s（%s）" % (path, rollback_error))
+        raise
+    else:
+        for path, _content in updates:
+            _cache.pop(path, None)
+
+
 def _slug(name):
     s = _BAD_FN.sub("", str(name or "")).strip().strip(".")
     return s or "未命名"
@@ -939,34 +996,74 @@ def _walk(vault):
 
 def _backup_daily(vault):
     """首次访问时压一次整库 zip，保留最近 BACKUP_KEEP 份。备份落在库目录内部的 .backup，
-    不再往上一级目录写 —— 用户可能把库存为自己的 Obsidian vault，那里不该多出兄弟目录。"""
+    不再往上一级目录写 —— 用户可能把库存为自己的 Obsidian vault，那里不该多出兄弟目录。
+
+    始终先写同目录临时 ZIP，testzip 通过后才原子 replace；失败不标记完成，下次会重试。
+    """
     today = time.strftime("%Y-%m-%d")
     key = (vault, today)
-    if key in _state["backups"]:
-        return
-    _state["backups"].add(key)
-    bdir = _backup_dir(vault)
-    try:
-        os.makedirs(bdir, exist_ok=True)
+    with _backup_lock:
+        if key in _state["backups"]:
+            return
+        bdir = _backup_dir(vault)
         dest = os.path.join(bdir, "prompts_%s.zip" % today)
-        if not os.path.exists(dest):
-            with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
-                for root, dirs, files in os.walk(vault):
-                    dirs[:] = [d for d in dirs if not d.startswith(".")]
-                    for fn in files:
-                        if fn.lower().endswith(".md"):
-                            full = os.path.join(root, fn)
-                            z.write(full, os.path.relpath(full, vault))
-                # .kedou 是隐藏目录，上面的 walk 不会进去；词库/历史是用户数据，单独补进备份
-                for extra in (PHRASES_FILE, HISTORY_FILE, CATEGORIES_FILE):
-                    full = _store_path(vault, extra)
-                    if os.path.isfile(full):
-                        z.write(full, os.path.join(STORE_DIR, extra))
-            olds = sorted(f for f in os.listdir(bdir) if f.startswith("prompts_") and f.endswith(".zip"))
+        tmp = None
+        try:
+            os.makedirs(bdir, exist_ok=True)
+            sources = []
+            for root, dirs, files in os.walk(vault):
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                for fn in files:
+                    if fn.lower().endswith(".md"):
+                        full = os.path.join(root, fn)
+                        sources.append((full, os.path.relpath(full, vault).replace("\\", "/")))
+            # .kedou 是隐藏目录，上面的 walk 不会进去；词库/历史是用户数据，单独补进备份
+            for extra in (PHRASES_FILE, HISTORY_FILE, CATEGORIES_FILE, "image_sets.json", "av_sets.json"):
+                full = _store_path(vault, extra)
+                if os.path.isfile(full):
+                    sources.append((full, STORE_DIR + "/" + extra))
+
+            needs_build = not os.path.isfile(dest)
+            if not needs_build:
+                # 兼容旧版本可能留下的空/缺条目 ZIP：CRC 正确还不够，源文件必须都在。
+                try:
+                    with zipfile.ZipFile(dest, "r") as z:
+                        bad = z.testzip()
+                        names = set(z.namelist())
+                    needs_build = bad is not None or not {arc for _full, arc in sources}.issubset(names)
+                except (OSError, zipfile.BadZipFile, RuntimeError):
+                    needs_build = True
+            if needs_build:
+                fd, tmp = tempfile.mkstemp(dir=bdir, prefix=".prompts_%s-" % today, suffix=".tmp")
+                os.close(fd)
+                with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+                    for full, arc in sources:
+                        z.write(full, arc)
+                with zipfile.ZipFile(tmp, "r") as z:
+                    bad = z.testzip()
+                    if bad is not None:
+                        raise zipfile.BadZipFile("备份条目校验失败：%s" % bad)
+                os.replace(tmp, dest)
+                tmp = None
+            _state["backups"].add(key)
+        except Exception as e:                              # noqa: BLE001
+            print("[kedou词库] 备份失败（不影响使用，下次会重试）：%s" % e)
+        finally:
+            if tmp:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+
+        if key not in _state["backups"]:
+            return
+        try:
+            olds = sorted(f for f in os.listdir(bdir)
+                          if f.startswith("prompts_") and f.endswith(".zip"))
             for old in olds[:-BACKUP_KEEP]:
                 os.remove(os.path.join(bdir, old))
-    except Exception as e:                              # noqa: BLE001
-        print("[kedou词库] 备份失败（不影响使用）：%s" % e)
+        except OSError as e:
+            print("[kedou词库] 旧备份清理失败（不影响使用）：%s" % e)
 
 
 # ─────────────────────────── 对外操作 ───────────────────────────
@@ -1030,13 +1127,8 @@ def _find_path(vault, pid):
     return None, None
 
 
-def save_prompt(body):
-    vault = vault_dir()
-    if not vault:
-        return {"ok": False, "error": last_error() or "词库目录不可用"}
-    # 历史只进 JSON，不再生成 .md。旧版 PS 面板仍按 type=历史 调这个接口，这里做一次转发。
-    if str(body.get("type") or "") == "历史":
-        return save_history(str(body.get("positive") or ""), _usage_list(body.get("usage")))
+def _save_prompt_md(body, vault):
+    """save_prompt 的 Markdown 部分；调用方必须持有 _prompt_lock。"""
     pid = str(body.get("id") or "").strip()
     now = time.strftime("%Y-%m-%d")
     if pid:
@@ -1076,7 +1168,11 @@ def save_prompt(body):
             try:
                 os.remove(path)
             except OSError as e:
-                print("[kedou词库] 旧文件删不掉（新文件已写入）：%s（%s）" % (path, e))
+                try:
+                    os.remove(new_path)
+                except OSError as rollback_error:
+                    print("[kedou词库] 改名回滚失败：%s（%s）" % (new_path, rollback_error))
+                return {"ok": False, "error": "改名失败，旧文件仍保留：%s" % e}
         _cache.pop(path, None)
         rel = os.path.relpath(new_path, vault).replace("\\", "/")
         return {"ok": True, "item": _parse_entry(new_path, rel)}
@@ -1097,10 +1193,12 @@ def save_prompt(body):
                 if merged != (e.get("use_for") or []):
                     p, old = _find_path(vault, e["id"])
                     if old:
-                        old["use_for"] = merged
-                        _atomic_write(p, _serialize(old))
+                        # 不直接改 _cache 里的对象：写盘失败时内存状态也必须保持原样。
+                        updated = dict(old)
+                        updated["use_for"] = merged
+                        _atomic_write(p, _serialize(updated))
                         _cache.pop(p, None)
-                        e = old
+                        e = updated
             return {"ok": True, "item": e, "deduped": True}
     etype = str(body.get("type") or "精选")
     raw_dir = str(body.get("dir") or "").strip()
@@ -1126,6 +1224,18 @@ def save_prompt(body):
     _atomic_write(path, _serialize(entry))
     rel = os.path.relpath(path, vault).replace("\\", "/")
     return {"ok": True, "item": _parse_entry(path, rel)}
+
+
+def save_prompt(body):
+    vault = vault_dir()
+    if not vault:
+        return {"ok": False, "error": last_error() or "词库目录不可用"}
+    # 历史只进 JSON，不再生成 .md。旧版 PS 面板仍按 type=历史 调这个接口，这里做一次转发。
+    # 在获取 Markdown 锁前转发，避免 _prompt_lock -> _store_lock 的嵌套锁顺序。
+    if str(body.get("type") or "") == "历史":
+        return save_history(str(body.get("positive") or ""), _usage_list(body.get("usage")))
+    with _prompt_lock:
+        return _save_prompt_md(body, vault)
 
 
 def _looks_like_history_text(text):
@@ -1378,48 +1488,53 @@ def delete_prompt(pid):
     vault = vault_dir()
     if not vault:
         return {"ok": False, "error": last_error() or "词库目录不可用"}
-    path, entry = _find_path(vault, pid)
-    if path is None:
-        # 旧客户端可能把历史 id 发到这里：历史现在是 JSON，走对应的删除
-        if pid.startswith("h."):
-            return delete_history(pid)
-        return {"ok": False, "error": "条目不存在"}
-    tdir = _trash_dir(vault)
-    os.makedirs(tdir, exist_ok=True)
-    stem = os.path.splitext(os.path.basename(path))[0]
-    dest = os.path.join(tdir, os.path.basename(path))
-    n = 2
-    while os.path.exists(dest):
-        dest = os.path.join(tdir, "%s_%d.md" % (stem, n))
-        n += 1
-    _retry_locked(shutil.move, path, dest)
-    _cache.pop(path, None)
-    return {"ok": True, "trashed": os.path.basename(dest)}
+    with _prompt_lock:
+        path, entry = _find_path(vault, pid)
+        if path is not None:
+            tdir = _trash_dir(vault)
+            os.makedirs(tdir, exist_ok=True)
+            stem = os.path.splitext(os.path.basename(path))[0]
+            dest = os.path.join(tdir, os.path.basename(path))
+            n = 2
+            while os.path.exists(dest):
+                dest = os.path.join(tdir, "%s_%d.md" % (stem, n))
+                n += 1
+            _retry_locked(shutil.move, path, dest)
+            _cache.pop(path, None)
+            return {"ok": True, "trashed": os.path.basename(dest)}
+    # 旧客户端可能把历史 id 发到这里：历史现在是 JSON，走对应的删除。
+    # 放到 _prompt_lock 外，历史仍只使用 _store_lock。
+    if pid.startswith("h."):
+        return delete_history(pid)
+    return {"ok": False, "error": "条目不存在"}
 
 
 def bump_use(pid):
     vault = vault_dir()
     if not vault:
         return {"ok": False, "error": last_error() or "词库目录不可用"}
-    path, entry = _find_path(vault, pid)
-    if path is None:
-        # 历史/短词现在不在 .md 里：按 id 前缀兜底，旧前端不用改调用
-        if pid.startswith("h."):
-            with _store_lock:
-                items = _history_items(vault)
-                for it in items:
-                    if it["id"] == pid:
-                        it["uses"] = _to_int(it.get("uses")) + 1
-                        it["updated"] = _now()
-                        _write_history(vault, items)
-                        return {"ok": True, "uses": it["uses"]}
-        elif pid.startswith("p."):
-            return bump_phrase_use(pid)
-        return {"ok": False, "error": "条目不存在"}
-    entry["uses"] += 1
-    _atomic_write(path, _serialize(entry))
-    _cache.pop(path, None)
-    return {"ok": True, "uses": entry["uses"]}
+    with _prompt_lock:
+        path, entry = _find_path(vault, pid)
+        if path is not None:
+            updated = dict(entry)
+            updated["uses"] = _to_int(updated.get("uses")) + 1
+            _atomic_write(path, _serialize(updated))
+            _cache.pop(path, None)
+            return {"ok": True, "uses": updated["uses"]}
+    # 历史/短词现在不在 .md 里：按 id 前缀兜底，旧前端不用改调用。
+    # 不持有 _prompt_lock 调用它们，避免与 _store_lock 形成反向嵌套。
+    if pid.startswith("h."):
+        with _store_lock:
+            items = _history_items(vault)
+            for it in items:
+                if it["id"] == pid:
+                    it["uses"] = _to_int(it.get("uses")) + 1
+                    it["updated"] = _now()
+                    _write_history(vault, items)
+                    return {"ok": True, "uses": it["uses"]}
+    elif pid.startswith("p."):
+        return bump_phrase_use(pid)
+    return {"ok": False, "error": "条目不存在"}
 
 
 # ─────────────────────────── 路由注册 ───────────────────────────

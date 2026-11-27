@@ -43,13 +43,29 @@ WHITELIST_DIRS = [
     "locales",
     "prompt_vault",
     "web",
-    "docs",
 ]
 
 # 递归排除：这些东西进包就是事故
 EXCLUDE_DIRS = {"__pycache__", ".git", ".workbuddy-ai", "Python", "tests", ".idea", ".vscode"}
 EXCLUDE_SUFFIX = (".pyc", ".pyo", ".zip", ".7z", ".rar")
 EXCLUDE_NAME_PATTERNS = [r"\.bak", r"^\.git", r"~$", r"\.swp$"]
+RUNTIME_FILES = [
+    "kedou_bridge/routes.py", "kedou_bridge/segments.py", "kedou_bridge/av_state.py",
+    "kedou_bridge/av_sets.py", "kedou_bridge/vendor/__init__.py",
+    "kedou_bridge/vendor/transnetv2.py",
+    "kedou_bridge/vendor/omnishotcut/__init__.py",
+    "kedou_bridge/vendor/omnishotcut/engine.py",
+    "kedou_bridge/vendor/omnishotcut/util.py",
+    "kedou_bridge/vendor/omnishotcut/labels.py",
+    "kedou_bridge/vendor/omnishotcut/architecture/__init__.py",
+    "kedou_bridge/vendor/omnishotcut/architecture/model.py",
+    "kedou_bridge/vendor/omnishotcut/architecture/backbone.py",
+    "kedou_bridge/vendor/omnishotcut/architecture/transformer.py",
+    "kedou_bridge/vendor/omnishotcut/architecture/position_encoding.py",
+    "kedou_bridge/vendor/TRANSNETV2_LICENSE.txt",
+    "kedou_bridge/vendor/omnishotcut/OMNISHOTCUT_LICENSE.txt",
+    "web/kedou_media.js", "web/kedou_av.js", "locales/zh/main.json",
+]
 
 
 def _excluded(name: str) -> bool:
@@ -127,7 +143,7 @@ def _preflight(ver: str, py_ver: str) -> None:
     if len(pys) < 10:
         problems.append("kedou_bridge/ 只有 %d 个 .py，模块不齐" % len(pys))
 
-    for must in ("kedou_bridge/routes.py", "kedou_bridge/version.py", "web/kedou_media.js"):
+    for must in ("kedou_bridge/version.py", *RUNTIME_FILES):
         if not os.path.isfile(os.path.join(REPO, must)):
             problems.append("缺少关键文件：%s" % must)
 
@@ -162,8 +178,7 @@ def _verify_zip(zip_path: str, ver: str) -> None:
         if _excluded(base) or "/__pycache__/" in "/" + n:
             problems.append("包里有脏文件：%s" % n)
 
-    must_have = ["__init__.py", "pyproject.toml", "kedou_bridge/routes.py",
-                 "kedou_bridge/version.py", "web/kedou_media.js", "locales/zh/main.json"]
+    must_have = ["__init__.py", "pyproject.toml", "kedou_bridge/version.py", *RUNTIME_FILES]
     for m in must_have:
         if m not in rel:
             problems.append("包里缺文件：%s" % m)

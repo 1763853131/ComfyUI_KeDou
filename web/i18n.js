@@ -15,6 +15,7 @@ const BASE = "/ps/locale";
 
 let dict = {};
 let current = "en";
+let dictSeq = 0;          // 只有最后发出的语言请求可以改字典/当前语言
 const listeners = new Set();
 
 function normalizeLocale(raw) {
@@ -56,18 +57,23 @@ export function initI18n(theApp) {
   if (started) return started;
   started = (async () => {
     const a = theApp || app;
-    current = normalizeLocale(await readLocale(a));
-    await loadDict(current);
+    let changedDuringInit = false;
+    let initLocale = "en";
     try {
       a.api.addEventListener("SettingChanged", async ([key, value]) => {
         if (key !== "Comfy.Locale") return;
+        changedDuringInit = true;
         const next = normalizeLocale(value);
-        if (next === current) return;
-        current = next;
-        await loadDict(current);
-        listeners.forEach((fn) => { try { fn(current); } catch (_) { /* 单个面板重绘失败不牵连其它 */ } });
+        initLocale = next;
+        const prev = current;
+        const applied = await loadDict(next);
+        if (applied && next !== prev) {
+          listeners.forEach((fn) => { try { fn(current); } catch (_) { /* 单个面板重绘失败不牵连其它 */ } });
+        }
       });
     } catch (_) { /* 老前端没有该事件：语言在下次刷新时生效 */ }
+    const initial = normalizeLocale(await readLocale(a));
+    await loadDict(changedDuringInit ? initLocale : initial);
     return t;
   })();
   return started;
@@ -82,12 +88,21 @@ async function readLocale(a) {
 }
 
 async function loadDict(loc) {
-  if (loc === "en") { dict = {}; return; }
+  const seq = ++dictSeq;
+  if (loc === "en") {
+    if (seq === dictSeq) { dict = {}; current = loc; } // 英文快速路径仍会作废在途请求
+    return seq === dictSeq;
+  }
+  let nextDict = {};
   try {
     const resp = await fetch(`${BASE}?lang=${encodeURIComponent(loc)}`);
     const body = resp.ok ? await resp.json() : null;
-    dict = (body && body.ok && body.messages) || {};
+    nextDict = (body && body.ok && body.messages) || {};
   } catch (_) {
-    dict = {};                                  // 拿不到语言包就退回英文，绝不白屏
+    nextDict = {};                        // 拿不到语言包就退回英文，绝不白屏
   }
+  if (seq !== dictSeq) return false;
+  dict = nextDict;
+  current = loc;
+  return true;
 }

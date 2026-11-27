@@ -146,14 +146,42 @@ PAGE = """<!doctype html>
   window.__sizeCalls = [];
   window.__blockSize = false;
   window.__blockDelete = false;
+  window.__blockPick = false;
+  window.__pickFailAt = 0;
+  window.__holdDelete = false;
+  window.__deleteRequests = [];
+  window.__pickCalls = [];
+  window.__packSaves = 0;
+  window.__promptControl = false;
+  window.__promptRequests = [];
+  window.__historyPosts = [];
   window.__testFetch = function (url, opts) {
     const u = String(url);
     if (u.indexOf("/ps/imgsize") >= 0) {
       window.__sizeCalls.push(u);
       if (window.__blockSize) return Promise.resolve(new Response("not found", { status: 404 }));
     }
-    if (u.indexOf("/ps/media/delete") >= 0 && window.__blockDelete) {
-      return Promise.resolve(new Response("not found", { status: 404 }));
+    if (u.indexOf("/ps/media/delete") >= 0) {
+      if (window.__blockDelete) return Promise.resolve(new Response("not found", { status: 404 }));
+      if (window.__holdDelete) return new Promise((resolve) => window.__deleteRequests.push({ url: u, opts, resolve }));
+    }
+    if (u.indexOf("/ps/media/pick") >= 0) {
+      window.__pickCalls.push(u);
+      if (window.__blockPick) return Promise.resolve(new Response("not found", { status: 404 }));
+      if (window.__pickFailAt === window.__pickCalls.length) {
+        return Promise.resolve(new Response(JSON.stringify({ ok: false, error: "injected pick failure" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }));
+      }
+    }
+    if (u.indexOf("/ps/pack/save") >= 0) { window.__packSaves++; }
+    if (window.__promptControl && !(opts && opts.method)) {
+      if (u === "/ps/prompts" || u === "/ps/prompts/phrases" || u === "/ps/prompts/history" || u === "/ps/image-sets") {
+        return new Promise((resolve) => window.__promptRequests.push({ url: u, resolve }));
+      }
+    }
+    if (u === "/ps/prompts/history" && opts && opts.method === "POST") {
+      window.__historyPosts.push(JSON.parse(opts.body));
+      if (window.__promptControl) return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     }
     return fetch(url, opts);
   };
@@ -177,19 +205,53 @@ def module_text(filename):
     import re
     text = (ROOT / "web" / filename).read_text(encoding="utf-8")
     text = re.sub(r"^import .*?;\s*$", "", text, flags=re.M)
+    text = re.sub(r"^export\s*\{[^}]*\};?\s*$", "", text, flags=re.M)
     prefix = ("const app=window.__app; const fetch=window.__testFetch;\n"
               "const t=window.__t, locale=()=>'zh', initI18n=async()=>{}, "
               "onLocaleChange=()=>()=>{}, serverError=x=>x;\n")
     tools = ["renderPanel", "openBig", "openLibrary", "ensureCss", "readState", "writeState",
              "attachZoom", "kdGesture", "kdZoomHide", "kdBucketSize", "kdFillSize",
-             "kdSizeCache", "thumbUrl"]
+             "kdSizeCache", "thumbUrl", "runBatch", "nodeOnCanvas", "lockBatchUI",
+             "mediaKey", "pickMedia", "doGenerate", "hideMediaStateInput"]
     # 反向测试要跑改动前的备份：那时这些函数/常量还不存在，直接引用会整个 ReferenceError，
     # 一条断言都看不到。逐个 typeof 兜底，缺的就是 null，断言会逐条失败而不是整页崩。
     entries = ",".join('%s:(typeof %s!=="undefined"?%s:null)' % (n, n, n) for n in tools)
     suffix = ("\nwindow.__kdTools={" + entries +
               ",zoomEl:()=>(typeof kdZoomEl!=='undefined'?kdZoomEl:null)"
-              ",marquee:()=>(typeof kdMarquee!=='undefined'?kdMarquee:false)};\n")
+              ",marquee:()=>(typeof kdMarquee!=='undefined'?kdMarquee:false)"
+              ",setPackGraph:(v)=>{kpOpenGraph=String(v);}};\n")
     return prefix + text + suffix
+
+
+def promptlib_module_text():
+    """纯前端测试导出：不执行 setup，只暴露竞态修复涉及的函数/存储。"""
+    import re
+    text = (ROOT / "web" / "promptlib.js").read_text(encoding="utf-8")
+    text = re.sub(r"^import .*?;\s*$", "", text, flags=re.M)
+    text = re.sub(r"^export\s*\{[^}]*\};?\s*$", "", text, flags=re.M)
+    prefix = ("const app=window.__app; const fetch=window.__testFetch;\n"
+              "const t=window.__t, locale=()=>'zh', initI18n=async()=>{}, "
+              "onLocaleChange=()=>()=>{}, serverError=x=>x;\n")
+    suffix = """
+window.__promptTools={
+  buildPromptBox,hookHistory,openLib,closeLib,
+  libStore,phraseStore,histStore,setsStore,
+  data:()=>libData,state:()=>libState,refresh:()=>libRefresh,
+  snapshots:()=>runSnapshots,
+  running:()=>ranByPrompt.size,
+  completed:()=>completedPrompts.size,
+};
+"""
+    return prefix + text + suffix
+
+
+def i18n_module_text():
+    """把 app import 换成可控制 fetch 的桩，保留真实 i18n 模块逻辑。"""
+    import re
+    text = (ROOT / "web" / "i18n.js").read_text(encoding="utf-8")
+    return re.sub(r'^import\s+\{[^}]*\}\s+from\s+["\'][^"\']+["\'];?\s*$',
+                  "const app=window.__i18nApp; const fetch=window.__i18nFetch;",
+                  text, flags=re.M)
 
 
 def main():
@@ -227,6 +289,14 @@ def main():
         @table.get("/before.js")
         async def before_js(request):
             return web.Response(text=module_text(BACKUP), content_type="text/javascript")
+
+        @table.get("/promptlib.js")
+        async def promptlib_js(request):
+            return web.Response(text=promptlib_module_text(), content_type="text/javascript")
+
+        @table.get("/i18n-test.js")
+        async def i18n_js(request):
+            return web.Response(text=i18n_module_text(), content_type="text/javascript")
 
         @table.get("/tests.js")
         async def tests_js(request):
@@ -277,8 +347,8 @@ def main():
         @web.middleware
         async def no_store(request, handler):
             resp = await handler(request)
-            if request.path in ("/", "/module.js", "/before.js", "/tests.js", "/fixtures.json",
-                                "/trash.json", "/reset"):
+            if request.path in ("/", "/module.js", "/before.js", "/promptlib.js", "/i18n-test.js",
+                                "/tests.js", "/fixtures.json", "/trash.json", "/reset"):
                 resp.headers["Cache-Control"] = "no-store"
             return resp
 

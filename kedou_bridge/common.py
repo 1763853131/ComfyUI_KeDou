@@ -30,10 +30,11 @@ NOISE_INPUTS = {"filename_prefix"}
 #   写官方应用 —— 数据控件换成把手，因为 App Mode 只认画布上真实存在的 widget。
 DOM_HANDLES = {
     "KedouImageLoader": {"media_state": "kedou_media"},
+    "KedouAVLoader": {"media_state": "kedou_av"},
     "KedouPromptBox": {"prompt_state": "kedou_promptbox"},
 }
-# 把手对应的面板控件种类：图像输入 / 提示词输入
-DOM_HANDLE_KIND = {"kedou_media": "image", "kedou_promptbox": "text"}
+# 把手对应的面板控件种类：图像输入 / 音视频输入 / 提示词输入
+DOM_HANDLE_KIND = {"kedou_media": "image", "kedou_av": "av", "kedou_promptbox": "text"}
 
 
 def _dom_handle(class_type: str, widget: str) -> str:
@@ -50,7 +51,7 @@ def _panel_widget(class_type: str, widget: str) -> str:
 
 # 给面板用的中文类型名
 KIND_CN = {"text": "提示词", "number": "数值", "bool": "开关", "image": "图像",
-           "video": "视频", "audio": "音频"}
+           "video": "视频", "audio": "音频", "av": "音视频"}
 
 # 下拉选项最多带多少条（LoadImage 的文件名列表可能上千条，对面板没意义还占体积）
 OPTIONS_CAP = 200
@@ -87,8 +88,10 @@ def _clean_label(node: dict, widget: str) -> str:
 
 
 def _kind_of(node: dict, widget: str, default) -> str:
-    """把控件归成六种输入类型：image / video / audio / number / bool / text"""
+    """把控件归成 image / video / audio / av / number / bool / text 七种输入类型。"""
     ntype = str(node.get("type") or "")
+    if ntype == "KedouAVLoader" and widget == "media_state":
+        return "av"
     if ntype in IMAGE_LOADERS and widget in ("image", "mask"):
         return "image"
     if ntype in VIDEO_INPUTS and widget in VIDEO_INPUTS[ntype]:
